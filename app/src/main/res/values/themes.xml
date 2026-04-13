@@ -1,0 +1,3 @@
+<resources>
+  <style name="Theme.Pirate" parent="@style/Theme.Material3.DynamicColors.Dark" />
+</resources>

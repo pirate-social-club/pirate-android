@@ -1,0 +1,4 @@
+<resources>
+  <string name="app_name">Pirate</string>
+  <string name="app_name_staging">Pirate (Staging)</string>
+</resources>
