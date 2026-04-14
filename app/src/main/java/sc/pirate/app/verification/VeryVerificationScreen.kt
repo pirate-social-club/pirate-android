@@ -19,7 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import sc.pirate.app.api.ApiClient
-import sc.pirate.app.api.model.OnboardingStatus
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
@@ -52,8 +51,6 @@ data class VeryVerificationUiState(
 )
 
 class VeryVerificationViewModel(application: Application) : AndroidViewModel(application) {
-    private val app get() = application as sc.pirate.app.PirateApp
-
     private val _state = MutableStateFlow(VeryVerificationUiState())
     val state: StateFlow<VeryVerificationUiState> = _state
 
@@ -134,7 +131,7 @@ fun VeryVerificationScreen(
     modifier: Modifier = Modifier,
 ) {
     val viewModel: VeryVerificationViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
-    val state by viewModel.state
+    val state by viewModel.state.collectAsState()
     val context = LocalContext.current
 
     androidx.compose.material3.Scaffold(
