@@ -3,23 +3,25 @@ package sc.pirate.app.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import androidx.lifecycle.viewmodel.compose.viewModel
 import sc.pirate.app.auth.AuthScreen
 import sc.pirate.app.auth.AuthViewModel
+import sc.pirate.app.auth.AuthUiState
 import sc.pirate.app.community.CommunityScreen
+import sc.pirate.app.community.CommunityViewModel
 import sc.pirate.app.home.HomeScreen
 import sc.pirate.app.onboarding.OnboardingScreen
+import sc.pirate.app.onboarding.OnboardingViewModel
 import sc.pirate.app.post.PostComposerScreen
+import sc.pirate.app.post.PostComposerViewModel
 import sc.pirate.app.post.PostScreen
 import sc.pirate.app.profile.ProfileScreen
-import sc.pirate.app.verification.VeryVerificationScreen
-import androidx.lifecycle.viewmodel.compose.viewModel
-import sc.pirate.app.auth.AuthUiState
-import sc.pirate.app.community.CommunityViewModel
-import sc.pirate.app.onboarding.OnboardingViewModel
-import sc.pirate.app.post.PostComposerViewModel
 import sc.pirate.app.profile.ProfileViewModel
+import sc.pirate.app.verification.VeryVerificationScreen
 
 @Composable
 fun PirateNavHost(
@@ -32,8 +34,8 @@ fun PirateNavHost(
         modifier = modifier,
     ) {
         composable(PirateRoute.Auth.route) {
-            val viewModel: AuthViewModel = viewModel()
-            val state = viewModel.state.value
+            val vm: AuthViewModel = viewModel()
+            val state = vm.state.value
 
             if (state is AuthUiState.Authenticated) {
                 navController.navigate(PirateRoute.Onboarding.route) {
@@ -42,19 +44,19 @@ fun PirateNavHost(
             } else {
                 AuthScreen(
                     state = state,
-                    onLoginGoogle = viewModel::loginWithGoogle,
-                    onLoginTwitter = viewModel::loginWithTwitter,
-                    onSendEmailCode = viewModel::sendEmailCode,
-                    onLoginEmail = viewModel::loginWithEmail,
-                    onLogout = viewModel::logout,
+                    onLoginGoogle = vm::loginWithGoogle,
+                    onLoginTwitter = vm::loginWithTwitter,
+                    onSendEmailCode = vm::sendEmailCode,
+                    onLoginEmail = vm::loginWithEmail,
+                    onLogout = vm::logout,
                 )
             }
         }
 
         composable(PirateRoute.Onboarding.route) {
-            val viewModel: OnboardingViewModel = viewModel()
+            val vm: OnboardingViewModel = viewModel()
             OnboardingScreen(
-                viewModel = viewModel,
+                viewModel = vm,
                 onComplete = {
                     navController.navigate(PirateRoute.Home.route) {
                         popUpTo(PirateRoute.Onboarding.route) { inclusive = true }
@@ -72,15 +74,15 @@ fun PirateNavHost(
         }
 
         composable(
-            PirateRoute.Community.route,
-            arguments = listOf(androidx.navigation.argument(PirateRoute.Community.ARG_COMMUNITY_ID) {
-                type = androidx.navigation.NavType.StringType
+            route = PirateRoute.Community.route,
+            arguments = listOf(navArgument(PirateRoute.Community.ARG_COMMUNITY_ID) {
+                type = NavType.StringType
             }),
         ) { backStackEntry ->
             val communityId = backStackEntry.arguments?.getString(PirateRoute.Community.ARG_COMMUNITY_ID).orEmpty()
-            val viewModel: CommunityViewModel = viewModel()
+            val vm: CommunityViewModel = viewModel()
             CommunityScreen(
-                viewModel = viewModel,
+                viewModel = vm,
                 communityId = communityId,
                 onNavigateToPost = { postId ->
                     navController.navigate(PirateRoute.Post.buildRoute(postId))
@@ -93,9 +95,9 @@ fun PirateNavHost(
         }
 
         composable(
-            PirateRoute.Post.route,
-            arguments = listOf(androidx.navigation.argument(PirateRoute.Post.ARG_POST_ID) {
-                type = androidx.navigation.NavType.StringType
+            route = PirateRoute.Post.route,
+            arguments = listOf(navArgument(PirateRoute.Post.ARG_POST_ID) {
+                type = NavType.StringType
             }),
         ) { backStackEntry ->
             val postId = backStackEntry.arguments?.getString(PirateRoute.Post.ARG_POST_ID).orEmpty()
@@ -106,15 +108,15 @@ fun PirateNavHost(
         }
 
         composable(
-            PirateRoute.ComposePost.route,
-            arguments = listOf(androidx.navigation.argument(PirateRoute.ComposePost.ARG_COMMUNITY_ID) {
-                type = androidx.navigation.NavType.StringType
+            route = PirateRoute.ComposePost.route,
+            arguments = listOf(navArgument(PirateRoute.ComposePost.ARG_COMMUNITY_ID) {
+                type = NavType.StringType
             }),
         ) { backStackEntry ->
             val communityId = backStackEntry.arguments?.getString(PirateRoute.ComposePost.ARG_COMMUNITY_ID).orEmpty()
-            val viewModel: PostComposerViewModel = viewModel()
+            val vm: PostComposerViewModel = viewModel()
             PostComposerScreen(
-                viewModel = viewModel,
+                viewModel = vm,
                 communityId = communityId,
                 onPosted = { navController.popBackStack() },
                 onBack = { navController.popBackStack() },
@@ -126,14 +128,14 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.Me.route) {
-            val viewModel: ProfileViewModel = viewModel()
-            ProfileScreen(viewModel = viewModel)
+            val vm: ProfileViewModel = viewModel()
+            ProfileScreen(viewModel = vm)
         }
 
         composable(
-            PirateRoute.User.route,
-            arguments = listOf(androidx.navigation.argument(PirateRoute.User.ARG_USER_ID) {
-                type = androidx.navigation.NavType.StringType
+            route = PirateRoute.User.route,
+            arguments = listOf(navArgument(PirateRoute.User.ARG_USER_ID) {
+                type = NavType.StringType
             }),
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString(PirateRoute.User.ARG_USER_ID).orEmpty()

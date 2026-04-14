@@ -23,7 +23,7 @@ sealed class AuthUiState {
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val app get() = application as sc.pirate.app.PirateApp
+    private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val apiClient get() = app.apiClient
     private val sessionStore get() = app.sessionStore
     private val privyConfig = PrivyRuntimeConfig.fromBuildConfig()

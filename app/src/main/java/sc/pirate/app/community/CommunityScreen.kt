@@ -57,7 +57,7 @@ data class CommunityUiState(
 )
 
 class CommunityViewModel(application: Application) : AndroidViewModel(application) {
-    private val app get() = application as sc.pirate.app.PirateApp
+    private val app get() = getApplication<sc.pirate.app.PirateApp>()
 
     private val _state = MutableStateFlow(CommunityUiState())
     val state: StateFlow<CommunityUiState> = _state.asStateFlow()

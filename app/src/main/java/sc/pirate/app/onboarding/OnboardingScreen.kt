@@ -57,7 +57,7 @@ data class OnboardingUiState(
 )
 
 class OnboardingViewModel(application: Application) : AndroidViewModel(application) {
-    private val app get() = application as sc.pirate.app.PirateApp
+    private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val sessionStore get() = app.sessionStore
 
     private val _state = MutableStateFlow(OnboardingUiState())

@@ -68,12 +68,12 @@ fun ProfileScreen(
         if (state.loading) {
             CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
         } else if (state.profile != null) {
-            val profile = state.profile
-            val handle = profile!!.globalHandle?.let { "${it.label}.pirate" } ?: ""
+            val profile = state.profile!!
+            val handle = profile.globalHandle?.let { "${it.label}.pirate" } ?: ""
 
             PirateCard {
                 Text(
-                    text = profile!!.displayName ?: handle,
+                    text = profile.displayName ?: handle,
                     style = MaterialTheme.typography.headlineSmall,
                     color = PirateTokens.colors.textPrimary,
                 )
@@ -85,10 +85,10 @@ fun ProfileScreen(
                         color = PirateTokens.colors.textSecondary,
                     )
                 }
-                if (profile!!.bio != null) {
+                if (profile.bio != null) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = profile!!.bio,
+                        text = profile.bio,
                         style = MaterialTheme.typography.bodyLarge,
                         color = PirateTokens.colors.textPrimary,
                     )
