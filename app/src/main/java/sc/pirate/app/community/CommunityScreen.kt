@@ -3,6 +3,7 @@ package sc.pirate.app.community
 import android.app.Application
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -140,7 +141,7 @@ fun CommunityScreen(
             } else if (state.error != null) {
                 FormNote(message = state.error!!, tone = sc.pirate.app.ui.FormTone.Error)
             } else if (state.community != null) {
-                val c = state.community
+                val c = state.community!!
                 PirateCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
                         text = c.displayName,
