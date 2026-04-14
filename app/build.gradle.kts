@@ -29,37 +29,15 @@ android {
     versionName = "0.1.0-alpha.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-  }
 
-  flavorDimensions += "environment"
+    val apiBaseUrl = localProp("API_BASE_URL") ?: "http://127.0.0.1:8787"
+    buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
 
-  productFlavors {
-    create("staging") {
-      dimension = "environment"
-      applicationIdSuffix = ".staging"
-      versionNameSuffix = "-staging"
+    val privyAppId = localProp("PRIVY_APP_ID") ?: "cmnbdx9xk00ty0clapn2q8pdj"
+    buildConfigField("String", "PRIVY_APP_ID", "\"$privyAppId\"")
 
-      val apiBaseUrl = localProp("STAGING_API_BASE_URL") ?: "https://api-staging.pirate.sc"
-      buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
-
-      val privyAppId = localProp("STAGING_PRIVY_APP_ID") ?: ""
-      buildConfigField("String", "PRIVY_APP_ID", "\"$privyAppId\"")
-
-      val privyAppClientId = localProp("STAGING_PRIVY_APP_CLIENT_ID") ?: ""
-      buildConfigField("String", "PRIVY_APP_CLIENT_ID", "\"$privyAppClientId\"")
-    }
-    create("production") {
-      dimension = "environment"
-
-      val apiBaseUrl = localProp("PRODUCTION_API_BASE_URL") ?: "https://api.pirate.sc"
-      buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
-
-      val privyAppId = localProp("PRODUCTION_PRIVY_APP_ID") ?: ""
-      buildConfigField("String", "PRIVY_APP_ID", "\"$privyAppId\"")
-
-      val privyAppClientId = localProp("PRODUCTION_PRIVY_APP_CLIENT_ID") ?: ""
-      buildConfigField("String", "PRIVY_APP_CLIENT_ID", "\"$privyAppClientId\"")
-    }
+    val privyAppClientId = localProp("PRIVY_APP_CLIENT_ID") ?: "client-WY6Xkpp2wLef8Y9cWBrZ1GhnmqAtnVh9YigqHVWLL59iW"
+    buildConfigField("String", "PRIVY_APP_CLIENT_ID", "\"$privyAppClientId\"")
   }
 
   buildTypes {
