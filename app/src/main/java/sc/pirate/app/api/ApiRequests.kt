@@ -86,3 +86,13 @@ data class RenameHandleResponse(
     val tier: String,
     val status: String,
 )
+
+@Serializable
+data class MarkNotificationsReadRequest(
+    @kotlinx.serialization.SerialName("event_ids") val eventIds: List<String> = emptyList(),
+)
+
+@Serializable
+data class DismissNotificationTaskRequest(
+    @kotlinx.serialization.SerialName("task_id") val taskId: String,
+)

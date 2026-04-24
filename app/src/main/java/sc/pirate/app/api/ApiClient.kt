@@ -427,6 +427,41 @@ class ApiClient(private val sessionStore: SessionStore) {
         }
     }
 
+    object Notifications {
+        private lateinit var client: ApiClient
+        private val json get() = client.json
+
+        fun init(c: ApiClient) { client = c }
+
+        suspend fun getTasks(): NotificationTasksResponse {
+            val response = client.getString("/notifications/tasks")
+            return json.decodeFromString(NotificationTasksResponse.serializer(), response)
+        }
+
+        suspend fun getFeed(limit: Int? = null, cursor: String? = null): NotificationFeedResponse {
+            val path = client.buildQueryPath(
+                "/notifications/feed",
+                listOf(
+                    "cursor" to cursor,
+                    "limit" to limit?.toString(),
+                ),
+            )
+            val response = client.getString(path)
+            return json.decodeFromString(NotificationFeedResponse.serializer(), response)
+        }
+
+        suspend fun markRead(eventIds: List<String> = emptyList()) {
+            val body = json.encodeToString(MarkNotificationsReadRequest.serializer(), MarkNotificationsReadRequest(eventIds))
+            client.postString("/notifications/mark-read", body)
+        }
+
+        suspend fun dismissTask(taskId: String): UserTask {
+            val body = json.encodeToString(DismissNotificationTaskRequest.serializer(), DismissNotificationTaskRequest(taskId))
+            val response = client.postString("/notifications/dismiss-task", body)
+            return json.decodeFromString(UserTask.serializer(), response)
+        }
+    }
+
     fun initEndpoints() {
         Auth.init(this)
         Onboarding.init(this)
@@ -436,6 +471,7 @@ class ApiClient(private val sessionStore: SessionStore) {
         Posts.init(this)
         Comments.init(this)
         Profiles.init(this)
+        Notifications.init(this)
     }
 
     init {

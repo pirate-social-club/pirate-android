@@ -149,7 +149,17 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.Inbox.route) {
-            InboxScreen()
+            InboxScreen(
+                onOpenPost = { postId ->
+                    navController.navigate(PirateRoute.Post.buildRoute(postId))
+                },
+                onOpenCommunity = { communityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
+                },
+                onOpenCommunityNamespace = { communityId ->
+                    navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
+                },
+            )
         }
 
         composable(PirateRoute.Me.route) {

@@ -33,7 +33,7 @@ The current Android app is not yet a real native implementation of the Pirate pr
 - Home is a static welcome screen.
 - Community and post screens fetch basic data.
 - Post creation supports only a basic text post flow.
-- Inbox and Your Communities have owned Android stub screens, but not real product implementations.
+- Inbox and Your Communities now have first-pass Android implementations, but still need web-grade interaction depth.
 - Create Community now has its own Android entry screen, but not a real creation flow.
 - Profile state ownership is split correctly, but profile surfaces are still minimal relative to web.
 
@@ -200,7 +200,7 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 
 - home has a first-pass real feed with pagination
 - your communities has a first-pass created communities list from the user's public profile handle
-- inbox is still a stub
+- inbox has first-pass notification tasks, recent activity, dismiss, and feed pagination
 - create community has a first-pass standard centralized creation flow; gated, 18+, media, namespace, and policy-heavy creation remain
 - settings has first-pass profile, handle, and locale editing; agents remain an explicit web-only placeholder
 - moderation is still a stub

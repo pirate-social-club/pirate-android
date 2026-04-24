@@ -15,7 +15,7 @@ Android currently has narrow DTOs for `Community`, `Post`, `LocalizedPostRespons
 - post vote state
 - thread comments, replies, and comment votes
 - richer post types and thread snapshots
-- notification/inbox feed
+- notification/inbox feed - first-pass Android tasks/feed/dismiss/pagination is now wired
 
 Until Kotlin DTO generation exists, each Phase 1 feature should explicitly add the missing contract types and endpoint methods listed below.
 
@@ -189,6 +189,7 @@ The April 2026 Android v0 audit identified several foundation issues. Current st
 - Public profile now has a first-pass handle-backed screen with profile details, canonical handle notice, and created communities.
 - Create community now sends the public v0 `POST /communities` payload for standard centralized open/request communities and navigates to the accepted community.
 - Settings now has first-pass profile editing, handle rename, and preferred-locale updates backed by profile endpoints.
+- Inbox now consumes notification tasks/feed, marks activity read on load, supports task dismiss, opens thread activity, and paginates feed activity.
 - Post composer now checks join eligibility and blocks submission unless the viewer is already joined.
 - Post composer now navigates to the created post using the returned `LocalizedPostResponse`.
 - Post composer now sends contract-aligned `idempotency_key`, identity, translation policy, visibility, and link fields for text/link posts.

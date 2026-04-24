@@ -132,6 +132,58 @@ data class CommunityCreateAcceptedResponse(
 )
 
 @Serializable
+data class UserTask(
+    @SerialName("task_id") val taskId: String,
+    val type: String,
+    @SerialName("subject_type") val subjectType: String,
+    @SerialName("subject_id") val subjectId: String,
+    val status: String,
+    val priority: Int? = null,
+    val payload: JsonObject? = null,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String,
+)
+
+@Serializable
+data class NotificationTasksResponse(
+    val items: List<UserTask> = emptyList(),
+)
+
+@Serializable
+data class NotificationEvent(
+    @SerialName("event_id") val eventId: String,
+    val type: String,
+    @SerialName("actor_user_id") val actorUserId: String? = null,
+    @SerialName("subject_type") val subjectType: String,
+    @SerialName("subject_id") val subjectId: String,
+    @SerialName("object_type") val objectType: String? = null,
+    @SerialName("object_id") val objectId: String? = null,
+    val payload: JsonObject? = null,
+    @SerialName("created_at") val createdAt: String,
+)
+
+@Serializable
+data class NotificationReceipt(
+    @SerialName("event_id") val eventId: String,
+    @SerialName("recipient_user_id") val recipientUserId: String,
+    @SerialName("seen_at") val seenAt: String? = null,
+    @SerialName("read_at") val readAt: String? = null,
+    @SerialName("created_at") val createdAt: String,
+)
+
+@Serializable
+data class NotificationFeedItem(
+    val event: NotificationEvent,
+    val receipt: NotificationReceipt,
+)
+
+@Serializable
+data class NotificationFeedResponse(
+    val items: List<NotificationFeedItem> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
 data class CommunityRule(
     @SerialName("rule_id") val ruleId: String,
     val title: String,

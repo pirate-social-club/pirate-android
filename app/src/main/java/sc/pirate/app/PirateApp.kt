@@ -6,6 +6,7 @@ import sc.pirate.app.api.SessionStore
 import sc.pirate.app.shared.api.ApiAuthRepository
 import sc.pirate.app.shared.api.ApiCommunityRepository
 import sc.pirate.app.shared.api.ApiFeedRepository
+import sc.pirate.app.shared.api.ApiNotificationRepository
 import sc.pirate.app.shared.api.ApiOnboardingRepository
 import sc.pirate.app.shared.api.ApiPostRepository
 import sc.pirate.app.shared.api.ApiProfileRepository
@@ -25,6 +26,7 @@ class PirateApp : Application() {
             postRepository = ApiPostRepository(apiClient),
             profileRepository = ApiProfileRepository(apiClient),
             verificationRepository = ApiVerificationRepository(apiClient),
+            notificationRepository = ApiNotificationRepository(apiClient),
         )
     }
     val verificationCoordinator by lazy { VerificationCoordinator(this) }

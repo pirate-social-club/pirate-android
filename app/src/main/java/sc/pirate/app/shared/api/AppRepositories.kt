@@ -18,6 +18,8 @@ import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LocalizedPostResponse
+import sc.pirate.app.api.model.NotificationFeedResponse
+import sc.pirate.app.api.model.NotificationTasksResponse
 import sc.pirate.app.api.model.OnboardingStatus
 import sc.pirate.app.api.model.PostListResponse
 import sc.pirate.app.api.model.PostVoteResponse
@@ -26,6 +28,7 @@ import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.api.model.RedditImportSummary
 import sc.pirate.app.api.model.RedditVerification
 import sc.pirate.app.api.model.SessionExchangeResponse
+import sc.pirate.app.api.model.UserTask
 import sc.pirate.app.api.model.VerificationSession
 
 interface AuthRepository {
@@ -104,6 +107,13 @@ interface VerificationRepository {
         verificationSessionId: String,
         input: CompleteVerificationSessionRequest = CompleteVerificationSessionRequest(),
     ): VerificationSession
+}
+
+interface NotificationRepository {
+    suspend fun getTasks(): NotificationTasksResponse
+    suspend fun getFeed(limit: Int? = null, cursor: String? = null): NotificationFeedResponse
+    suspend fun markRead(eventIds: List<String> = emptyList())
+    suspend fun dismissTask(taskId: String): UserTask
 }
 
 class ApiAuthRepository(
@@ -295,6 +305,24 @@ class ApiVerificationRepository(
     }
 }
 
+class ApiNotificationRepository(
+    private val apiClient: ApiClient,
+) : NotificationRepository {
+    override suspend fun getTasks(): NotificationTasksResponse = ApiClient.Notifications.getTasks()
+
+    override suspend fun getFeed(limit: Int?, cursor: String?): NotificationFeedResponse {
+        return ApiClient.Notifications.getFeed(limit = limit, cursor = cursor)
+    }
+
+    override suspend fun markRead(eventIds: List<String>) {
+        ApiClient.Notifications.markRead(eventIds)
+    }
+
+    override suspend fun dismissTask(taskId: String): UserTask {
+        return ApiClient.Notifications.dismissTask(taskId)
+    }
+}
+
 data class AppRepositories(
     val authRepository: AuthRepository,
     val onboardingRepository: OnboardingRepository,
@@ -303,4 +331,5 @@ data class AppRepositories(
     val postRepository: PostRepository,
     val profileRepository: ProfileRepository,
     val verificationRepository: VerificationRepository,
+    val notificationRepository: NotificationRepository,
 )
