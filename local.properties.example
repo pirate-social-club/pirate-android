@@ -2,5 +2,6 @@
 #
 # Defaults to https://api.pirate.sc when omitted.
 # API_BASE_URL=http://127.0.0.1:8787
-# PRIVY_APP_ID=your_privy_app_id
-# PRIVY_APP_CLIENT_ID=your_privy_app_client_id
+# Defaults to the production Pirate Privy app when omitted.
+# PRIVY_APP_ID=cmnbdx9xk00ty0clapn2q8pdj
+# PRIVY_APP_CLIENT_ID=client-WY6Xkpp2wLef8Y9cWBrZ1GhnmqAtnVh9YisfZ2dA3c7DW

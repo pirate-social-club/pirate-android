@@ -75,7 +75,7 @@ PRIVY_APP_ID=your_privy_app_id
 PRIVY_APP_CLIENT_ID=your_privy_app_client_id
 ```
 
-Blacksmith/GitHub Actions builds can also receive these values from repository secrets named `PRIVY_APP_ID` and `PRIVY_APP_CLIENT_ID`. Local `local.properties` values take precedence over environment variables.
+When these values are omitted, Android defaults to the production Pirate Privy app used by the legacy Android project. Blacksmith/GitHub Actions builds can override them from repository secrets named `PRIVY_APP_ID` and `PRIVY_APP_CLIENT_ID`. Local `local.properties` values take precedence over environment variables.
 
 Current auth flow:
 
@@ -84,7 +84,7 @@ Current auth flow:
 3. Android receives that callback through the `VIEW` intent filter in [AndroidManifest.xml](/home/t42/Documents/pirate-workspace/android/app/src/main/AndroidManifest.xml:14)
 4. the returned Privy access token is exchanged with Pirate backend `/auth/session/exchange`
 
-If `PRIVY_APP_ID` or `PRIVY_APP_CLIENT_ID` is missing, auth is intentionally disabled for the build. Public feed data should still load because the default API target is production.
+If `PRIVY_APP_ID` or `PRIVY_APP_CLIENT_ID` is explicitly set blank, auth is intentionally disabled for the build. Public feed data should still load because the default API target is production.
 
 ## Smallest Local Check
 

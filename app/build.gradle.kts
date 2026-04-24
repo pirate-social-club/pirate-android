@@ -42,10 +42,10 @@ android {
     val apiBaseUrl = runtimeProp("API_BASE_URL") ?: "https://api.pirate.sc"
     buildConfigField("String", "API_BASE_URL", buildConfigString(apiBaseUrl))
 
-    val privyAppId = runtimeProp("PRIVY_APP_ID") ?: ""
+    val privyAppId = runtimeProp("PRIVY_APP_ID") ?: "cmnbdx9xk00ty0clapn2q8pdj"
     buildConfigField("String", "PRIVY_APP_ID", buildConfigString(privyAppId))
 
-    val privyAppClientId = runtimeProp("PRIVY_APP_CLIENT_ID") ?: ""
+    val privyAppClientId = runtimeProp("PRIVY_APP_CLIENT_ID") ?: "client-WY6Xkpp2wLef8Y9cWBrZ1GhnmqAtnVh9YisfZ2dA3c7DW"
     buildConfigField("String", "PRIVY_APP_CLIENT_ID", buildConfigString(privyAppClientId))
   }
 
