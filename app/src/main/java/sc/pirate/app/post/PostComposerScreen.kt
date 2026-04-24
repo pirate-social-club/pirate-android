@@ -45,6 +45,7 @@ data class PostComposerUiState(
     val submitting: Boolean = false,
     val error: String? = null,
     val submitted: Boolean = false,
+    val createdPostId: String? = null,
 )
 
 class PostComposerViewModel(application: Application) : AndroidViewModel(application) {
@@ -89,7 +90,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             _state.value = current.copy(submitting = true, error = null)
             try {
-                communityRepository.createPost(
+                val createdPost = communityRepository.createPost(
                     communityId,
                     CreatePostRequest(
                         title = current.title.trim(),
@@ -97,7 +98,11 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                         postType = "text",
                     ),
                 )
-                _state.value = _state.value.copy(submitting = false, submitted = true)
+                _state.value = _state.value.copy(
+                    submitting = false,
+                    submitted = true,
+                    createdPostId = createdPost.post.postId,
+                )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     submitting = false,
@@ -113,7 +118,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
 fun PostComposerScreen(
     viewModel: PostComposerViewModel,
     communityId: String,
-    onPosted: () -> Unit,
+    onPosted: (String) -> Unit,
     onOpenCommunity: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -125,8 +130,9 @@ fun PostComposerScreen(
     }
 
     LaunchedEffect(state.submitted) {
-        if (state.submitted) {
-            onPosted()
+        val createdPostId = state.createdPostId
+        if (state.submitted && createdPostId != null) {
+            onPosted(createdPostId)
         }
     }
 

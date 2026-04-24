@@ -134,7 +134,13 @@ fun PirateNavHost(
             PostComposerScreen(
                 viewModel = vm,
                 communityId = communityId,
-                onPosted = { navController.popBackStack() },
+                onPosted = { postId ->
+                    navController.navigate(PirateRoute.Post.buildRoute(postId)) {
+                        popUpTo(PirateRoute.ComposePost.buildRoute(communityId)) {
+                            inclusive = true
+                        }
+                    }
+                },
                 onOpenCommunity = {
                     navController.navigate(PirateRoute.Community.buildRoute(communityId))
                 },
