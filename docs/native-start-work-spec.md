@@ -185,7 +185,7 @@ Tasks:
 - align onboarding phases with web
 - support Self verification from onboarding and community-gated flows
 - support Very pending flow with download/open fallback
-- implement settings sections: `profile`, `preferences`, `agents`
+- deepen settings sections beyond the first-pass profile, handle, and locale editing; agents remain web-only in Android v0
 - deepen public profile by handle beyond the first-pass profile and created communities view
 - add wallet route policy even if wallet-heavy actions remain deferred
 
@@ -193,7 +193,7 @@ Acceptance:
 
 - auth/onboarding outcome matches web account state
 - verification-required transitions are native and recover after process death
-- public profiles have a real first-pass route; settings sections are real routes, not stubs
+- public profiles and settings have real first-pass routes; settings agents remain a documented placeholder
 
 ## Phase 3 Work Slice
 

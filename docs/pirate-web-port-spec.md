@@ -46,7 +46,7 @@ The current Android app is not yet a real native implementation of the Pirate pr
    `HomeScreen` is a static welcome message, and several routes now have owned stub screens instead of parity-complete feature implementations.
 
 3. Android navigation shape does not match the web information architecture.
-   Web owns settings sections, moderation sections, public profile routes, and a global submit route. Android has no equivalent route model for those surfaces.
+   Web owns settings sections, moderation sections, public profile routes, and a global submit route. Android now has route ownership for those surfaces, but several targets are still first-pass implementations.
 
 4. Android data models are too small for web parity.
    Web routes depend on richer API objects for feed entries, comments, join eligibility, verification launch state, moderation sections, listings/purchases, locale-aware rendering, and vote state. Android models currently cover only a narrow subset.
@@ -202,7 +202,7 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 - your communities has a first-pass created communities list from the user's public profile handle
 - inbox is still a stub
 - create community has a first-pass standard centralized creation flow; gated, 18+, media, namespace, and policy-heavy creation remain
-- settings is still not section-backed data
+- settings has first-pass profile, handle, and locale editing; agents remain an explicit web-only placeholder
 - moderation is still a stub
 - global submit has a first-pass community picker backed by created communities plus home top communities
 - public profile has a first-pass handle-backed profile page with created communities
