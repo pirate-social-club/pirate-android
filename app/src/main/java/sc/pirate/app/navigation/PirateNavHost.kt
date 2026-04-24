@@ -135,6 +135,9 @@ fun PirateNavHost(
                 viewModel = vm,
                 communityId = communityId,
                 onPosted = { navController.popBackStack() },
+                onOpenCommunity = {
+                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
+                },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -173,7 +176,12 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.GlobalSubmit.route) {
-            GlobalSubmitScreen(onBack = { navController.popBackStack() })
+            GlobalSubmitScreen(
+                onBack = { navController.popBackStack() },
+                onComposeInCommunity = { communityId ->
+                    navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
+                },
+            )
         }
 
         composable(

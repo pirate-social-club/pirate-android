@@ -204,7 +204,7 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 - create community is still not a real creation flow
 - settings is still not section-backed data
 - moderation is still a stub
-- global submit is still a stub
+- global submit has a first-pass community picker backed by home top communities
 - public profile is still a stub
 - post thread has first-pass top-level comments, replies, creation, voting, and pagination; it still needs web-grade depth/interaction polish
 - community screen covers first-pass join eligibility, gating, Self launch, preview metadata, and paginated posts; verification retry and ownership actions remain
@@ -336,7 +336,7 @@ Android should own an explicit route model that mirrors web route intent, not ju
 ### Mapping Notes
 
 - Web host-based public profiles should map to an explicit Android screen route.
-- Web `/submit` can become a native community picker plus composer flow.
+- Web `/submit` can become a native community picker plus composer flow; Android has a first pass using home top communities.
 - Web settings and moderation tabs should become top-level Android destinations with section arguments, not one oversized screen.
 
 ## UX Rules For Android
@@ -479,7 +479,7 @@ Acceptance:
 - implement your communities
 - upgrade community screen to match web core behavior
 - upgrade post screen into a real thread view; top-level comments, pagination, creation, voting, reply loading, and reply creation have a first pass
-- support native create-post flows from both community and global entry points
+- support native create-post flows from both community and global entry points; first pass exists, deeper policy/flair/media parity remains
 - upgrade profile/me surface
 
 Acceptance:

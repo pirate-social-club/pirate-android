@@ -166,7 +166,7 @@ Do not call `ApiClient.*` directly from new screens or view models.
 4. Upgrade community screen with gated join state and post list parity. First pass added with post pagination, Self launch, and preview metadata; verification retry states remain.
 5. Add comment DTOs and repository methods. Started for top-level comments and replies.
 6. Upgrade post screen into a real thread view. First pass added for post body, paginated top-level comments, top-level composer, top-level comment voting, reply loading, and reply creation.
-7. Upgrade create-post flow only after eligibility and community policy data are available.
+7. Upgrade create-post flow only after eligibility and community policy data are available. First pass blocks posting unless join eligibility is `already_joined`; policy/flair/media fields remain.
 
 ## Audit Follow-Up Status
 
@@ -184,10 +184,13 @@ The April 2026 Android v0 audit identified several foundation issues. Current st
 - Home feed, community posts, and top-level comments now preserve `next_cursor` and expose explicit load-more actions.
 - Comment replies now have first-pass list, pagination, and create support on the post thread screen.
 - Community preview rules, reference links, and membership gate summaries now render as first-pass sidebar-equivalent sections.
+- Global submit now has a first-pass community picker backed by home feed top communities.
+- Post composer now checks join eligibility and blocks submission unless the viewer is already joined.
 
 Still pending:
 
 - deeper post composer policy parity with web community rules/flair/media fields
+- a dedicated joined/recent communities endpoint or local known-community store for global submit
 - focused view-model tests once a careful single-worker compile passes
 
 ## Build Policy
