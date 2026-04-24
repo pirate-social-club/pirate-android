@@ -41,7 +41,7 @@ fun PirateNavHost(
 ) {
     NavHost(
         navController = navController,
-        startDestination = PirateRoute.Auth.route,
+        startDestination = PirateRoute.Home.route,
         modifier = modifier,
     ) {
         composable(PirateRoute.Auth.route) {
