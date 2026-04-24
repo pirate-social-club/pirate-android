@@ -24,6 +24,10 @@ jobs:
   build:
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
+    env:
+      API_BASE_URL: https://api.pirate.sc
+      PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
+      PRIVY_APP_CLIENT_ID: ${{ secrets.PRIVY_APP_CLIENT_ID }}
 
     steps:
       - name: Check out repository

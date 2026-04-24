@@ -17,6 +17,15 @@ val localProps = Properties().apply {
 fun localProp(name: String): String? =
   localProps.getProperty(name)?.trim()?.takeIf { it.isNotBlank() }
 
+fun envProp(name: String): String? =
+  System.getenv(name)?.trim()?.takeIf { it.isNotBlank() }
+
+fun runtimeProp(name: String): String? =
+  localProp(name) ?: envProp(name)
+
+fun buildConfigString(value: String): String =
+  "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
 android {
   namespace = "sc.pirate.app"
   compileSdk = 36
@@ -30,14 +39,14 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-    val apiBaseUrl = localProp("API_BASE_URL") ?: "http://127.0.0.1:8787"
-    buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
+    val apiBaseUrl = runtimeProp("API_BASE_URL") ?: "https://api.pirate.sc"
+    buildConfigField("String", "API_BASE_URL", buildConfigString(apiBaseUrl))
 
-    val privyAppId = localProp("PRIVY_APP_ID") ?: ""
-    buildConfigField("String", "PRIVY_APP_ID", "\"$privyAppId\"")
+    val privyAppId = runtimeProp("PRIVY_APP_ID") ?: ""
+    buildConfigField("String", "PRIVY_APP_ID", buildConfigString(privyAppId))
 
-    val privyAppClientId = localProp("PRIVY_APP_CLIENT_ID") ?: ""
-    buildConfigField("String", "PRIVY_APP_CLIENT_ID", "\"$privyAppClientId\"")
+    val privyAppClientId = runtimeProp("PRIVY_APP_CLIENT_ID") ?: ""
+    buildConfigField("String", "PRIVY_APP_CLIENT_ID", buildConfigString(privyAppClientId))
   }
 
   buildTypes {

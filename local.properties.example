@@ -1,5 +1,6 @@
 # Add build-specific overrides here; this file is gitignored.
 #
+# Defaults to https://api.pirate.sc when omitted.
 # API_BASE_URL=http://127.0.0.1:8787
 # PRIVY_APP_ID=your_privy_app_id
 # PRIVY_APP_CLIENT_ID=your_privy_app_client_id

@@ -54,6 +54,8 @@ PRIVY_APP_ID=...
 PRIVY_APP_CLIENT_ID=...
 ```
 
+When `API_BASE_URL` is omitted, Android defaults to `https://api.pirate.sc` so CI-built APKs can load production public data on a phone. Use `local.properties` only when you intentionally want a local or staging API target.
+
 The repo already includes [local.properties.example](/home/t42/Documents/pirate-workspace/android/local.properties.example).
 
 This machine is configured with:
@@ -73,6 +75,8 @@ PRIVY_APP_ID=your_privy_app_id
 PRIVY_APP_CLIENT_ID=your_privy_app_client_id
 ```
 
+Blacksmith/GitHub Actions builds can also receive these values from repository secrets named `PRIVY_APP_ID` and `PRIVY_APP_CLIENT_ID`. Local `local.properties` values take precedence over environment variables.
+
 Current auth flow:
 
 1. native Privy login starts from [AuthViewModel.kt](/home/t42/Documents/pirate-workspace/android/app/src/main/java/sc/pirate/app/auth/AuthViewModel.kt:41)
@@ -80,7 +84,7 @@ Current auth flow:
 3. Android receives that callback through the `VIEW` intent filter in [AndroidManifest.xml](/home/t42/Documents/pirate-workspace/android/app/src/main/AndroidManifest.xml:14)
 4. the returned Privy access token is exchanged with Pirate backend `/auth/session/exchange`
 
-If `PRIVY_APP_ID` or `PRIVY_APP_CLIENT_ID` is missing, auth is intentionally disabled for the build.
+If `PRIVY_APP_ID` or `PRIVY_APP_CLIENT_ID` is missing, auth is intentionally disabled for the build. Public feed data should still load because the default API target is production.
 
 ## Smallest Local Check
 
