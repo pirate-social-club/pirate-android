@@ -199,13 +199,13 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 #### Core Product Gaps
 
 - home has a first-pass real feed with pagination
-- your communities is still a stub
+- your communities has a first-pass created communities list from the user's public profile handle
 - inbox is still a stub
 - create community is still not a real creation flow
 - settings is still not section-backed data
 - moderation is still a stub
 - global submit has a first-pass community picker backed by created communities plus home top communities
-- public profile is still a stub
+- public profile has a first-pass handle-backed profile page with created communities
 - post thread has first-pass top-level comments, replies, creation, voting, and pagination; it still needs web-grade depth/interaction polish
 - community screen covers first-pass join eligibility, gating, Self launch, preview metadata, and paginated posts; verification retry and ownership actions remain
 

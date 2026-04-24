@@ -186,6 +186,7 @@ The April 2026 Android v0 audit identified several foundation issues. Current st
 - Community preview rules, reference links, and membership gate summaries now render as first-pass sidebar-equivalent sections.
 - Global submit now has a first-pass community picker backed by public-profile created communities plus home feed top communities.
 - Your communities now has a first-pass created communities list from the user's public profile handle.
+- Public profile now has a first-pass handle-backed screen with profile details, canonical handle notice, and created communities.
 - Post composer now checks join eligibility and blocks submission unless the viewer is already joined.
 - Post composer now navigates to the created post using the returned `LocalizedPostResponse`.
 - Post composer now sends contract-aligned `idempotency_key`, identity, translation policy, visibility, and link fields for text/link posts.

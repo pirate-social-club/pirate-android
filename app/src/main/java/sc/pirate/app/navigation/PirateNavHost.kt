@@ -275,6 +275,9 @@ fun PirateNavHost(
             val handleLabel = backStackEntry.arguments?.getString(PirateRoute.PublicProfile.ARG_HANDLE_LABEL).orEmpty()
             PublicProfileScreen(
                 handleLabel = handleLabel,
+                onNavigateToCommunity = {
+                    navController.navigate(PirateRoute.Community.buildRoute(it))
+                },
                 onBack = { navController.popBackStack() },
             )
         }
