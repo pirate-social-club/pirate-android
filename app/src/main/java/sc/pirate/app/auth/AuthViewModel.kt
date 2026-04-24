@@ -9,22 +9,21 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import sc.pirate.app.api.ApiClient
 import sc.pirate.app.api.SessionExchangeProof
-import sc.pirate.app.api.SessionStore
 import sc.pirate.app.api.model.SessionExchangeResponse
 
 sealed class AuthUiState {
     data object Idle : AuthUiState()
     data object Loading : AuthUiState()
     data class Authenticated(val session: SessionExchangeResponse) : AuthUiState()
+    data class Unavailable(val message: String) : AuthUiState()
     data class Error(val message: String) : AuthUiState()
 }
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
-    private val apiClient get() = app.apiClient
+    private val authRepository get() = app.repositories.authRepository
     private val sessionStore get() = app.sessionStore
     private val privyConfig = PrivyRuntimeConfig.fromBuildConfig()
 
@@ -36,6 +35,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             val existing = sessionStore.get()
             if (existing != null) {
                 _state.value = AuthUiState.Authenticated(existing)
+            } else {
+                privyConfig.disabledReason()?.let { reason ->
+                    _state.value = AuthUiState.Unavailable(reason)
+                }
             }
         }
     }
@@ -50,7 +53,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loginWithOAuth(provider: OAuthProvider) {
         if (privyConfig.disabledReason() != null) {
-            _state.value = AuthUiState.Error(privyConfig.disabledReason()!!)
+            _state.value = AuthUiState.Unavailable(privyConfig.disabledReason()!!)
             return
         }
 
@@ -71,7 +74,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loginWithEmail(email: String, code: String) {
         if (privyConfig.disabledReason() != null) {
-            _state.value = AuthUiState.Error(privyConfig.disabledReason()!!)
+            _state.value = AuthUiState.Unavailable(privyConfig.disabledReason()!!)
             return
         }
 
@@ -91,19 +94,24 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun sendEmailCode(email: String) {
-        if (privyConfig.disabledReason() != null) return
+        if (privyConfig.disabledReason() != null) {
+            _state.value = AuthUiState.Unavailable(privyConfig.disabledReason()!!)
+            return
+        }
 
         viewModelScope.launch {
             try {
                 val privy = PrivyClientStore.get(getApplication(), privyConfig)
                 privy.email.sendCode(email.trim()).getOrThrow()
-            } catch (_: Exception) { }
+            } catch (e: Exception) {
+                _state.value = AuthUiState.Error(e.message ?: "Could not send email code")
+            }
         }
     }
 
     private suspend fun exchangePrivyToken(user: PrivyUser) {
         val accessToken = user.getAccessToken().getOrThrow()
-        val session = ApiClient.Auth.sessionExchange(
+        val session = authRepository.exchangeSession(
             SessionExchangeProof(
                 type = "privy_access_token",
                 privyAccessToken = accessToken,
@@ -122,7 +130,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (_: Exception) { }
             sessionStore.clear()
-            _state.value = AuthUiState.Idle
+            _state.value = privyConfig.disabledReason()?.let(AuthUiState::Unavailable) ?: AuthUiState.Idle
         }
     }
 }

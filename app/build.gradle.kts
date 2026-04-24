@@ -33,10 +33,10 @@ android {
     val apiBaseUrl = localProp("API_BASE_URL") ?: "http://127.0.0.1:8787"
     buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
 
-    val privyAppId = localProp("PRIVY_APP_ID") ?: "cmnbdx9xk00ty0clapn2q8pdj"
+    val privyAppId = localProp("PRIVY_APP_ID") ?: ""
     buildConfigField("String", "PRIVY_APP_ID", "\"$privyAppId\"")
 
-    val privyAppClientId = localProp("PRIVY_APP_CLIENT_ID") ?: "client-WY6Xkpp2wLef8Y9cWBrZ1GhnmqAtnVh9YigqHVWLL59iW"
+    val privyAppClientId = localProp("PRIVY_APP_CLIENT_ID") ?: ""
     buildConfigField("String", "PRIVY_APP_CLIENT_ID", "\"$privyAppClientId\"")
   }
 

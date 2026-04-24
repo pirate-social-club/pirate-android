@@ -26,11 +26,8 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
-import sc.pirate.app.api.ApiClient
-import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.api.model.OnboardingStatus
 import sc.pirate.app.api.model.RedditVerification
-import sc.pirate.app.api.model.SessionExchangeResponse
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.PirateButton
@@ -58,7 +55,8 @@ data class OnboardingUiState(
 
 class OnboardingViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
-    private val sessionStore get() = app.sessionStore
+    private val onboardingRepository get() = app.repositories.onboardingRepository
+    private val profileRepository get() = app.repositories.profileRepository
 
     private val _state = MutableStateFlow(OnboardingUiState())
     val state: StateFlow<OnboardingUiState> = _state
@@ -70,7 +68,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
     private fun loadStatus() {
         viewModelScope.launch {
             try {
-                val status = ApiClient.Onboarding.getStatus()
+                val status = onboardingRepository.getStatus()
                 _state.value = _state.value.copy(
                     onboardingStatus = status,
                     phase = resolvePhase(status),
@@ -100,7 +98,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             _state.value = _state.value.copy(actionLoading = true, error = null)
             try {
-                val result = ApiClient.Onboarding.startRedditVerification(username)
+                val result = onboardingRepository.startRedditVerification(username)
                 _state.value = _state.value.copy(
                     redditVerification = result,
                     actionLoading = false,
@@ -122,7 +120,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             _state.value = _state.value.copy(actionLoading = true, error = null)
             try {
-                ApiClient.Onboarding.startRedditImport(username)
+                onboardingRepository.startRedditImport(username)
                 _state.value = _state.value.copy(
                     importJobStatus = "queued",
                     actionLoading = false,
@@ -142,7 +140,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
             while (_state.value.importJobStatus in listOf("queued", "running")) {
                 kotlinx.coroutines.delay(3000)
                 try {
-                    val status = ApiClient.Onboarding.getStatus()
+                    val status = onboardingRepository.getStatus()
                     _state.value = _state.value.copy(onboardingStatus = status)
                     val importStatus = status.redditImportStatus
                     if (importStatus in listOf("succeeded", "failed")) {
@@ -165,7 +163,7 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         viewModelScope.launch {
             _state.value = _state.value.copy(actionLoading = true, error = null)
             try {
-                ApiClient.Profiles.renameHandle(handle.removeSuffix(".pirate"))
+                profileRepository.renameHandle(handle.removeSuffix(".pirate"))
                 _state.value = _state.value.copy(
                     phase = OnboardingPhase.SuggestedCommunities,
                     actionLoading = false,
@@ -179,8 +177,28 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    fun dismissOnboarding(onComplete: () -> Unit) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(actionLoading = true, error = null)
+            try {
+                val status = onboardingRepository.dismiss()
+                _state.value = _state.value.copy(
+                    onboardingStatus = status,
+                    actionLoading = false,
+                )
+                onComplete()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    actionLoading = false,
+                    error = e.message ?: "Could not skip onboarding",
+                )
+            }
+        }
+    }
+
     private fun resolvePhase(status: OnboardingStatus): OnboardingPhase =
         when {
+            status.onboardingDismissedAt != null -> OnboardingPhase.SuggestedCommunities
             status.redditVerificationStatus != "verified" ||
                 status.redditImportStatus != "succeeded" -> OnboardingPhase.ImportKarma
             status.cleanupRenameAvailable -> OnboardingPhase.ChooseName
@@ -228,13 +246,13 @@ fun OnboardingScreen(
                 onUsernameChange = viewModel::updateRedditUsername,
                 onVerify = viewModel::startRedditVerification,
                 onImport = viewModel::startRedditImport,
-                onSkip = onComplete,
+                onSkip = { viewModel.dismissOnboarding(onComplete) },
             )
             OnboardingPhase.ChooseName -> ChooseNameStep(
                 state = state,
                 onHandleChange = viewModel::updateGeneratedHandle,
                 onContinue = viewModel::renameHandle,
-                onSkip = { viewModel.updateGeneratedHandle(""); onComplete() },
+                onSkip = { viewModel.updateGeneratedHandle(""); viewModel.dismissOnboarding(onComplete) },
             )
             OnboardingPhase.SuggestedCommunities -> {
                 Text(

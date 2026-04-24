@@ -18,19 +18,17 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import sc.pirate.app.api.ApiClient
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.FormNote
@@ -45,8 +43,10 @@ data class PostComposerUiState(
 )
 
 class PostComposerViewModel(application: Application) : AndroidViewModel(application) {
+    private val app get() = getApplication<sc.pirate.app.PirateApp>()
+    private val communityRepository get() = app.repositories.communityRepository
     private val _state = MutableStateFlow(PostComposerUiState())
-    val state: StateFlow<PostComposerUiState> = _state
+    val state: StateFlow<PostComposerUiState> = _state.asStateFlow()
 
     fun updateTitle(title: String) {
         _state.value = _state.value.copy(title = title)
@@ -63,7 +63,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             _state.value = current.copy(submitting = true, error = null)
             try {
-                ApiClient.Communities.createPost(
+                communityRepository.createPost(
                     communityId,
                     CreatePostRequest(
                         title = current.title.trim(),
@@ -92,12 +92,11 @@ fun PostComposerScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
-    var title by remember { mutableStateOf("") }
-    var body by remember { mutableStateOf("") }
 
-    if (state.submitted) {
-        onPosted()
-        return
+    LaunchedEffect(state.submitted) {
+        if (state.submitted) {
+            onPosted()
+        }
     }
 
     androidx.compose.material3.Scaffold(
@@ -129,11 +128,8 @@ fun PostComposerScreen(
             modifier = Modifier.padding(innerPadding).padding(16.dp).fillMaxSize(),
         ) {
             OutlinedTextField(
-                value = title,
-                onValueChange = {
-                    title = it
-                    viewModel.updateTitle(it)
-                },
+                value = state.title,
+                onValueChange = viewModel::updateTitle,
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -142,11 +138,8 @@ fun PostComposerScreen(
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedTextField(
-                value = body,
-                onValueChange = {
-                    body = it
-                    viewModel.updateBody(it)
-                },
+                value = state.body,
+                onValueChange = viewModel::updateBody,
                 label = { Text("Body") },
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 maxLines = 12,
@@ -163,7 +156,7 @@ fun PostComposerScreen(
                 text = "Post",
                 onClick = { viewModel.submit(communityId) },
                 loading = state.submitting,
-                enabled = title.isNotBlank(),
+                enabled = state.title.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
             )
         }

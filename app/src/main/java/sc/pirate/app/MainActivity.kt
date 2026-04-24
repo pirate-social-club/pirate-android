@@ -1,37 +1,26 @@
 package sc.pirate.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import sc.pirate.app.navigation.PirateNavHost
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTheme
-import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.BottomNavItem
+import sc.pirate.app.ui.PirateScaffold
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (application as PirateApp).verificationCoordinator.handleIntent(intent)
         enableEdgeToEdge()
         setContent {
             PirateTheme {
@@ -39,20 +28,17 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-}
 
-private data class BottomNavItem(
-    val route: String,
-    val label: String,
-    val icon: ImageVector,
-)
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Keep the latest callback intent available to SDK-driven auth flows.
+        setIntent(intent)
+        (application as PirateApp).verificationCoordinator.handleIntent(intent)
+    }
+}
 
 @Composable
 private fun PirateAppShell() {
-    val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = navBackStackEntry?.destination
-
     val bottomItems = listOf(
         BottomNavItem(PirateRoute.Home.route, "Home", Icons.Filled.Home),
         BottomNavItem(PirateRoute.YourCommunities.route, "Communities", Icons.Filled.People),
@@ -60,50 +46,7 @@ private fun PirateAppShell() {
         BottomNavItem(PirateRoute.Me.route, "Profile", Icons.Filled.Person),
     )
 
-    val showBottomBar = bottomItems.any { item ->
-        currentDestination?.hierarchy?.any { it.route == item.route } == true
-    }
-
-    Scaffold(
-        bottomBar = {
-            if (showBottomBar) {
-                NavigationBar(
-                    containerColor = PirateTokens.colors.bgElevated,
-                ) {
-                    bottomItems.forEach { item ->
-                        val selected = currentDestination?.hierarchy?.any {
-                            it.route == item.route
-                        } == true
-
-                        NavigationBarItem(
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label) },
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(item.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = PirateTokens.colors.accentBrand,
-                                selectedTextColor = PirateTokens.colors.accentBrand,
-                                unselectedIconColor = PirateTokens.colors.textSecondary,
-                                unselectedTextColor = PirateTokens.colors.textSecondary,
-                                indicatorColor = PirateTokens.colors.surfaceAccent,
-                            ),
-                        )
-                    }
-                }
-            }
-        },
-    ) { innerPadding ->
-        PirateNavHost(
-            navController = navController,
-            modifier = Modifier.padding(innerPadding),
-        )
+    PirateScaffold(bottomItems = bottomItems) { navController, modifier ->
+        PirateNavHost(navController = navController, modifier = modifier)
     }
 }

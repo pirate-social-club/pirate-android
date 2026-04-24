@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.PirateCard
 
 @Composable
 fun AuthScreen(
@@ -59,14 +59,27 @@ fun AuthScreen(
             is AuthUiState.Loading -> {
                 CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
             }
+            is AuthUiState.Unavailable -> {
+                PirateCard(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Privy is not configured",
+                        color = PirateTokens.colors.textPrimary,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = state.message,
+                        color = PirateTokens.colors.textSecondary,
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                }
+            }
             is AuthUiState.Error -> {
-                Text(
-                    text = state.message,
-                    color = PirateTokens.colors.accentDanger,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                ErrorMessage(message = state.message)
                 Spacer(modifier = Modifier.height(16.dp))
                 LoginButtons(onLoginGoogle, onLoginTwitter)
+                Spacer(modifier = Modifier.height(24.dp))
+                EmailLoginForm(onSendEmailCode, onLoginEmail)
             }
             is AuthUiState.Authenticated -> {
                 Text(
@@ -93,6 +106,15 @@ fun AuthScreen(
             }
         }
     }
+}
+
+@Composable
+private fun ErrorMessage(message: String) {
+    Text(
+        text = message,
+        color = PirateTokens.colors.accentDanger,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable

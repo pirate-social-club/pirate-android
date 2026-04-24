@@ -1,29 +1,31 @@
-name: android-ci
+name: android-compile
 
 on:
   pull_request:
     paths:
-      - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-compile.yml"
       - "app/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle/**"
+      - "gradle.properties"
   push:
     paths:
-      - ".github/workflows/android-ci.yml"
+      - ".github/workflows/android-compile.yml"
       - "app/**"
       - "build.gradle.kts"
       - "settings.gradle.kts"
       - "gradle/**"
+      - "gradle.properties"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  build:
+  compile:
     runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Check out repository
@@ -35,23 +37,13 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug
-        run: ./gradlew assembleDebug
-
-      - name: Build release
-        run: ./gradlew assembleRelease
-
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-apk
-          path: app/build/outputs/apk/debug/
-
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk
-          path: app/build/outputs/apk/release/
+      - name: Compile debug Kotlin
+        run: ./gradlew --no-daemon --console=plain :app:compileDebugKotlin

@@ -11,16 +11,26 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import sc.pirate.app.auth.AuthScreen
 import sc.pirate.app.auth.AuthViewModel
 import sc.pirate.app.auth.AuthUiState
+import sc.pirate.app.communities.YourCommunitiesScreen
 import sc.pirate.app.community.CommunityScreen
 import sc.pirate.app.community.CommunityViewModel
+import sc.pirate.app.createcommunity.CreateCommunityScreen
 import sc.pirate.app.home.HomeScreen
+import sc.pirate.app.inbox.InboxScreen
+import sc.pirate.app.moderation.CommunityModerationScreen
 import sc.pirate.app.onboarding.OnboardingScreen
 import sc.pirate.app.onboarding.OnboardingViewModel
 import sc.pirate.app.post.PostComposerScreen
 import sc.pirate.app.post.PostComposerViewModel
 import sc.pirate.app.post.PostScreen
-import sc.pirate.app.profile.ProfileScreen
-import sc.pirate.app.profile.ProfileViewModel
+import sc.pirate.app.profile.MeProfileScreen
+import sc.pirate.app.profile.MeProfileViewModel
+import sc.pirate.app.profile.PublicProfileScreen
+import sc.pirate.app.profile.UserProfileScreen
+import sc.pirate.app.profile.UserProfileViewModel
+import sc.pirate.app.settings.SettingsScreen
+import sc.pirate.app.submit.GlobalSubmitScreen
+import sc.pirate.app.verification.SelfVerificationScreen
 import sc.pirate.app.verification.VeryVerificationScreen
 
 @Composable
@@ -70,6 +80,9 @@ fun PirateNavHost(
                 onNavigateToCommunity = { id ->
                     navController.navigate(PirateRoute.Community.buildRoute(id))
                 },
+                onNavigateToPost = { id ->
+                    navController.navigate(PirateRoute.Post.buildRoute(id))
+                },
             )
         }
 
@@ -89,6 +102,9 @@ fun PirateNavHost(
                 },
                 onNavigateToCompose = {
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
+                },
+                onVerifyWithSelf = { intent ->
+                    navController.navigate(PirateRoute.VerifySelf.buildRoute(intent))
                 },
                 onBack = { navController.popBackStack() },
             )
@@ -124,12 +140,12 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.Inbox.route) {
-            sc.pirate.app.ui.EmptyFeedState(message = "Inbox is empty.")
+            InboxScreen()
         }
 
         composable(PirateRoute.Me.route) {
-            val vm: ProfileViewModel = viewModel()
-            ProfileScreen(viewModel = vm)
+            val vm: MeProfileViewModel = viewModel()
+            MeProfileScreen(viewModel = vm)
         }
 
         composable(
@@ -139,17 +155,110 @@ fun PirateNavHost(
             }),
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString(PirateRoute.User.ARG_USER_ID).orEmpty()
-            ProfileScreen(userId = userId)
+            val vm: UserProfileViewModel = viewModel()
+            UserProfileScreen(userId = userId, viewModel = vm)
         }
 
         composable(PirateRoute.CreateCommunity.route) {
-            VeryVerificationScreen(
+            CreateCommunityScreen(
                 onBack = { navController.popBackStack() },
+                onVerifyWithId = {
+                    navController.navigate(PirateRoute.VerifySelf.buildRoute("community_creation"))
+                },
             )
         }
 
         composable(PirateRoute.YourCommunities.route) {
-            sc.pirate.app.ui.EmptyFeedState(message = "Join communities to see them here.")
+            YourCommunitiesScreen()
+        }
+
+        composable(PirateRoute.GlobalSubmit.route) {
+            GlobalSubmitScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(
+            route = PirateRoute.VerifySelf.route,
+            arguments = listOf(navArgument(PirateRoute.VerifySelf.ARG_INTENT) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val intent = backStackEntry.arguments
+                ?.getString(PirateRoute.VerifySelf.ARG_INTENT)
+                ?.takeIf { it in PirateRouteSections.verificationIntents }
+                ?: PirateRoute.VerifySelf.DEFAULT_INTENT
+            SelfVerificationScreen(
+                verificationIntent = intent,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(PirateRoute.VerifyVery.route) {
+            VeryVerificationScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(
+            route = PirateRoute.Settings.route,
+            arguments = listOf(navArgument(PirateRoute.Settings.ARG_SECTION) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val section = backStackEntry.arguments
+                ?.getString(PirateRoute.Settings.ARG_SECTION)
+                ?.takeIf { it in PirateRouteSections.settings }
+                ?: PirateRoute.Settings.DEFAULT_SECTION
+            SettingsScreen(
+                section = section,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.CommunityModerationIndex.route,
+            arguments = listOf(navArgument(PirateRoute.CommunityModerationIndex.ARG_COMMUNITY_ID) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.CommunityModerationIndex.ARG_COMMUNITY_ID).orEmpty()
+            CommunityModerationScreen(
+                communityId = communityId,
+                section = null,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.CommunityModerationSection.route,
+            arguments = listOf(
+                navArgument(PirateRoute.CommunityModerationSection.ARG_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.CommunityModerationSection.ARG_SECTION) {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.CommunityModerationSection.ARG_COMMUNITY_ID).orEmpty()
+            val section = backStackEntry.arguments
+                ?.getString(PirateRoute.CommunityModerationSection.ARG_SECTION)
+                ?.takeIf { it in PirateRouteSections.communityModeration }
+            CommunityModerationScreen(
+                communityId = communityId,
+                section = section,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.PublicProfile.route,
+            arguments = listOf(navArgument(PirateRoute.PublicProfile.ARG_HANDLE_LABEL) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val handleLabel = backStackEntry.arguments?.getString(PirateRoute.PublicProfile.ARG_HANDLE_LABEL).orEmpty()
+            PublicProfileScreen(
+                handleLabel = handleLabel,
+                onBack = { navController.popBackStack() },
+            )
         }
     }
 }

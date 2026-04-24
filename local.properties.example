@@ -1,5 +1,5 @@
 # Add build-specific overrides here; this file is gitignored.
 #
 # API_BASE_URL=http://127.0.0.1:8787
-# PRIVY_APP_ID=cmnbdx9xk00ty0clapn2q8pdj
-# PRIVY_APP_CLIENT_ID=client-WY6Xkpp2wLef8Y9cWBrZ1GhnmqAtnVh9YigqHVWLL59iW
+# PRIVY_APP_ID=your_privy_app_id
+# PRIVY_APP_CLIENT_ID=your_privy_app_client_id

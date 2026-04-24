@@ -8,11 +8,11 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTokens
@@ -25,10 +25,10 @@ data class BottomNavItem(
 
 @Composable
 fun PirateScaffold(
-    navController: NavHostController,
     bottomItems: List<BottomNavItem>,
-    content: @Composable (Modifier) -> Unit,
+    content: @Composable (NavHostController, Modifier) -> Unit,
 ) {
+    val navController = rememberNavController()
     val navBackStackEntry = navController.currentBackStackEntryAsState().value
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -55,7 +55,9 @@ fun PirateScaffold(
                             onClick = {
                                 if (!selected) {
                                     navController.navigate(item.route) {
-                                        popUpTo(PirateRoute.Home.route) { saveState = true }
+                                        popUpTo(navController.graph.findStartDestination().id) {
+                                            saveState = true
+                                        }
                                         launchSingleTop = true
                                         restoreState = true
                                     }
@@ -75,12 +77,13 @@ fun PirateScaffold(
         },
     ) { innerPadding ->
         content(
+            navController,
             Modifier.padding(
                 start = innerPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
                 top = innerPadding.calculateTopPadding(),
                 end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
                 bottom = innerPadding.calculateBottomPadding(),
-            ),
+            )
         )
     }
 }

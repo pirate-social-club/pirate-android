@@ -1,11 +1,15 @@
 package sc.pirate.app.api
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import sc.pirate.app.api.model.*
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 class ApiError(
@@ -35,46 +39,53 @@ class ApiClient(private val sessionStore: SessionStore) {
         body: String? = null,
         requireAuth: Boolean = true,
     ): String {
-        val url = "$baseUrl$path"
-        val requestBuilder = Request.Builder().url(url)
+        val response = withContext(Dispatchers.IO) {
+            val url = "$baseUrl$path"
+            val requestBuilder = Request.Builder().url(url)
 
-        if (requireAuth) {
-            val token = sessionStore.getAccessToken()
-            if (token != null) {
-                requestBuilder.header("Authorization", "Bearer $token")
+            if (requireAuth) {
+                val token = sessionStore.getAccessToken()
+                if (token != null) {
+                    requestBuilder.header("Authorization", "Bearer $token")
+                }
+            }
+
+            requestBuilder.header("Content-Type", "application/json")
+
+            when {
+                method == "GET" -> { /* default */ }
+                body != null -> {
+                    requestBuilder.method(method, body.toRequestBody(JSON_MEDIA_TYPE))
+                }
+                method != "GET" -> {
+                    requestBuilder.method(method, "".toRequestBody(JSON_MEDIA_TYPE))
+                }
+            }
+
+            client.newCall(requestBuilder.build()).execute().use { rawResponse ->
+                ApiResponse(
+                    successful = rawResponse.isSuccessful,
+                    status = rawResponse.code,
+                    body = rawResponse.body?.string().orEmpty(),
+                )
             }
         }
 
-        requestBuilder.header("Content-Type", "application/json")
-
-        when {
-            method == "GET" -> { /* default */ }
-            body != null -> {
-                requestBuilder.method(method, body.toRequestBody(JSON_MEDIA_TYPE))
-            }
-            method != "GET" -> {
-                requestBuilder.method(method, "".toRequestBody(JSON_MEDIA_TYPE))
-            }
-        }
-
-        val response = client.newCall(requestBuilder.build()).execute()
-        val responseBody = response.body?.string().orEmpty()
-
-        if (!response.isSuccessful) {
+        if (!response.successful) {
             val errorResponse = try {
-                json.decodeFromString<ErrorResponse>(responseBody)
+                json.decodeFromString<ErrorResponse>(response.body)
             } catch (_: Exception) {
                 null
             }
             throw ApiError(
                 code = errorResponse?.code ?: "internal_error",
-                message = errorResponse?.message ?: "Request failed with status ${response.code}",
-                status = response.code,
+                message = errorResponse?.message ?: "Request failed with status ${response.status}",
+                status = response.status,
                 retryable = errorResponse?.retryable == true,
             )
         }
 
-        return responseBody
+        return response.body
     }
 
     private suspend fun getString(path: String, requireAuth: Boolean = true): String =
@@ -85,6 +96,20 @@ class ApiClient(private val sessionStore: SessionStore) {
 
     private suspend fun patchString(path: String, body: String): String =
         request(path, "PATCH", body)
+
+    private fun buildQueryPath(path: String, params: List<Pair<String, String?>>): String {
+        val query = params
+            .mapNotNull { (key, value) ->
+                value?.takeIf { it.isNotBlank() }?.let {
+                    "${encodeQueryValue(key)}=${encodeQueryValue(it)}"
+                }
+            }
+            .joinToString("&")
+        return if (query.isBlank()) path else "$path?$query"
+    }
+
+    private fun encodeQueryValue(value: String): String =
+        URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
 
     object Auth {
         private lateinit var client: ApiClient
@@ -107,6 +132,11 @@ class ApiClient(private val sessionStore: SessionStore) {
 
         suspend fun getStatus(): OnboardingStatus {
             val response = client.getString("/onboarding/status")
+            return json.decodeFromString(OnboardingStatus.serializer(), response)
+        }
+
+        suspend fun dismiss(): OnboardingStatus {
+            val response = client.postString("/onboarding/dismiss", "{}")
             return json.decodeFromString(OnboardingStatus.serializer(), response)
         }
 
@@ -134,8 +164,8 @@ class ApiClient(private val sessionStore: SessionStore) {
 
         fun init(c: ApiClient) { client = c }
 
-        suspend fun startSession(provider: String): VerificationSession {
-            val body = json.encodeToString(StartVerificationSessionRequest.serializer(), StartVerificationSessionRequest(provider))
+        suspend fun startSession(input: StartVerificationSessionRequest): VerificationSession {
+            val body = json.encodeToString(StartVerificationSessionRequest.serializer(), input)
             val response = client.postString("/verification-sessions", body)
             return json.decodeFromString(VerificationSession.serializer(), response)
         }
@@ -148,11 +178,13 @@ class ApiClient(private val sessionStore: SessionStore) {
         suspend fun completeSession(
             sessionId: String,
             attestationId: String? = null,
+            proof: String? = null,
             proofHash: String? = null,
+            providerPayloadRef: String? = null,
         ): VerificationSession {
             val body = json.encodeToString(
                 CompleteVerificationSessionRequest.serializer(),
-                CompleteVerificationSessionRequest(attestationId, proofHash),
+                CompleteVerificationSessionRequest(attestationId, proof, proofHash, providerPayloadRef),
             )
             val response = client.postString("/verification-sessions/$sessionId/complete", body)
             return json.decodeFromString(VerificationSession.serializer(), response)
@@ -177,6 +209,32 @@ class ApiClient(private val sessionStore: SessionStore) {
         }
     }
 
+    object Feed {
+        private lateinit var client: ApiClient
+        private val json get() = client.json
+
+        fun init(c: ApiClient) { client = c }
+
+        suspend fun home(
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+            timeRange: String? = null,
+        ): HomeFeedResponse {
+            val path = client.buildQueryPath(
+                "/feed/home",
+                listOf(
+                    "cursor" to cursor,
+                    "locale" to locale,
+                    "sort" to sort,
+                    "time_range" to timeRange,
+                ),
+            )
+            val response = client.getString(path)
+            return json.decodeFromString(HomeFeedResponse.serializer(), response)
+        }
+    }
+
     object Communities {
         private lateinit var client: ApiClient
         private val json get() = client.json
@@ -188,18 +246,44 @@ class ApiClient(private val sessionStore: SessionStore) {
             return json.decodeFromString(Community.serializer(), response)
         }
 
+        suspend fun preview(communityId: String, locale: String? = null): CommunityPreview {
+            val path = client.buildQueryPath(
+                "/communities/$communityId/preview",
+                listOf("locale" to locale),
+            )
+            val response = client.getString(path)
+            return json.decodeFromString(CommunityPreview.serializer(), response)
+        }
+
+        suspend fun getJoinEligibility(communityId: String): JoinEligibility {
+            val response = client.getString("/communities/$communityId/join-eligibility")
+            return json.decodeFromString(JoinEligibility.serializer(), response)
+        }
+
         suspend fun join(communityId: String): CommunityJoinResponse {
             val response = client.postString("/communities/$communityId/join")
             return json.decodeFromString(CommunityJoinResponse.serializer(), response)
         }
 
-        suspend fun listPosts(communityId: String, limit: Int? = null, cursor: String? = null): PostListResponse {
-            val params = buildList {
-                limit?.let { add("limit=$it") }
-                cursor?.let { add("cursor=$it") }
-            }
-            val qs = if (params.isEmpty()) "" else "?${params.joinToString("&")}"
-            val response = client.getString("/communities/$communityId/posts$qs")
+        suspend fun listPosts(
+            communityId: String,
+            limit: Int? = null,
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+            flairId: String? = null,
+        ): PostListResponse {
+            val path = client.buildQueryPath(
+                "/communities/$communityId/posts",
+                listOf(
+                    "cursor" to cursor,
+                    "flair_id" to flairId,
+                    "limit" to limit?.toString(),
+                    "locale" to locale,
+                    "sort" to sort,
+                ),
+            )
+            val response = client.getString(path)
             return json.decodeFromString(PostListResponse.serializer(), response)
         }
 
@@ -207,6 +291,36 @@ class ApiClient(private val sessionStore: SessionStore) {
             val body = json.encodeToString(CreatePostRequest.serializer(), request)
             val response = client.postString("/communities/$communityId/posts", body)
             return json.decodeFromString(LocalizedPostResponse.serializer(), response)
+        }
+
+        suspend fun listComments(
+            communityId: String,
+            postId: String,
+            limit: Int? = null,
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+        ): CommentListResponse {
+            val path = client.buildQueryPath(
+                "/communities/$communityId/posts/$postId/comments",
+                listOf(
+                    "cursor" to cursor,
+                    "limit" to limit?.toString(),
+                    "locale" to locale,
+                    "sort" to sort,
+                ),
+            )
+            val response = client.getString(path)
+            return json.decodeFromString(CommentListResponse.serializer(), response)
+        }
+
+        suspend fun createComment(
+            communityId: String,
+            postId: String,
+            request: CreateCommentRequest,
+        ) {
+            val body = json.encodeToString(CreateCommentRequest.serializer(), request)
+            client.postString("/communities/$communityId/posts/$postId/comments", body)
         }
     }
 
@@ -219,6 +333,50 @@ class ApiClient(private val sessionStore: SessionStore) {
         suspend fun get(postId: String): LocalizedPostResponse {
             val response = client.getString("/posts/$postId")
             return json.decodeFromString(LocalizedPostResponse.serializer(), response)
+        }
+
+        suspend fun vote(postId: String, value: Int): PostVoteResponse {
+            val body = json.encodeToString(PostVoteRequest.serializer(), PostVoteRequest(value))
+            val response = client.postString("/posts/$postId/vote", body)
+            return json.decodeFromString(PostVoteResponse.serializer(), response)
+        }
+    }
+
+    object Comments {
+        private lateinit var client: ApiClient
+        private val json get() = client.json
+
+        fun init(c: ApiClient) { client = c }
+
+        suspend fun listReplies(
+            commentId: String,
+            limit: Int? = null,
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+        ): CommentListResponse {
+            val path = client.buildQueryPath(
+                "/comments/$commentId/replies",
+                listOf(
+                    "cursor" to cursor,
+                    "limit" to limit?.toString(),
+                    "locale" to locale,
+                    "sort" to sort,
+                ),
+            )
+            val response = client.getString(path)
+            return json.decodeFromString(CommentListResponse.serializer(), response)
+        }
+
+        suspend fun createReply(commentId: String, request: CreateCommentRequest) {
+            val body = json.encodeToString(CreateCommentRequest.serializer(), request)
+            client.postString("/comments/$commentId/replies", body)
+        }
+
+        suspend fun vote(commentId: String, value: Int): CommentVoteResponse {
+            val body = json.encodeToString(CommentVoteRequest.serializer(), CommentVoteRequest(value))
+            val response = client.postString("/comments/$commentId/vote", body)
+            return json.decodeFromString(CommentVoteResponse.serializer(), response)
         }
     }
 
@@ -255,8 +413,10 @@ class ApiClient(private val sessionStore: SessionStore) {
         Auth.init(this)
         Onboarding.init(this)
         Verification.init(this)
+        Feed.init(this)
         Communities.init(this)
         Posts.init(this)
+        Comments.init(this)
         Profiles.init(this)
     }
 
@@ -268,6 +428,12 @@ class ApiClient(private val sessionStore: SessionStore) {
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
     }
 }
+
+private data class ApiResponse(
+    val successful: Boolean,
+    val status: Int,
+    val body: String,
+)
 
 @kotlinx.serialization.Serializable
 data class ProfileUpdateInput(
