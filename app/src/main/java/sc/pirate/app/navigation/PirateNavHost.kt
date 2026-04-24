@@ -160,16 +160,28 @@ fun PirateNavHost(
                 onOpenCommunityNamespace = { communityId ->
                     navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
                 },
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
             )
         }
 
         composable(PirateRoute.Wallet.route) {
-            WalletScreen()
+            WalletScreen(
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
+            )
         }
 
         composable(PirateRoute.Me.route) {
             val vm: MeProfileViewModel = viewModel()
-            MeProfileScreen(viewModel = vm)
+            MeProfileScreen(
+                viewModel = vm,
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
+            )
         }
 
         composable(
@@ -204,12 +216,18 @@ fun PirateNavHost(
                 onNavigateToCommunity = { communityId ->
                     navController.navigate(PirateRoute.Community.buildRoute(communityId))
                 },
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
             )
         }
 
         composable(PirateRoute.GlobalSubmit.route) {
             GlobalSubmitScreen(
                 onBack = { navController.popBackStack() },
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
                 onComposeInCommunity = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
                 },

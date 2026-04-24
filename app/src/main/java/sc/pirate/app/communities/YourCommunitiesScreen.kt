@@ -33,6 +33,7 @@ import sc.pirate.app.ui.StatusTone
 
 data class YourCommunitiesUiState(
     val loading: Boolean = true,
+    val requiresAuth: Boolean = false,
     val handleLabel: String? = null,
     val communities: List<PublicProfileCommunitySummary> = emptyList(),
     val error: String? = null,
@@ -49,6 +50,13 @@ class YourCommunitiesViewModel(application: Application) : AndroidViewModel(appl
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             try {
+                if (app.sessionStore.get() == null) {
+                    _state.value = YourCommunitiesUiState(
+                        loading = false,
+                        requiresAuth = true,
+                    )
+                    return@launch
+                }
                 val profile = profileRepository.getMe()
                 val handleLabel = profile.primaryHandleLabel()
                 if (handleLabel == null) {
@@ -78,6 +86,7 @@ class YourCommunitiesViewModel(application: Application) : AndroidViewModel(appl
 @Composable
 fun YourCommunitiesScreen(
     onNavigateToCommunity: (String) -> Unit,
+    onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: YourCommunitiesViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -98,6 +107,29 @@ fun YourCommunitiesScreen(
                     color = PirateTokens.colors.accentBrand,
                     modifier = Modifier.align(Alignment.Center),
                 )
+            }
+
+            state.requiresAuth -> {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    item {
+                        StatusCard(
+                            title = "Sign in to view communities",
+                            description = "Communities you create or join will appear here after sign-in.",
+                            tone = StatusTone.Default,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    item {
+                        PirateButton(
+                            text = "Sign in",
+                            onClick = onSignIn,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
             }
 
             state.error != null -> {

@@ -1,16 +1,46 @@
 package sc.pirate.app.wallet
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import sc.pirate.app.ui.FeatureStubScreen
+import androidx.compose.ui.unit.dp
+import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.StatusCard
+import sc.pirate.app.ui.StatusTone
 
 @Composable
 fun WalletScreen(
+    onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    FeatureStubScreen(
-        title = "Wallet",
-        body = "Wallet is not wired on Android yet. This route exists to match the mobile web shell while the happy path stays focused on communities and posting.",
-        modifier = modifier,
-    )
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = "Wallet",
+            style = MaterialTheme.typography.headlineSmall,
+            color = PirateTokens.colors.textPrimary,
+        )
+        StatusCard(
+            title = "No wallet connected",
+            description = "Sign in to view your connected wallets.",
+            tone = StatusTone.Default,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        PirateButton(
+            text = "Sign in",
+            onClick = onSignIn,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }

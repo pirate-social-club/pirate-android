@@ -20,6 +20,15 @@ class ApiError(
     val retryable: Boolean = false,
 ) : Exception(message)
 
+private fun displayApiErrorMessage(error: ErrorResponse?, status: Int): String {
+    val code = error?.code
+    return when (code) {
+        "auth_error" -> "Sign in to continue."
+        "internal_error" -> "Something went wrong. Please try again."
+        else -> error?.message ?: "Request failed with status $status"
+    }
+}
+
 class ApiClient(private val sessionStore: SessionStore) {
 
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
@@ -80,7 +89,7 @@ class ApiClient(private val sessionStore: SessionStore) {
             }
             throw ApiError(
                 code = errorResponse?.code ?: "internal_error",
-                message = errorResponse?.message ?: "Request failed with status ${response.status}",
+                message = displayApiErrorMessage(errorResponse, response.status),
                 status = response.status,
                 retryable = errorResponse?.retryable == true,
             )

@@ -43,6 +43,7 @@ import sc.pirate.app.ui.StatusTone
 data class GlobalSubmitUiState(
     val loading: Boolean = true,
     val communities: List<SubmitCommunityOption> = emptyList(),
+    val requiresAuth: Boolean = false,
     val error: String? = null,
 )
 
@@ -64,6 +65,13 @@ class GlobalSubmitViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             try {
+                if (app.sessionStore.get() == null) {
+                    _state.value = GlobalSubmitUiState(
+                        loading = false,
+                        requiresAuth = true,
+                    )
+                    return@launch
+                }
                 val createdCommunities = loadCreatedCommunities()
                 val feed = feedRepository.home(sort = "best")
                 _state.value = GlobalSubmitUiState(
@@ -107,6 +115,7 @@ private fun HomeFeedCommunitySummary.toSubmitOption(): SubmitCommunityOption =
 @Composable
 fun GlobalSubmitScreen(
     onBack: () -> Unit,
+    onSignIn: () -> Unit,
     onComposeInCommunity: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -153,6 +162,25 @@ fun GlobalSubmitScreen(
                         color = PirateTokens.colors.accentBrand,
                         modifier = Modifier.align(Alignment.Center),
                     )
+                }
+
+                state.requiresAuth -> {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        StatusCard(
+                            title = "Sign in to post",
+                            description = "Create a session before choosing a community.",
+                            tone = StatusTone.Default,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        PirateButton(
+                            text = "Sign in",
+                            onClick = onSignIn,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 state.error != null -> {

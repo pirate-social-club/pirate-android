@@ -42,6 +42,7 @@ import sc.pirate.app.ui.StatusTone
 data class InboxUiState(
     val loading: Boolean = true,
     val loadingMore: Boolean = false,
+    val requiresAuth: Boolean = false,
     val tasks: List<UserTask> = emptyList(),
     val activity: List<NotificationFeedItem> = emptyList(),
     val nextCursor: String? = null,
@@ -59,6 +60,13 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state.value = InboxUiState(loading = true)
             try {
+                if (app.sessionStore.get() == null) {
+                    _state.value = InboxUiState(
+                        loading = false,
+                        requiresAuth = true,
+                    )
+                    return@launch
+                }
                 try {
                     notificationRepository.markRead()
                 } catch (_: Exception) {
@@ -128,6 +136,7 @@ fun InboxScreen(
     onOpenPost: (String) -> Unit,
     onOpenCommunity: (String) -> Unit,
     onOpenCommunityNamespace: (String) -> Unit,
+    onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: InboxViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -148,6 +157,27 @@ fun InboxScreen(
                     color = PirateTokens.colors.accentBrand,
                     modifier = Modifier.align(Alignment.Center),
                 )
+            }
+
+            state.requiresAuth -> {
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Text(
+                        text = "Inbox",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = PirateTokens.colors.textPrimary,
+                    )
+                    StatusCard(
+                        title = "Sign in to view inbox",
+                        description = "Notifications and moderation tasks appear after you sign in.",
+                        tone = StatusTone.Default,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    PirateButton(
+                        text = "Sign in",
+                        onClick = onSignIn,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
 
             state.error != null && state.tasks.isEmpty() && state.activity.isEmpty() -> {

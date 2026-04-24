@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
@@ -23,11 +24,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
+import sc.pirate.app.ui.StatusCard
+import sc.pirate.app.ui.StatusTone
 
 data class ProfileUiState(
     val profile: Profile? = null,
     val loading: Boolean = true,
+    val requiresAuth: Boolean = false,
     val error: String? = null,
 )
 
@@ -45,6 +50,13 @@ class MeProfileViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _state.value = ProfileUiState(loading = true)
             try {
+                if (app.sessionStore.get() == null) {
+                    _state.value = ProfileUiState(
+                        loading = false,
+                        requiresAuth = true,
+                    )
+                    return@launch
+                }
                 val profile = profileRepository.getMe()
                 _state.value = ProfileUiState(profile = profile, loading = false)
             } catch (e: Exception) {
@@ -90,10 +102,11 @@ class UserProfileViewModel(application: Application) : AndroidViewModel(applicat
 @Composable
 fun MeProfileScreen(
     viewModel: MeProfileViewModel,
+    onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
-    ProfileContent(state = state, modifier = modifier)
+    ProfileContent(state = state, onSignIn = onSignIn, modifier = modifier)
 }
 
 @Composable
@@ -107,12 +120,13 @@ fun UserProfileScreen(
     }
 
     val state by viewModel.state.collectAsState()
-    ProfileContent(state = state, modifier = modifier)
+    ProfileContent(state = state, onSignIn = null, modifier = modifier)
 }
 
 @Composable
 private fun ProfileContent(
     state: ProfileUiState,
+    onSignIn: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -122,6 +136,19 @@ private fun ProfileContent(
     ) {
         if (state.loading) {
             CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
+        } else if (state.requiresAuth && onSignIn != null) {
+            StatusCard(
+                title = "Sign in to view profile",
+                description = "Your profile, handle, and connected wallets appear after sign-in.",
+                tone = StatusTone.Default,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            PirateButton(
+                text = "Sign in",
+                onClick = onSignIn,
+                modifier = Modifier.fillMaxWidth(),
+            )
         } else if (state.profile != null) {
             val profile = state.profile
             val handle = profile.globalHandle?.let { "${it.label}.pirate" }.orEmpty()

@@ -5,10 +5,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
@@ -45,13 +48,12 @@ fun PirateScaffold(
     val showBottomBar = currentRoute in listOf(
         PirateRoute.Home.route,
         PirateRoute.Wallet.route,
-        PirateRoute.GlobalSubmit.route,
-        PirateRoute.ComposePost.route,
         PirateRoute.Inbox.route,
         PirateRoute.Me.route,
     )
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0),
         bottomBar = {
             if (showBottomBar) {
                 Surface(
@@ -63,6 +65,7 @@ fun PirateScaffold(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(64.dp)
+                            .navigationBarsPadding()
                             .padding(horizontal = 8.dp),
                         horizontalArrangement = Arrangement.SpaceAround,
                     ) {
@@ -96,7 +99,7 @@ fun PirateScaffold(
                 top = innerPadding.calculateTopPadding(),
                 end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
                 bottom = innerPadding.calculateBottomPadding(),
-            )
+            ).statusBarsPadding()
         )
     }
 }
