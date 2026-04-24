@@ -57,6 +57,7 @@ sealed class PirateRoute(val route: String) {
         fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/compose"
     }
     data object Inbox : PirateRoute("inbox")
+    data object Wallet : PirateRoute("wallet")
     data object Me : PirateRoute("me")
     data object Settings : PirateRoute("settings/{section}") {
         const val ARG_SECTION = "section"

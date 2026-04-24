@@ -32,6 +32,7 @@ import sc.pirate.app.settings.SettingsScreen
 import sc.pirate.app.submit.GlobalSubmitScreen
 import sc.pirate.app.verification.SelfVerificationScreen
 import sc.pirate.app.verification.VeryVerificationScreen
+import sc.pirate.app.wallet.WalletScreen
 
 @Composable
 fun PirateNavHost(
@@ -160,6 +161,10 @@ fun PirateNavHost(
                     navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
                 },
             )
+        }
+
+        composable(PirateRoute.Wallet.route) {
+            WalletScreen()
         }
 
         composable(PirateRoute.Me.route) {

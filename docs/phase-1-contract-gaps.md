@@ -191,6 +191,7 @@ The April 2026 Android v0 audit identified several foundation issues. Current st
 - Settings now has first-pass profile editing, handle rename, and preferred-locale updates backed by profile endpoints.
 - Inbox now consumes notification tasks/feed, marks activity read on load, supports task dismiss, opens thread activity, and paginates feed activity.
 - Namespace verification now has a first-pass Android happy path: create community opens namespace verification, starts/saves pending sessions, checks completion, attaches verified namespaces, and returns to the community.
+- The mobile shell footer now mirrors mobile web with Home, Wallet, Create, Inbox, and Profile; Wallet is still an owned placeholder.
 - Post composer now checks join eligibility and blocks submission unless the viewer is already joined.
 - Post composer now navigates to the created post using the returned `LocalizedPostResponse`.
 - Post composer now sends contract-aligned `idempotency_key`, identity, translation policy, visibility, and link fields for text/link posts.

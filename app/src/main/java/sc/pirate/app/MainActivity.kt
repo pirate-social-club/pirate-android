@@ -6,9 +6,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
 import sc.pirate.app.navigation.PirateNavHost
@@ -41,8 +42,14 @@ class MainActivity : ComponentActivity() {
 private fun PirateAppShell() {
     val bottomItems = listOf(
         BottomNavItem(PirateRoute.Home.route, "Home", Icons.Filled.Home),
-        BottomNavItem(PirateRoute.YourCommunities.route, "Communities", Icons.Filled.People),
-        BottomNavItem(PirateRoute.Inbox.route, "Inbox", Icons.Filled.Email),
+        BottomNavItem(PirateRoute.Wallet.route, "Wallet", Icons.Filled.AccountBalanceWallet),
+        BottomNavItem(
+            route = PirateRoute.GlobalSubmit.route,
+            label = "Create",
+            icon = Icons.Filled.Add,
+            activeRoutes = setOf(PirateRoute.GlobalSubmit.route, PirateRoute.ComposePost.route),
+        ),
+        BottomNavItem(PirateRoute.Inbox.route, "Inbox", Icons.Filled.Notifications),
         BottomNavItem(PirateRoute.Me.route, "Profile", Icons.Filled.Person),
     )
 

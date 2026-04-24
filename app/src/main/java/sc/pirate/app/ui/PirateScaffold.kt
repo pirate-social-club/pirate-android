@@ -1,15 +1,24 @@
 package sc.pirate.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.rememberNavController
@@ -21,6 +30,7 @@ data class BottomNavItem(
     val route: String,
     val label: String,
     val icon: ImageVector,
+    val activeRoutes: Set<String> = setOf(route),
 )
 
 @Composable
@@ -34,7 +44,9 @@ fun PirateScaffold(
 
     val showBottomBar = currentRoute in listOf(
         PirateRoute.Home.route,
-        PirateRoute.YourCommunities.route,
+        PirateRoute.Wallet.route,
+        PirateRoute.GlobalSubmit.route,
+        PirateRoute.ComposePost.route,
         PirateRoute.Inbox.route,
         PirateRoute.Me.route,
     )
@@ -42,35 +54,36 @@ fun PirateScaffold(
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar(
-                    containerColor = PirateTokens.colors.bgElevated,
-                    contentColor = PirateTokens.colors.textPrimary,
+                Surface(
+                    color = PirateTokens.colors.bgPage.copy(alpha = 0.95f),
+                    tonalElevation = 0.dp,
+                    shadowElevation = 0.dp,
                 ) {
-                    bottomItems.forEach { item ->
-                        val selected = currentRoute == item.route
-                        NavigationBarItem(
-                            icon = { Icon(item.icon, contentDescription = item.label) },
-                            label = { Text(item.label) },
-                            selected = selected,
-                            onClick = {
-                                if (!selected) {
-                                    navController.navigate(item.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(64.dp)
+                            .padding(horizontal = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                    ) {
+                        bottomItems.forEach { item ->
+                            val selected = currentRoute in item.activeRoutes
+                            BottomNavIcon(
+                                item = item,
+                                selected = selected,
+                                onClick = {
+                                    if (!selected) {
+                                        navController.navigate(item.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) {
+                                                saveState = true
+                                            }
+                                            launchSingleTop = true
+                                            restoreState = true
                                         }
-                                        launchSingleTop = true
-                                        restoreState = true
                                     }
-                                }
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = PirateTokens.colors.accentBrand,
-                                selectedTextColor = PirateTokens.colors.accentBrand,
-                                indicatorColor = PirateTokens.colors.surfaceAccent,
-                                unselectedIconColor = PirateTokens.colors.textSecondary,
-                                unselectedTextColor = PirateTokens.colors.textSecondary,
-                            ),
-                        )
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -84,6 +97,44 @@ fun PirateScaffold(
                 end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
                 bottom = innerPadding.calculateBottomPadding(),
             )
+        )
+    }
+}
+
+@Composable
+private fun BottomNavIcon(
+    item: BottomNavItem,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val iconColor = if (selected) {
+        PirateTokens.colors.textPrimary
+    } else {
+        PirateTokens.colors.textSecondary
+    }
+    val backgroundColor = if (selected) {
+        PirateTokens.colors.surfaceAccent
+    } else {
+        androidx.compose.ui.graphics.Color.Transparent
+    }
+
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .background(backgroundColor)
+            .clickable(
+                role = Role.Button,
+                onClickLabel = item.label,
+                onClick = onClick,
+            ),
+        contentAlignment = androidx.compose.ui.Alignment.Center,
+    ) {
+        Icon(
+            imageVector = item.icon,
+            contentDescription = item.label,
+            tint = iconColor,
+            modifier = Modifier.size(26.dp),
         )
     }
 }
