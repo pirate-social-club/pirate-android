@@ -49,6 +49,16 @@ data class CompleteNamespaceVerificationSessionRequest(
 )
 
 @Serializable
+data class AttachNamespaceRequest(
+    @kotlinx.serialization.SerialName("namespace_verification_id") val namespaceVerificationId: String,
+)
+
+@Serializable
+data class SetPendingNamespaceSessionRequest(
+    @kotlinx.serialization.SerialName("namespace_verification_session_id") val namespaceVerificationSessionId: String? = null,
+)
+
+@Serializable
 data class PostVoteRequest(
     val value: Int,
 )

@@ -99,6 +99,8 @@ data class Community(
     @SerialName("community_id") val communityId: String,
     @SerialName("display_name") val displayName: String,
     @SerialName("route_slug") val routeSlug: String? = null,
+    @SerialName("namespace_verification_id") val namespaceVerificationId: String? = null,
+    @SerialName("pending_namespace_verification_session_id") val pendingNamespaceVerificationSessionId: String? = null,
     val description: String? = null,
     @SerialName("membership_mode") val membershipMode: String,
     @SerialName("member_count") val memberCount: Int? = null,
@@ -483,10 +485,17 @@ data class VerificationSession(
 @Serializable
 data class NamespaceVerificationSession(
     @SerialName("namespace_verification_session_id") val namespaceVerificationSessionId: String,
+    @SerialName("namespace_verification_id") val namespaceVerificationId: String? = null,
+    val family: String? = null,
+    @SerialName("submitted_root_label") val submittedRootLabel: String? = null,
+    @SerialName("normalized_root_label") val normalizedRootLabel: String? = null,
     val status: String,
+    @SerialName("challenge_kind") val challengeKind: String? = null,
     @SerialName("challenge_host") val challengeHost: String? = null,
     @SerialName("challenge_txt_value") val challengeTxtValue: String? = null,
+    @SerialName("challenge_payload") val challengePayload: JsonObject? = null,
     @SerialName("challenge_expires_at") val challengeExpiresAt: String? = null,
+    @SerialName("failure_reason") val failureReason: String? = null,
 )
 
 @Serializable

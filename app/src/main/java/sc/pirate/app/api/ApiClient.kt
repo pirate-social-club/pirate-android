@@ -211,6 +211,11 @@ class ApiClient(private val sessionStore: SessionStore) {
             val response = client.postString("/namespace-verification-sessions/$sessionId/complete", body)
             return json.decodeFromString(NamespaceVerificationSession.serializer(), response)
         }
+
+        suspend fun getNamespaceSession(sessionId: String): NamespaceVerificationSession {
+            val response = client.getString("/namespace-verification-sessions/$sessionId")
+            return json.decodeFromString(NamespaceVerificationSession.serializer(), response)
+        }
     }
 
     object Feed {
@@ -273,6 +278,24 @@ class ApiClient(private val sessionStore: SessionStore) {
         suspend fun join(communityId: String): CommunityJoinResponse {
             val response = client.postString("/communities/$communityId/join")
             return json.decodeFromString(CommunityJoinResponse.serializer(), response)
+        }
+
+        suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
+            val body = json.encodeToString(
+                AttachNamespaceRequest.serializer(),
+                AttachNamespaceRequest(namespaceVerificationId),
+            )
+            val response = client.postString("/communities/$communityId/namespace", body)
+            return json.decodeFromString(Community.serializer(), response)
+        }
+
+        suspend fun setPendingNamespaceSession(communityId: String, sessionId: String?): Community {
+            val body = json.encodeToString(
+                SetPendingNamespaceSessionRequest.serializer(),
+                SetPendingNamespaceSessionRequest(sessionId),
+            )
+            val response = client.request("/communities/$communityId/pending-namespace-session", "PUT", body)
+            return json.decodeFromString(Community.serializer(), response)
         }
 
         suspend fun listPosts(

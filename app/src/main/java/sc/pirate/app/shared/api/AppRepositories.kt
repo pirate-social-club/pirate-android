@@ -55,6 +55,8 @@ interface FeedRepository {
 interface CommunityRepository {
     suspend fun createCommunity(request: CreateCommunityRequest): CommunityCreateAcceptedResponse
     suspend fun getCommunity(communityId: String): Community
+    suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community
+    suspend fun setPendingNamespaceSession(communityId: String, sessionId: String?): Community
     suspend fun getPreview(communityId: String, locale: String? = null): CommunityPreview
     suspend fun getJoinEligibility(communityId: String): JoinEligibility
     suspend fun joinCommunity(communityId: String): CommunityJoinResponse
@@ -107,6 +109,12 @@ interface VerificationRepository {
         verificationSessionId: String,
         input: CompleteVerificationSessionRequest = CompleteVerificationSessionRequest(),
     ): VerificationSession
+    suspend fun startNamespaceSession(family: String, rootLabel: String): sc.pirate.app.api.model.NamespaceVerificationSession
+    suspend fun getNamespaceSession(sessionId: String): sc.pirate.app.api.model.NamespaceVerificationSession
+    suspend fun completeNamespaceSession(
+        sessionId: String,
+        restartChallenge: Boolean? = null,
+    ): sc.pirate.app.api.model.NamespaceVerificationSession
 }
 
 interface NotificationRepository {
@@ -171,6 +179,14 @@ class ApiCommunityRepository(
 
     override suspend fun getCommunity(communityId: String): Community {
         return ApiClient.Communities.get(communityId)
+    }
+
+    override suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
+        return ApiClient.Communities.attachNamespace(communityId, namespaceVerificationId)
+    }
+
+    override suspend fun setPendingNamespaceSession(communityId: String, sessionId: String?): Community {
+        return ApiClient.Communities.setPendingNamespaceSession(communityId, sessionId)
     }
 
     override suspend fun getPreview(communityId: String, locale: String?): CommunityPreview {
@@ -302,6 +318,24 @@ class ApiVerificationRepository(
             proofHash = input.proofHash,
             providerPayloadRef = input.providerPayloadRef,
         )
+    }
+
+    override suspend fun startNamespaceSession(
+        family: String,
+        rootLabel: String,
+    ): sc.pirate.app.api.model.NamespaceVerificationSession {
+        return ApiClient.Verification.startNamespaceSession(family, rootLabel)
+    }
+
+    override suspend fun getNamespaceSession(sessionId: String): sc.pirate.app.api.model.NamespaceVerificationSession {
+        return ApiClient.Verification.getNamespaceSession(sessionId)
+    }
+
+    override suspend fun completeNamespaceSession(
+        sessionId: String,
+        restartChallenge: Boolean?,
+    ): sc.pirate.app.api.model.NamespaceVerificationSession {
+        return ApiClient.Verification.completeNamespaceSession(sessionId, restartChallenge)
     }
 }
 

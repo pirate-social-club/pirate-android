@@ -203,11 +203,11 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 - inbox has first-pass notification tasks, recent activity, dismiss, and feed pagination
 - create community has a first-pass standard centralized creation flow; gated, 18+, media, namespace, and policy-heavy creation remain
 - settings has first-pass profile, handle, and locale editing; agents remain an explicit web-only placeholder
-- moderation is still a stub
+- moderation is still mostly a stub, but namespace verification has a first-pass happy-path implementation
 - global submit has a first-pass community picker backed by created communities plus home top communities
 - public profile has a first-pass handle-backed profile page with created communities
 - post thread has first-pass top-level comments, replies, creation, voting, and pagination; it still needs web-grade depth/interaction polish
-- community screen covers first-pass join eligibility, gating, Self launch, preview metadata, and paginated posts; verification retry and ownership actions remain
+- community screen covers first-pass join eligibility, gating, Self launch, preview metadata, and paginated posts; namespace verification is reachable after creation and from inbox tasks
 
 #### Verification Gaps
 

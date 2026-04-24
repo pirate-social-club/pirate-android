@@ -185,7 +185,7 @@ fun PirateNavHost(
                     navController.navigate(PirateRoute.VerifySelf.buildRoute("community_creation"))
                 },
                 onCreated = { communityId ->
-                    navController.navigate(PirateRoute.Community.buildRoute(communityId)) {
+                    navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace")) {
                         popUpTo(PirateRoute.CreateCommunity.route) {
                             inclusive = true
                         }
@@ -258,6 +258,9 @@ fun PirateNavHost(
                 communityId = communityId,
                 section = null,
                 onBack = { navController.popBackStack() },
+                onOpenCommunity = {
+                    navController.navigate(PirateRoute.Community.buildRoute(it))
+                },
             )
         }
 
@@ -280,6 +283,9 @@ fun PirateNavHost(
                 communityId = communityId,
                 section = section,
                 onBack = { navController.popBackStack() },
+                onOpenCommunity = {
+                    navController.navigate(PirateRoute.Community.buildRoute(it))
+                },
             )
         }
 
