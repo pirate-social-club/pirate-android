@@ -8,10 +8,12 @@ import sc.pirate.app.api.RenameHandleResponse
 import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.api.StartVerificationSessionRequest
 import sc.pirate.app.api.model.Community
+import sc.pirate.app.api.model.CommunityCreateAcceptedResponse
 import sc.pirate.app.api.model.CommunityJoinResponse
 import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CommentListResponse
 import sc.pirate.app.api.model.CommentVoteResponse
+import sc.pirate.app.api.model.CreateCommunityRequest
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.JoinEligibility
@@ -48,6 +50,7 @@ interface FeedRepository {
 }
 
 interface CommunityRepository {
+    suspend fun createCommunity(request: CreateCommunityRequest): CommunityCreateAcceptedResponse
     suspend fun getCommunity(communityId: String): Community
     suspend fun getPreview(communityId: String, locale: String? = null): CommunityPreview
     suspend fun getJoinEligibility(communityId: String): JoinEligibility
@@ -152,6 +155,10 @@ class ApiFeedRepository(
 class ApiCommunityRepository(
     private val apiClient: ApiClient,
 ) : CommunityRepository {
+    override suspend fun createCommunity(request: CreateCommunityRequest): CommunityCreateAcceptedResponse {
+        return ApiClient.Communities.create(request)
+    }
+
     override suspend fun getCommunity(communityId: String): Community {
         return ApiClient.Communities.get(communityId)
     }

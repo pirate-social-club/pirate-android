@@ -81,7 +81,7 @@ The following groundwork is already in the Android repo and should be reviewed a
 
 - `PirateRoute` now declares routes for global submit, settings sections, moderation index and sections, public profile, and verification providers.
 - `PirateNavHost` now routes unfinished surfaces to owned feature screens instead of unrelated inline placeholders.
-- `CreateCommunity` no longer routes directly to the Very screen.
+- `CreateCommunity` now has a first-pass standard centralized creation flow instead of routing directly to verification.
 - `MainActivity` no longer owns the bottom-nav shell directly; shell ownership is centered in `PirateScaffold`.
 - `MainActivity` now forwards `pirate://` callback intents into app verification state.
 
@@ -201,7 +201,7 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 - home has a first-pass real feed with pagination
 - your communities has a first-pass created communities list from the user's public profile handle
 - inbox is still a stub
-- create community is still not a real creation flow
+- create community has a first-pass standard centralized creation flow; gated, 18+, media, namespace, and policy-heavy creation remain
 - settings is still not section-backed data
 - moderation is still a stub
 - global submit has a first-pass community picker backed by created communities plus home top communities

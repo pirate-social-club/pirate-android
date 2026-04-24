@@ -174,6 +174,13 @@ fun PirateNavHost(
                 onVerifyWithId = {
                     navController.navigate(PirateRoute.VerifySelf.buildRoute("community_creation"))
                 },
+                onCreated = { communityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(communityId)) {
+                        popUpTo(PirateRoute.CreateCommunity.route) {
+                            inclusive = true
+                        }
+                    }
+                },
             )
         }
 

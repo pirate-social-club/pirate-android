@@ -167,11 +167,12 @@ Tasks:
 - upgrade post screen into a thread view; top-level comments, pagination, comment creation, comment voting, reply loading, and reply creation have a first pass
 - support community-scoped create post
 - make global submit pick a community before composing - first pass uses created communities plus feed top communities
+- create standard centralized open/request communities from the native app
 - keep profile/me backed by real profile edit state
 
 Acceptance:
 
-- signed-in user can browse feed, open a community, open a post, read comments, create a text post, and return through native navigation
+- signed-in user can browse feed, open a community, open a post, read comments, create a text post, create a basic community, and return through native navigation
 - backend state transitions match web for the same account
 - every shipped screen has loading, empty, error, and retry states
 

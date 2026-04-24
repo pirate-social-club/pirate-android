@@ -109,6 +109,29 @@ data class Community(
 )
 
 @Serializable
+data class HandlePolicyInput(
+    @SerialName("policy_template") val policyTemplate: String = "standard",
+)
+
+@Serializable
+data class CreateCommunityRequest(
+    @SerialName("display_name") val displayName: String,
+    val description: String? = null,
+    @SerialName("database_region") val databaseRegion: String? = "auto",
+    @SerialName("membership_mode") val membershipMode: String,
+    @SerialName("governance_mode") val governanceMode: String = "centralized",
+    @SerialName("default_age_gate_policy") val defaultAgeGatePolicy: String = "none",
+    @SerialName("allow_anonymous_identity") val allowAnonymousIdentity: Boolean = false,
+    @SerialName("handle_policy") val handlePolicy: HandlePolicyInput = HandlePolicyInput(),
+)
+
+@Serializable
+data class CommunityCreateAcceptedResponse(
+    val community: Community,
+    val job: Job,
+)
+
+@Serializable
 data class CommunityRule(
     @SerialName("rule_id") val ruleId: String,
     val title: String,

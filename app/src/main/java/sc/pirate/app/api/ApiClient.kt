@@ -245,6 +245,12 @@ class ApiClient(private val sessionStore: SessionStore) {
 
         fun init(c: ApiClient) { client = c }
 
+        suspend fun create(request: CreateCommunityRequest): CommunityCreateAcceptedResponse {
+            val body = json.encodeToString(CreateCommunityRequest.serializer(), request)
+            val response = client.postString("/communities", body)
+            return json.decodeFromString(CommunityCreateAcceptedResponse.serializer(), response)
+        }
+
         suspend fun get(communityId: String): Community {
             val response = client.getString("/communities/$communityId")
             return json.decodeFromString(Community.serializer(), response)
