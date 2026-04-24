@@ -1,7 +1,9 @@
 package sc.pirate.app.post
 
 import android.app.Application
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -36,10 +38,13 @@ import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import java.util.UUID
 
 data class PostComposerUiState(
+    val postType: String = "text",
     val title: String = "",
     val body: String = "",
+    val linkUrl: String = "",
     val eligibility: JoinEligibility? = null,
     val loadingEligibility: Boolean = true,
     val submitting: Boolean = false,
@@ -79,9 +84,25 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         _state.value = _state.value.copy(body = body)
     }
 
+    fun updateLinkUrl(linkUrl: String) {
+        _state.value = _state.value.copy(linkUrl = linkUrl)
+    }
+
+    fun selectPostType(postType: String) {
+        _state.value = _state.value.copy(
+            postType = postType,
+            error = null,
+        )
+    }
+
     fun submit(communityId: String) {
         val current = _state.value
-        if (current.title.isBlank() || current.submitting) return
+        if (current.submitting) return
+        if (current.postType == "text" && current.title.isBlank()) return
+        if (current.postType == "link" && current.linkUrl.isBlank()) {
+            _state.value = current.copy(error = "Enter a link before posting.")
+            return
+        }
         if (current.eligibility?.status != "already_joined") {
             _state.value = current.copy(error = "Join this community before posting.")
             return
@@ -93,9 +114,14 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 val createdPost = communityRepository.createPost(
                     communityId,
                     CreatePostRequest(
-                        title = current.title.trim(),
+                        idempotencyKey = UUID.randomUUID().toString(),
+                        title = current.title.trim().ifBlank { null },
                         body = current.body.trim().ifBlank { null },
-                        postType = "text",
+                        postType = current.postType,
+                        linkUrl = current.linkUrl.trim().ifBlank { null },
+                        identityMode = "public",
+                        translationPolicy = "machine_allowed",
+                        visibility = "public",
                     ),
                 )
                 _state.value = _state.value.copy(
@@ -193,6 +219,32 @@ fun PostComposerScreen(
                 }
             }
 
+            Text(
+                text = "Post type",
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textSecondary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                PirateButton(
+                    text = if (state.postType == "text") "Text selected" else "Text",
+                    onClick = { viewModel.selectPostType("text") },
+                    enabled = canPost && state.postType != "text",
+                    modifier = Modifier.weight(1f),
+                )
+                PirateButton(
+                    text = if (state.postType == "link") "Link selected" else "Link",
+                    onClick = { viewModel.selectPostType("link") },
+                    enabled = canPost && state.postType != "link",
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
             OutlinedTextField(
                 value = state.title,
                 onValueChange = viewModel::updateTitle,
@@ -204,10 +256,23 @@ fun PostComposerScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            if (state.postType == "link") {
+                OutlinedTextField(
+                    value = state.linkUrl,
+                    onValueChange = viewModel::updateLinkUrl,
+                    label = { Text("Link URL") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = canPost,
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             OutlinedTextField(
                 value = state.body,
                 onValueChange = viewModel::updateBody,
-                label = { Text("Body") },
+                label = { Text(if (state.postType == "link") "Comment" else "Body") },
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 maxLines = 12,
                 enabled = canPost,
@@ -224,7 +289,10 @@ fun PostComposerScreen(
                 text = "Post",
                 onClick = { viewModel.submit(communityId) },
                 loading = state.submitting,
-                enabled = canPost && state.title.isNotBlank(),
+                enabled = canPost && when (state.postType) {
+                    "link" -> state.linkUrl.isNotBlank()
+                    else -> state.title.isNotBlank()
+                },
                 modifier = Modifier.fillMaxWidth(),
             )
         }

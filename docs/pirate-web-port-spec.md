@@ -479,7 +479,7 @@ Acceptance:
 - implement your communities
 - upgrade community screen to match web core behavior
 - upgrade post screen into a real thread view; top-level comments, pagination, creation, voting, reply loading, and reply creation have a first pass
-- support native create-post flows from both community and global entry points; first pass opens the created post after submit, deeper policy/flair/media parity remains
+- support native create-post flows from both community and global entry points; first pass supports text/link posts and opens the created post after submit, deeper policy/flair/media parity remains
 - upgrade profile/me surface
 
 Acceptance:

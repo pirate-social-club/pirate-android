@@ -310,11 +310,16 @@ data class CommentListResponse(
 
 @Serializable
 data class CreatePostRequest(
-    val title: String,
+    @SerialName("idempotency_key") val idempotencyKey: String? = null,
+    val title: String? = null,
     val body: String? = null,
     @SerialName("post_type") val postType: String = "text",
+    @SerialName("link_url") val linkUrl: String? = null,
     @SerialName("age_gate_policy") val ageGatePolicy: String? = null,
     @SerialName("flair_id") val flairId: String? = null,
+    @SerialName("identity_mode") val identityMode: String? = null,
+    @SerialName("translation_policy") val translationPolicy: String? = null,
+    val visibility: String? = null,
 )
 
 @Serializable

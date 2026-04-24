@@ -29,7 +29,7 @@ Until Kotlin DTO generation exists, each Phase 1 feature should explicitly add t
 | Join eligibility | `GET /communities/:communityId/join-eligibility` | `client.communities.getJoinEligibility` | Repository/client added; community UI first pass added |
 | Join community | `POST /communities/:communityId/join` | `client.communities.join` | Present, thin response |
 | Community posts | `GET /communities/:communityId/posts?cursor&flair_id&limit&locale&sort` | `client.communities.listPosts` | Present, missing params and rich DTOs |
-| Create post | `POST /communities/:communityId/posts` | `client.communityContent.createPost` | Present, text-only request |
+| Create post | `POST /communities/:communityId/posts` | `client.communityContent.createPost` | Text/link first pass; media/song/flair/policy remain |
 | Post detail | `GET /posts/:postId?locale` | `client.posts.get` | Present, missing locale param |
 | Post vote | `POST /posts/:postId/vote` | `client.posts.vote` | Repository/client added; home feed UI wired |
 | Top-level comments | `GET /communities/:communityId/posts/:postId/comments?cursor&limit&locale&sort` | `client.communityContent.listComments` | DTO/client/repository added; post thread UI first pass added |
@@ -166,7 +166,7 @@ Do not call `ApiClient.*` directly from new screens or view models.
 4. Upgrade community screen with gated join state and post list parity. First pass added with post pagination, Self launch, and preview metadata; verification retry states remain.
 5. Add comment DTOs and repository methods. Started for top-level comments and replies.
 6. Upgrade post screen into a real thread view. First pass added for post body, paginated top-level comments, top-level composer, top-level comment voting, reply loading, and reply creation.
-7. Upgrade create-post flow only after eligibility and community policy data are available. First pass blocks posting unless join eligibility is `already_joined` and opens the created post after submit; policy/flair/media fields remain.
+7. Upgrade create-post flow only after eligibility and community policy data are available. First pass supports text/link posts, blocks posting unless join eligibility is `already_joined`, and opens the created post after submit; policy/flair/media fields remain.
 
 ## Audit Follow-Up Status
 
@@ -187,6 +187,7 @@ The April 2026 Android v0 audit identified several foundation issues. Current st
 - Global submit now has a first-pass community picker backed by home feed top communities.
 - Post composer now checks join eligibility and blocks submission unless the viewer is already joined.
 - Post composer now navigates to the created post using the returned `LocalizedPostResponse`.
+- Post composer now sends contract-aligned `idempotency_key`, identity, translation policy, visibility, and link fields for text/link posts.
 
 Still pending:
 
