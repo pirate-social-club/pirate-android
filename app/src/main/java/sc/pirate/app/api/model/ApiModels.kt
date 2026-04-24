@@ -78,6 +78,23 @@ data class Profile(
 )
 
 @Serializable
+data class PublicProfileCommunitySummary(
+    @SerialName("community_id") val communityId: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("route_slug") val routeSlug: String? = null,
+    @SerialName("created_at") val createdAt: String,
+)
+
+@Serializable
+data class PublicProfileResolution(
+    val profile: Profile,
+    @SerialName("requested_handle_label") val requestedHandleLabel: String,
+    @SerialName("resolved_handle_label") val resolvedHandleLabel: String,
+    @SerialName("is_canonical") val isCanonical: Boolean,
+    @SerialName("created_communities") val createdCommunities: List<PublicProfileCommunitySummary> = emptyList(),
+)
+
+@Serializable
 data class Community(
     @SerialName("community_id") val communityId: String,
     @SerialName("display_name") val displayName: String,

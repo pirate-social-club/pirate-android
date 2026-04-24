@@ -20,6 +20,7 @@ import sc.pirate.app.api.model.OnboardingStatus
 import sc.pirate.app.api.model.PostListResponse
 import sc.pirate.app.api.model.PostVoteResponse
 import sc.pirate.app.api.model.Profile
+import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.api.model.RedditImportSummary
 import sc.pirate.app.api.model.RedditVerification
 import sc.pirate.app.api.model.SessionExchangeResponse
@@ -88,6 +89,7 @@ interface PostRepository {
 interface ProfileRepository {
     suspend fun getMe(): Profile
     suspend fun getByUserId(userId: String): Profile
+    suspend fun getPublicByHandle(handleLabel: String): PublicProfileResolution
     suspend fun updateMe(input: ProfileUpdateInput): Profile
     suspend fun renameHandle(desiredLabel: String): RenameHandleResponse
 }
@@ -249,6 +251,10 @@ class ApiProfileRepository(
     override suspend fun getMe(): Profile = ApiClient.Profiles.getMe()
 
     override suspend fun getByUserId(userId: String): Profile = ApiClient.Profiles.getByUserId(userId)
+
+    override suspend fun getPublicByHandle(handleLabel: String): PublicProfileResolution {
+        return ApiClient.Profiles.getPublicByHandle(handleLabel)
+    }
 
     override suspend fun updateMe(input: ProfileUpdateInput): Profile = ApiClient.Profiles.updateMe(input)
 

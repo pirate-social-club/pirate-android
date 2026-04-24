@@ -7,6 +7,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import sc.pirate.app.api.model.*
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -110,6 +111,9 @@ class ApiClient(private val sessionStore: SessionStore) {
 
     private fun encodeQueryValue(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
+
+    private fun encodePathSegment(value: String): String =
+        "https://pirate.local/$value".toHttpUrl().encodedPathSegments.last()
 
     object Auth {
         private lateinit var client: ApiClient
@@ -394,6 +398,14 @@ class ApiClient(private val sessionStore: SessionStore) {
         suspend fun getByUserId(userId: String): Profile {
             val response = client.getString("/profiles/$userId")
             return json.decodeFromString(Profile.serializer(), response)
+        }
+
+        suspend fun getPublicByHandle(handleLabel: String): PublicProfileResolution {
+            val response = client.getString(
+                "/public-profiles/${client.encodePathSegment(handleLabel)}",
+                requireAuth = false,
+            )
+            return json.decodeFromString(PublicProfileResolution.serializer(), response)
         }
 
         suspend fun updateMe(input: ProfileUpdateInput): Profile {

@@ -166,7 +166,7 @@ Tasks:
 - upgrade community screen with join eligibility, gating, and verification launch states
 - upgrade post screen into a thread view; top-level comments, pagination, comment creation, comment voting, reply loading, and reply creation have a first pass
 - support community-scoped create post
-- make global submit pick a community before composing - first pass added from feed top communities
+- make global submit pick a community before composing - first pass uses created communities plus feed top communities
 - keep profile/me backed by real profile edit state
 
 Acceptance:

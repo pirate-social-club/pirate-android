@@ -184,7 +184,8 @@ The April 2026 Android v0 audit identified several foundation issues. Current st
 - Home feed, community posts, and top-level comments now preserve `next_cursor` and expose explicit load-more actions.
 - Comment replies now have first-pass list, pagination, and create support on the post thread screen.
 - Community preview rules, reference links, and membership gate summaries now render as first-pass sidebar-equivalent sections.
-- Global submit now has a first-pass community picker backed by home feed top communities.
+- Global submit now has a first-pass community picker backed by public-profile created communities plus home feed top communities.
+- Your communities now has a first-pass created communities list from the user's public profile handle.
 - Post composer now checks join eligibility and blocks submission unless the viewer is already joined.
 - Post composer now navigates to the created post using the returned `LocalizedPostResponse`.
 - Post composer now sends contract-aligned `idempotency_key`, identity, translation policy, visibility, and link fields for text/link posts.
@@ -192,7 +193,7 @@ The April 2026 Android v0 audit identified several foundation issues. Current st
 Still pending:
 
 - deeper post composer policy parity with web community rules/flair/media fields
-- a dedicated joined/recent communities endpoint or local known-community store for global submit
+- a dedicated joined/recent communities endpoint or local known-community store for global submit beyond created/top communities
 - focused view-model tests once a careful single-worker compile passes
 
 ## Build Policy

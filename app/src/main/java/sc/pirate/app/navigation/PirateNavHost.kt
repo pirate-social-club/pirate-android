@@ -178,7 +178,11 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.YourCommunities.route) {
-            YourCommunitiesScreen()
+            YourCommunitiesScreen(
+                onNavigateToCommunity = { communityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
+                },
+            )
         }
 
         composable(PirateRoute.GlobalSubmit.route) {

@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import sc.pirate.app.api.model.HomeFeedCommunitySummary
+import sc.pirate.app.api.model.PublicProfileCommunitySummary
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
@@ -41,13 +42,20 @@ import sc.pirate.app.ui.StatusTone
 
 data class GlobalSubmitUiState(
     val loading: Boolean = true,
-    val communities: List<HomeFeedCommunitySummary> = emptyList(),
+    val communities: List<SubmitCommunityOption> = emptyList(),
     val error: String? = null,
+)
+
+data class SubmitCommunityOption(
+    val communityId: String,
+    val displayName: String,
+    val detail: String,
 )
 
 class GlobalSubmitViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val feedRepository get() = app.repositories.feedRepository
+    private val profileRepository get() = app.repositories.profileRepository
 
     private val _state = MutableStateFlow(GlobalSubmitUiState())
     val state: StateFlow<GlobalSubmitUiState> = _state.asStateFlow()
@@ -56,10 +64,12 @@ class GlobalSubmitViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             try {
+                val createdCommunities = loadCreatedCommunities()
                 val feed = feedRepository.home(sort = "best")
                 _state.value = GlobalSubmitUiState(
                     loading = false,
-                    communities = feed.topCommunities,
+                    communities = (createdCommunities + feed.topCommunities.map { it.toSubmitOption() })
+                        .distinctBy { it.communityId },
                 )
             } catch (e: Exception) {
                 _state.value = GlobalSubmitUiState(
@@ -69,7 +79,29 @@ class GlobalSubmitViewModel(application: Application) : AndroidViewModel(applica
             }
         }
     }
+
+    private suspend fun loadCreatedCommunities(): List<SubmitCommunityOption> {
+        val handleLabel = profileRepository.getMe().globalHandle?.label?.takeIf { it.isNotBlank() } ?: return emptyList()
+        return profileRepository.getPublicByHandle(handleLabel)
+            .createdCommunities
+            .sortedByDescending { it.createdAt }
+            .map { it.toSubmitOption() }
+    }
 }
+
+private fun PublicProfileCommunitySummary.toSubmitOption(): SubmitCommunityOption =
+    SubmitCommunityOption(
+        communityId = communityId,
+        displayName = displayName,
+        detail = routeSlug ?: communityId,
+    )
+
+private fun HomeFeedCommunitySummary.toSubmitOption(): SubmitCommunityOption =
+    SubmitCommunityOption(
+        communityId = communityId,
+        displayName = displayName,
+        detail = "${memberCount ?: 0} members",
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -176,7 +208,7 @@ fun GlobalSubmitScreen(
                                     color = PirateTokens.colors.textPrimary,
                                 )
                                 Text(
-                                    text = "${community.memberCount ?: 0} members",
+                                    text = community.detail,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = PirateTokens.colors.textSecondary,
                                 )
