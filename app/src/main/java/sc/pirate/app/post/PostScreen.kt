@@ -1,6 +1,9 @@
 package sc.pirate.app.post
 
 import android.app.Application
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,16 +11,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -30,6 +35,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -38,6 +45,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeParseException
 import sc.pirate.app.api.CreateCommentRequest
 import sc.pirate.app.api.model.CommentListItem
 import sc.pirate.app.api.model.LocalizedPostResponse
@@ -48,10 +58,10 @@ import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
-import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
 data class PostUiState(
@@ -64,6 +74,7 @@ data class PostUiState(
     val commentsLoadingMore: Boolean = false,
     val commentDraft: String = "",
     val commentSubmitting: Boolean = false,
+    val postVoting: Boolean = false,
     val repliesByParentId: Map<String, List<CommentListItem>> = emptyMap(),
     val nextRepliesCursorByParentId: Map<String, String?> = emptyMap(),
     val loadingRepliesParentIds: Set<String> = emptySet(),
@@ -74,6 +85,7 @@ data class PostUiState(
     val commentsError: String? = null,
     val commentsPaginationError: String? = null,
     val commentSubmitError: String? = null,
+    val postVoteError: String? = null,
     val repliesErrorByParentId: Map<String, String> = emptyMap(),
     val replySubmitErrorByParentId: Map<String, String> = emptyMap(),
     val commentVoteError: String? = null,
@@ -160,6 +172,34 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 _state.value = _state.value.copy(
                     commentSubmitting = false,
                     commentSubmitError = e.message ?: "Failed to post comment",
+                )
+            }
+        }
+    }
+
+    fun votePost(value: Int) {
+        val current = _state.value
+        val previousPost = current.post ?: return
+        if (current.postVoting || previousPost.viewerVote == value) return
+
+        _state.value = current.copy(
+            post = previousPost.withPostVote(value),
+            postVoting = true,
+            postVoteError = null,
+        )
+
+        viewModelScope.launch {
+            try {
+                val response = postRepository.votePost(previousPost.post.postId, value)
+                _state.value = _state.value.copy(
+                    post = _state.value.post?.withPostVote(response.value),
+                    postVoting = false,
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    post = previousPost,
+                    postVoting = false,
+                    postVoteError = e.message ?: "Failed to vote on post",
                 )
             }
         }
@@ -434,14 +474,14 @@ fun PostScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = state.post?.post?.title ?: "Post",
+                        text = "Post",
                         color = PirateTokens.colors.textPrimary,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            PhosphorIcons.CaretLeft,
+                            PhosphorIcons.X,
                             contentDescription = "Back",
                             tint = PirateTokens.colors.textPrimary,
                         )
@@ -489,74 +529,37 @@ fun PostScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                        .background(PirateTokens.colors.bgPage),
                 ) {
                     item {
-                        PirateCard(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = postResponse.translatedTitle ?: post.title ?: "Untitled post",
-                                style = MaterialTheme.typography.headlineSmall,
-                                color = PirateTokens.colors.textPrimary,
-                            )
-                            val body = postResponse.translatedBody ?: post.body
-                            if (!body.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = body,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = PirateTokens.colors.textPrimary,
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text(
-                                text = postScoreText(postResponse),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = PirateTokens.colors.textSecondary,
+                        ThreadRootPost(
+                            postResponse = postResponse,
+                            isVoting = state.postVoting,
+                            onVote = { value ->
+                                if (hasSession) viewModel.votePost(value) else authPromptAction = "Voting"
+                            },
+                        )
+                    }
+
+                    if (state.postVoteError != null) {
+                        item {
+                            FormNote(
+                                message = state.postVoteError.orEmpty(),
+                                tone = FormTone.Error,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             )
                         }
                     }
 
                     item {
-                        PirateCard(modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                text = "Add a comment",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = PirateTokens.colors.textPrimary,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = state.commentDraft,
-                                onValueChange = viewModel::updateCommentDraft,
-                                modifier = Modifier.fillMaxWidth(),
-                                minLines = 3,
-                                enabled = !state.commentSubmitting,
-                            )
-                            if (state.commentSubmitError != null) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                FormNote(
-                                    message = state.commentSubmitError.orEmpty(),
-                                    tone = FormTone.Error,
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                            PirateButton(
-                                text = if (state.commentSubmitting) "Posting" else "Post comment",
-                                onClick = {
-                                    if (hasSession) viewModel.submitComment() else authPromptAction = "Commenting"
-                                },
-                                enabled = state.commentDraft.isNotBlank(),
-                                loading = state.commentSubmitting,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-
-                    item {
-                        Text(
-                            text = "Comments",
-                            style = MaterialTheme.typography.titleLarge,
-                            color = PirateTokens.colors.textPrimary,
+                        InlineReplyComposer(
+                            draft = state.commentDraft,
+                            error = state.commentSubmitError,
+                            submitting = state.commentSubmitting,
+                            onDraftChange = viewModel::updateCommentDraft,
+                            onSubmit = {
+                                if (hasSession) viewModel.submitComment() else authPromptAction = "Commenting"
+                            },
                         )
                     }
 
@@ -565,30 +568,36 @@ fun PostScreen(
                             options = commentSortOptions,
                             selectedValue = state.commentSort,
                             onSelected = viewModel::setCommentSort,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 14.dp),
                         )
                     }
 
                     if (state.commentsPaginationError != null) {
                         item {
-                            StatusCard(
-                                title = "More comments unavailable",
-                                description = state.commentsPaginationError.orEmpty(),
-                                tone = StatusTone.Warning,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
+                                StatusCard(
+                                    title = "More comments unavailable",
+                                    description = state.commentsPaginationError.orEmpty(),
+                                    tone = StatusTone.Warning,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp),
+                                )
+                            }
                         }
-                    }
 
                     when {
                         state.commentsLoading -> {
                             item {
-                                StatusCard(
-                                    title = "Loading comments",
-                                    description = "Fetching the thread.",
-                                    tone = StatusTone.Default,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 28.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
+                                }
                             }
                         }
 
@@ -598,7 +607,9 @@ fun PostScreen(
                                     title = "Comments unavailable",
                                     description = state.commentsError.orEmpty(),
                                     tone = StatusTone.Warning,
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp),
                                 )
                             }
                         }
@@ -609,7 +620,9 @@ fun PostScreen(
                                     title = "No comments yet",
                                     description = "This thread has not started.",
                                     tone = StatusTone.Default,
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp),
                                 )
                             }
                         }
@@ -623,6 +636,9 @@ fun PostScreen(
                                     onVote = { value ->
                                         if (hasSession) viewModel.voteComment(commentId, value) else authPromptAction = "Voting"
                                     },
+                                    onReply = {
+                                        if (hasSession) viewModel.loadReplies(commentId) else authPromptAction = "Replying"
+                                    },
                                 )
                             }
                         }
@@ -634,7 +650,9 @@ fun PostScreen(
                                 text = if (state.commentsLoadingMore) "Loading" else "Load more",
                                 onClick = viewModel::loadMoreComments,
                                 loading = state.commentsLoadingMore,
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
                             )
                         }
                     }
@@ -644,10 +662,15 @@ fun PostScreen(
     }
 }
 
-private fun postScoreText(post: LocalizedPostResponse): String {
-    val score = post.upvoteCount - post.downvoteCount
-    val comments = post.threadSnapshot?.commentCount ?: 0
-    return "$score score | $comments comments"
+private fun LocalizedPostResponse.withPostVote(value: Int): LocalizedPostResponse {
+    val previousValue = viewerVote
+    if (previousValue == value) return this
+
+    return copy(
+        upvoteCount = adjustedVoteCount(upvoteCount, previousValue, value, 1),
+        downvoteCount = adjustedVoteCount(downvoteCount, previousValue, value, -1),
+        viewerVote = value,
+    )
 }
 
 private fun List<CommentListItem>.withCommentVote(commentId: String, value: Int): List<CommentListItem> =
@@ -680,62 +703,269 @@ private fun voteScoreDelta(previousValue: Int?, nextValue: Int): Int =
     nextValue - (previousValue ?: 0)
 
 @Composable
+private fun ThreadRootPost(
+    postResponse: LocalizedPostResponse,
+    isVoting: Boolean,
+    onVote: (Int) -> Unit,
+) {
+    val post = postResponse.post
+    val title = postResponse.translatedTitle ?: post.title ?: post.linkOgTitle ?: "Untitled post"
+    val body = postResponse.translatedBody ?: post.body ?: post.caption
+    val comments = postResponse.threadSnapshot?.commentCount ?: 0
+    val score = postResponse.upvoteCount - postResponse.downvoteCount
+    val routeLabel = "c/${post.communityId}"
+    val authorLabel = post.anonymousLabel
+        ?: post.authorUserId?.take(16)?.let { "$it.pirate" }
+        ?: "anonymous"
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(0.dp),
+        border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CommunityAvatar(label = post.communityId)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = routeLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "$authorLabel · ${relativeTimeLabel(post.createdAt)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = PirateTokens.colors.textPrimary,
+            )
+            body?.takeIf { it.isNotBlank() && it != title }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textPrimary,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                VoteControl(
+                    score = score,
+                    viewerVote = postResponse.viewerVote,
+                    enabled = !isVoting,
+                    onVote = onVote,
+                )
+                Surface(
+                    shape = RoundedCornerShape(PirateTokens.radius.full),
+                    color = PirateTokens.colors.surfaceSubtle,
+                    border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = PhosphorIcons.ChatCircle,
+                            contentDescription = null,
+                            tint = PirateTokens.colors.textSecondary,
+                        )
+                        Text(
+                            text = comments.toString(),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PirateTokens.colors.textPrimary,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun InlineReplyComposer(
+    draft: String,
+    error: String?,
+    submitting: Boolean,
+    onDraftChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = draft,
+            onValueChange = onDraftChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Write a reply") },
+            minLines = 1,
+            enabled = !submitting,
+        )
+        if (error != null) {
+            FormNote(
+                message = error,
+                tone = FormTone.Error,
+            )
+        }
+        if (draft.isNotBlank()) {
+            PirateButton(
+                text = if (submitting) "Posting" else "Reply",
+                onClick = onSubmit,
+                enabled = draft.isNotBlank(),
+                loading = submitting,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
 private fun CommentRow(
     comment: CommentListItem,
     isVoting: Boolean,
     onVote: (Int) -> Unit,
+    onReply: () -> Unit,
 ) {
     val model = comment.comment
-    PirateCard(modifier = Modifier.fillMaxWidth()) {
+    val authorLabel = model.anonymousLabel
+        ?: model.authorUserId?.take(16)?.let { "$it.pirate" }
+        ?: "anonymous"
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(0.dp),
+    ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = model.anonymousLabel ?: model.authorUserId ?: "Anonymous",
-                style = MaterialTheme.typography.labelLarge,
-                color = PirateTokens.colors.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Spacer(modifier = Modifier.size(14.dp))
+            Column(
                 modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "${model.score} score",
-                style = MaterialTheme.typography.labelMedium,
-                color = PirateTokens.colors.textSecondary,
-            )
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = authorLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "· ${relativeTimeLabel(model.createdAt)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 1,
+                    )
+                }
+                Text(
+                    text = comment.translatedBody ?: model.body ?: "[removed]",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textPrimary,
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    VoteControl(
+                        score = model.score,
+                        viewerVote = comment.viewerVote,
+                        enabled = !isVoting,
+                        onVote = onVote,
+                    )
+                    Row(
+                        modifier = Modifier.clickable(onClick = onReply),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = PhosphorIcons.ChatCircle,
+                            contentDescription = null,
+                            tint = PirateTokens.colors.textSecondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Text(
+                            text = "Reply",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PirateTokens.colors.textPrimary,
+                        )
+                    }
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun CommunityAvatar(label: String) {
+    val colors = communityPlaceholderColors(label)
+    Box(
+        modifier = Modifier
+            .size(46.dp)
+            .clip(RoundedCornerShape(PirateTokens.radius.full))
+            .background(colors.first),
+        contentAlignment = Alignment.Center,
+    ) {
         Text(
-            text = comment.translatedBody ?: model.body ?: "[removed]",
-            style = MaterialTheme.typography.bodyMedium,
-            color = PirateTokens.colors.textPrimary,
+            text = label.trim().take(2).uppercase().ifBlank { "C" },
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.second,
         )
-        if (model.directReplyCount > 0) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "${model.directReplyCount} replies in thread",
-                style = MaterialTheme.typography.bodySmall,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PirateButton(
-                text = if (comment.viewerVote == 1) "Upvoted" else "Upvote",
-                onClick = { onVote(1) },
-                enabled = !isVoting,
-                modifier = Modifier.weight(1f),
-            )
-            PirateButton(
-                text = if (comment.viewerVote == -1) "Downvoted" else "Downvote",
-                onClick = { onVote(-1) },
-                enabled = !isVoting,
-                modifier = Modifier.weight(1f),
-            )
-        }
+    }
+}
+
+private fun communityPlaceholderColors(label: String): Pair<Color, Color> {
+    val palette = listOf(
+        Color(0xFF243F46) to Color(0xFFD9F0F2),
+        Color(0xFF314936) to Color(0xFFE2F3DE),
+        Color(0xFF3F3A5F) to Color(0xFFECE8FF),
+        Color(0xFF4B4555) to Color(0xFFF0EAF6),
+        Color(0xFF33465F) to Color(0xFFE6EEF8),
+        Color(0xFF4C4A37) to Color(0xFFF4F0D9),
+    )
+    return palette[Math.floorMod(label.hashCode(), palette.size)]
+}
+
+private fun relativeTimeLabel(timestamp: String): String {
+    val createdAt = try {
+        Instant.parse(timestamp)
+    } catch (_: DateTimeParseException) {
+        return ""
+    }
+    val duration = Duration.between(createdAt, Instant.now()).coerceAtLeast(Duration.ZERO)
+    val minutes = duration.toMinutes()
+    val hours = duration.toHours()
+    val days = duration.toDays()
+    return when {
+        minutes < 1 -> "now"
+        minutes < 60 -> "${minutes}m"
+        hours < 24 -> "${hours}h"
+        days < 30 -> "${days}d"
+        days < 365 -> "${days / 30}mo"
+        else -> "${days / 365}y"
     }
 }

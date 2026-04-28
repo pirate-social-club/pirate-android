@@ -62,6 +62,7 @@ import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
 data class HomeUiState(
@@ -771,50 +772,4 @@ private fun communityPlaceholderColors(label: String): Pair<Color, Color> {
         Color(0xFF4C4A37) to Color(0xFFF4F0D9),
     )
     return palette[Math.floorMod(label.hashCode(), palette.size)]
-}
-
-@Composable
-private fun VoteControl(
-    score: Int,
-    viewerVote: Int?,
-    enabled: Boolean,
-    onVote: (Int) -> Unit,
-) {
-    Surface(
-        shape = RoundedCornerShape(PirateTokens.radius.full),
-        color = PirateTokens.colors.surfaceSubtle,
-        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-        ) {
-            IconButton(
-                onClick = { onVote(1) },
-                enabled = enabled,
-            ) {
-                Icon(
-                    imageVector = PhosphorIcons.CaretUp,
-                    contentDescription = "Upvote",
-                    tint = if (viewerVote == 1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
-                )
-            }
-            Text(
-                text = score.toString(),
-                style = MaterialTheme.typography.labelLarge,
-                color = PirateTokens.colors.textPrimary,
-            )
-            IconButton(
-                onClick = { onVote(-1) },
-                enabled = enabled,
-            ) {
-                Icon(
-                    imageVector = PhosphorIcons.CaretDown,
-                    contentDescription = "Downvote",
-                    tint = if (viewerVote == -1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
-                )
-            }
-        }
-    }
 }
