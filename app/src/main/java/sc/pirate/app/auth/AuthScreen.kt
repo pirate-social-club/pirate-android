@@ -6,14 +6,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,9 +44,84 @@ fun AuthScreen(
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    SignInContent(
+        state = state,
+        walletConnectState = walletConnectState,
+        onOpenWalletConnect = onOpenWalletConnect,
+        onLoginWallet = onLoginWallet,
+        onLoginGoogle = onLoginGoogle,
+        onLoginTwitter = onLoginTwitter,
+        onSendEmailCode = onSendEmailCode,
+        onLoginEmail = onLoginEmail,
+        onLogout = onLogout,
+        modifier = modifier.fillMaxSize(),
+        centered = true,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SignInDrawer(
+    state: AuthUiState,
+    walletConnectState: ReownUiState,
+    onOpenWalletConnect: () -> Unit,
+    onLoginWallet: () -> Unit,
+    onLoginGoogle: () -> Unit,
+    onLoginTwitter: () -> Unit,
+    onSendEmailCode: (String) -> Unit,
+    onLoginEmail: (String, String) -> Unit,
+    onLogout: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(state) {
+        if (state is AuthUiState.Authenticated) {
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = PirateTokens.colors.bgPage,
+    ) {
+        SignInContent(
+            state = state,
+            walletConnectState = walletConnectState,
+            onOpenWalletConnect = onOpenWalletConnect,
+            onLoginWallet = onLoginWallet,
+            onLoginGoogle = onLoginGoogle,
+            onLoginTwitter = onLoginTwitter,
+            onSendEmailCode = onSendEmailCode,
+            onLoginEmail = onLoginEmail,
+            onLogout = onLogout,
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 12.dp),
+            centered = false,
+        )
+    }
+}
+
+@Composable
+private fun SignInContent(
+    state: AuthUiState,
+    walletConnectState: ReownUiState,
+    onOpenWalletConnect: () -> Unit,
+    onLoginWallet: () -> Unit,
+    onLoginGoogle: () -> Unit,
+    onLoginTwitter: () -> Unit,
+    onSendEmailCode: (String) -> Unit,
+    onLoginEmail: (String, String) -> Unit,
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier,
+    centered: Boolean,
+) {
     Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
+        modifier = if (centered) modifier.padding(24.dp) else modifier,
+        verticalArrangement = if (centered) Arrangement.Center else Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -50,15 +130,15 @@ fun AuthScreen(
             color = PirateTokens.colors.textPrimary,
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
+        if (centered) Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Use Privy to continue into the Pirate onboarding flow.",
+            text = "Use Privy to continue.",
             style = MaterialTheme.typography.bodyLarge,
             color = PirateTokens.colors.textSecondary,
         )
 
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(if (centered) 32.dp else 12.dp))
 
         when (state) {
             is AuthUiState.Loading -> {
@@ -122,6 +202,7 @@ fun AuthScreen(
                 EmailLoginForm(onSendEmailCode, onLoginEmail)
             }
         }
+        if (!centered) Spacer(modifier = Modifier.height(8.dp))
     }
 }
 
@@ -203,7 +284,7 @@ private fun LoginButtons(
             contentColor = PirateTokens.colors.textPrimary,
         ),
     ) {
-        Text("Continue with Twitter", modifier = Modifier.padding(vertical = 4.dp))
+        Text("Continue with X", modifier = Modifier.padding(vertical = 4.dp))
     }
 }
 

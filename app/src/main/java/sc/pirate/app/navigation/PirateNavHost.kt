@@ -19,6 +19,7 @@ import sc.pirate.app.PirateApp
 import sc.pirate.app.auth.AuthScreen
 import sc.pirate.app.auth.AuthViewModel
 import sc.pirate.app.auth.AuthUiState
+import sc.pirate.app.auth.SignInDrawer
 import sc.pirate.app.communities.YourCommunitiesScreen
 import sc.pirate.app.community.CommunityScreen
 import sc.pirate.app.community.CommunityViewModel
@@ -109,6 +110,9 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.Home.route) {
+            val authVm: AuthViewModel = viewModel()
+            val authState by authVm.state.collectAsState()
+            val walletConnectState by app.reownManager.state.collectAsState()
             HomeScreen(
                 hasSession = hasSession,
                 onNavigateToCommunity = { id ->
@@ -138,8 +142,28 @@ fun PirateNavHost(
                 onNavigateToCreateCommunity = {
                     navController.navigate(PirateRoute.CreateCommunity.route)
                 },
-                onSignIn = {
-                    navController.navigate(PirateRoute.Auth.route)
+                signInDrawer = { onDismiss ->
+                    SignInDrawer(
+                        state = authState,
+                        walletConnectState = walletConnectState,
+                        onOpenWalletConnect = {
+                            navController.openAppKit(
+                                shouldOpenChooseNetwork = false,
+                                onError = { error ->
+                                    app.reownManager.refreshState(
+                                        error.message ?: "Could not open wallet chooser."
+                                    )
+                                },
+                            )
+                        },
+                        onLoginWallet = authVm::loginWithConnectedWallet,
+                        onLoginGoogle = authVm::loginWithGoogle,
+                        onLoginTwitter = authVm::loginWithTwitter,
+                        onSendEmailCode = authVm::sendEmailCode,
+                        onLoginEmail = authVm::loginWithEmail,
+                        onLogout = authVm::logout,
+                        onDismiss = onDismiss,
+                    )
                 },
             )
         }
@@ -185,14 +209,37 @@ fun PirateNavHost(
             }),
         ) { backStackEntry ->
             val postId = backStackEntry.arguments?.getString(PirateRoute.Post.ARG_POST_ID).orEmpty()
+            val authVm: AuthViewModel = viewModel()
+            val authState by authVm.state.collectAsState()
+            val walletConnectState by app.reownManager.state.collectAsState()
             PostScreen(
                 postId = postId,
                 hasSession = hasSession,
                 onNavigateToCompose = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
                 },
-                onSignIn = {
-                    navController.navigate(PirateRoute.Auth.route)
+                signInDrawer = { onDismiss ->
+                    SignInDrawer(
+                        state = authState,
+                        walletConnectState = walletConnectState,
+                        onOpenWalletConnect = {
+                            navController.openAppKit(
+                                shouldOpenChooseNetwork = false,
+                                onError = { error ->
+                                    app.reownManager.refreshState(
+                                        error.message ?: "Could not open wallet chooser."
+                                    )
+                                },
+                            )
+                        },
+                        onLoginWallet = authVm::loginWithConnectedWallet,
+                        onLoginGoogle = authVm::loginWithGoogle,
+                        onLoginTwitter = authVm::loginWithTwitter,
+                        onSendEmailCode = authVm::sendEmailCode,
+                        onLoginEmail = authVm::loginWithEmail,
+                        onLogout = authVm::logout,
+                        onDismiss = onDismiss,
+                    )
                 },
                 onBack = { navController.popBackStack() },
             )

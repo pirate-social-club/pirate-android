@@ -52,7 +52,6 @@ import sc.pirate.app.api.CreateCommentRequest
 import sc.pirate.app.api.model.CommentListItem
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.theme.PirateTokens
-import sc.pirate.app.ui.AuthRequiredSheet
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
@@ -446,7 +445,7 @@ fun PostScreen(
     postId: String,
     hasSession: Boolean,
     onNavigateToCompose: ((String) -> Unit)? = null,
-    onSignIn: () -> Unit,
+    signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -458,15 +457,8 @@ fun PostScreen(
         viewModel.loadPost(postId, hasSession)
     }
 
-    authPromptAction?.let { action ->
-        AuthRequiredSheet(
-            actionLabel = action,
-            onDismiss = { authPromptAction = null },
-            onSignIn = {
-                authPromptAction = null
-                onSignIn()
-            },
-        )
+    authPromptAction?.let {
+        signInDrawer { authPromptAction = null }
     }
 
     androidx.compose.material3.Scaffold(

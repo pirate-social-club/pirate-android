@@ -55,7 +55,6 @@ import sc.pirate.app.PirateApp
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.theme.PirateTokens
-import sc.pirate.app.ui.AuthRequiredSheet
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
@@ -261,7 +260,7 @@ fun HomeScreen(
     onNavigateToInbox: () -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToCreateCommunity: () -> Unit,
-    onSignIn: () -> Unit,
+    signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -271,15 +270,8 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
 
-    authPromptAction?.let { action ->
-        AuthRequiredSheet(
-            actionLabel = action,
-            onDismiss = { authPromptAction = null },
-            onSignIn = {
-                authPromptAction = null
-                onSignIn()
-            },
-        )
+    authPromptAction?.let {
+        signInDrawer { authPromptAction = null }
     }
 
     ModalNavigationDrawer(
