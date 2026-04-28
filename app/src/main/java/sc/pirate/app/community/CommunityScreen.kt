@@ -1,6 +1,8 @@
 package sc.pirate.app.community
 
 import android.app.Application
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +13,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
@@ -19,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -31,6 +36,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -41,6 +48,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeParseException
 import sc.pirate.app.PirateApp
 import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.CommunityPreview
@@ -60,6 +70,7 @@ import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
 data class CommunityUiState(
@@ -329,8 +340,8 @@ fun CommunityScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            PhosphorIcons.CaretLeft,
-                            contentDescription = "Back",
+                            PhosphorIcons.List,
+                            contentDescription = "Navigation",
                             tint = PirateTokens.colors.textPrimary,
                         )
                     }
@@ -385,102 +396,56 @@ fun CommunityScreen(
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                            .background(PirateTokens.colors.bgPage),
                     ) {
                         item {
-                            PirateCard(modifier = Modifier.fillMaxWidth()) {
-                                Text(
-                                    text = routeLabel,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = PirateTokens.colors.textSecondary,
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = displayName,
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = PirateTokens.colors.textPrimary,
-                                )
-                                description?.takeIf { it.isNotBlank() }?.let {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = it,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = PirateTokens.colors.textSecondary,
+                            CommunityHero(
+                                displayName = displayName,
+                                routeLabel = routeLabel,
+                                description = description,
+                                memberCount = memberCount,
+                                followerCount = followerCount,
+                                eligibilityText = eligibility?.let(::communityStatusText),
+                                canCreatePost = canCreatePost,
+                                eligibility = eligibility,
+                                followLoading = state.followLoading,
+                                hasSession = hasSession,
+                                isFollowing = preview?.viewerFollowing == true,
+                                joinLoading = state.joinLoading,
+                                followError = state.followError,
+                                joinError = state.joinError,
+                                onJoin = viewModel::joinCommunity,
+                                onToggleFollow = viewModel::toggleFollow,
+                                onVerify = {
+                                    onVerifyWithSelf(
+                                        eligibility?.suggestedVerificationIntent ?: "community_join",
                                     )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                ) {
-                                    memberCount?.let {
-                                        Text(
-                                            text = "$it members",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = PirateTokens.colors.textSecondary,
-                                        )
-                                    }
-                                    followerCount?.let {
-                                        Text(
-                                            text = "$it followers",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = PirateTokens.colors.textSecondary,
-                                        )
-                                    }
-                                }
-                                eligibility?.let {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = communityStatusText(it),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = PirateTokens.colors.textSecondary,
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(12.dp))
-                                CommunityHeaderActions(
-                                    canCreatePost = canCreatePost,
-                                    eligibility = eligibility,
-                                    followLoading = state.followLoading,
-                                    hasSession = hasSession,
-                                    isFollowing = preview?.viewerFollowing == true,
-                                    joinLoading = state.joinLoading,
-                                    onJoin = viewModel::joinCommunity,
-                                    onToggleFollow = viewModel::toggleFollow,
-                                    onVerify = {
-                                        onVerifyWithSelf(
-                                            eligibility?.suggestedVerificationIntent ?: "community_join",
-                                        )
-                                    },
-                                )
-                                state.followError?.let {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    FormNote(message = it, tone = FormTone.Error)
-                                }
-                                state.joinError?.let {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    FormNote(message = it, tone = FormTone.Error)
-                                }
-                            }
+                                },
+                            )
                         }
 
                         item {
-                            PirateChipRow(
+                            CommunityTabs(
                                 options = communityTabOptions,
                                 selectedValue = activeTab,
                                 onSelected = { activeTab = it },
-                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
 
                         if (activeTab == "feed") {
                             item {
-                                PirateChipRow(
-                                    options = communitySortOptions,
-                                    selectedValue = state.activeSort,
-                                    onSelected = viewModel::setSort,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.End,
+                                ) {
+                                    PirateChipRow(
+                                        options = communitySortOptions,
+                                        selectedValue = state.activeSort,
+                                        onSelected = viewModel::setSort,
+                                    )
+                                }
                             }
 
                             if (state.postsPaginationError != null) {
@@ -489,7 +454,9 @@ fun CommunityScreen(
                                         title = "More posts unavailable",
                                         description = state.postsPaginationError.orEmpty(),
                                         tone = StatusTone.Warning,
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp),
                                     )
                                 }
                             }
@@ -500,7 +467,9 @@ fun CommunityScreen(
                                         title = "Vote unavailable",
                                         description = state.voteError.orEmpty(),
                                         tone = StatusTone.Warning,
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp),
                                     )
                                 }
                             }
@@ -509,7 +478,9 @@ fun CommunityScreen(
                                 item {
                                     EmptyFeedState(
                                         message = "No posts yet.",
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp),
                                     )
                                 }
                             } else {
@@ -517,6 +488,7 @@ fun CommunityScreen(
                                     val isVoting = postResp.post.postId in state.votingPostIds
                                     CommunityPostRow(
                                         post = postResp,
+                                        communityName = displayName,
                                         isVoting = isVoting,
                                         onClick = { onNavigateToPost(postResp.post.postId) },
                                         onVote = { value -> viewModel.votePost(postResp.post.postId, value) },
@@ -531,7 +503,9 @@ fun CommunityScreen(
                                         text = if (state.postsLoadingMore) "Loading" else "Load more",
                                         onClick = viewModel::loadMorePosts,
                                         loading = state.postsLoadingMore,
-                                        modifier = Modifier.fillMaxWidth(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
                                     )
                                 }
                             }
@@ -703,6 +677,174 @@ private fun MetadataSection(
 }
 
 @Composable
+private fun CommunityHero(
+    displayName: String,
+    routeLabel: String,
+    description: String?,
+    memberCount: Int?,
+    followerCount: Int?,
+    eligibilityText: String?,
+    canCreatePost: Boolean,
+    eligibility: JoinEligibility?,
+    followLoading: Boolean,
+    hasSession: Boolean,
+    isFollowing: Boolean,
+    joinLoading: Boolean,
+    followError: String?,
+    joinError: String?,
+    onJoin: () -> Unit,
+    onToggleFollow: () -> Unit,
+    onVerify: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(144.dp)
+                .background(Color(0xFF351A62)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(Color(0xFF231226).copy(alpha = 0.7f)),
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+        ) {
+            CommunityAvatar(
+                label = displayName,
+                modifier = Modifier.padding(top = 0.dp),
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.headlineSmall,
+                color = PirateTokens.colors.textPrimary,
+            )
+            Text(
+                text = routeLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            description?.takeIf { it.isNotBlank() }?.let {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textPrimary,
+                )
+            }
+            Row(
+                modifier = Modifier.padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                memberCount?.let { CommunityMeta("$it members") }
+                followerCount?.let { CommunityMeta("$it followers") }
+            }
+            eligibilityText?.takeIf { it.isNotBlank() }?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            CommunityHeaderActions(
+                canCreatePost = canCreatePost,
+                eligibility = eligibility,
+                followLoading = followLoading,
+                hasSession = hasSession,
+                isFollowing = isFollowing,
+                joinLoading = joinLoading,
+                onJoin = onJoin,
+                onToggleFollow = onToggleFollow,
+                onVerify = onVerify,
+            )
+            followError?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                FormNote(message = it, tone = FormTone.Error)
+            }
+            joinError?.let {
+                Spacer(modifier = Modifier.height(8.dp))
+                FormNote(message = it, tone = FormTone.Error)
+            }
+            Spacer(modifier = Modifier.height(18.dp))
+        }
+    }
+}
+
+@Composable
+private fun CommunityMeta(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = PirateTokens.colors.textSecondary,
+    )
+}
+
+@Composable
+private fun CommunityTabs(
+    options: List<ChipOption>,
+    selectedValue: String,
+    onSelected: (String) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+        ) {
+            options.forEach { option ->
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { onSelected(option.value) }
+                        .padding(top = 10.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Text(
+                        text = option.label,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = if (option.value == selectedValue) {
+                            PirateTokens.colors.textPrimary
+                        } else {
+                            PirateTokens.colors.textSecondary
+                        },
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(
+                                if (option.value == selectedValue) {
+                                    PirateTokens.colors.accentDanger
+                                } else {
+                                    Color.Transparent
+                                },
+                            ),
+                    )
+                }
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(0.5.dp)
+                .background(PirateTokens.colors.borderSoft),
+        )
+    }
+}
+
+@Composable
 private fun RulesSection(
     rules: List<CommunityRule>,
     modifier: Modifier = Modifier,
@@ -738,58 +880,174 @@ private fun RulesSection(
 @Composable
 private fun CommunityPostRow(
     post: LocalizedPostResponse,
+    communityName: String,
     isVoting: Boolean,
     onClick: () -> Unit,
     onVote: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    PirateCard(
+    val title = post.translatedTitle ?: post.post.title ?: post.post.caption ?: "Untitled post"
+    val body = post.translatedBody ?: post.post.body
+    val score = post.upvoteCount - post.downvoteCount
+    val comments = post.threadSnapshot?.commentCount ?: 0
+    val authorLabel = post.post.anonymousLabel
+        ?: post.post.authorUserId?.take(16)?.let { "$it.pirate" }
+        ?: "anonymous"
+
+    Surface(
         modifier = modifier.clickable(onClick = onClick),
+        color = PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(0.dp),
+        border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
     ) {
-        Text(
-            text = post.translatedTitle ?: post.post.title ?: post.post.caption ?: "Untitled post",
-            style = MaterialTheme.typography.titleMedium,
-            color = PirateTokens.colors.textPrimary,
-        )
-        (post.translatedBody ?: post.post.body)
-            ?.takeIf { it.isNotBlank() }
-            ?.let { body ->
-                Spacer(modifier = Modifier.height(6.dp))
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                UserAvatar(label = authorLabel)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = authorLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${relativeTimeLabel(post.post.createdAt)} - $communityName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = PirateTokens.colors.textPrimary,
+            )
+            body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
                 Text(
-                    text = body.take(220),
+                    text = bodyText,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = PirateTokens.colors.textSecondary,
+                    color = PirateTokens.colors.textPrimary,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-        Spacer(modifier = Modifier.height(10.dp))
-        Text(
-            text = "${post.upvoteCount - post.downvoteCount} score | ${post.threadSnapshot?.commentCount ?: 0} comments",
-            style = MaterialTheme.typography.bodySmall,
-            color = PirateTokens.colors.textSecondary,
-        )
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            PirateButton(
-                text = if (post.viewerVote == 1) "Upvoted" else "Upvote",
-                onClick = { onVote(1) },
-                enabled = !isVoting,
-                modifier = Modifier.weight(1f),
-            )
-            PirateButton(
-                text = if (post.viewerVote == -1) "Downvoted" else "Downvote",
-                onClick = { onVote(-1) },
-                enabled = !isVoting,
-                modifier = Modifier.weight(1f),
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                VoteControl(
+                    score = score,
+                    viewerVote = post.viewerVote,
+                    enabled = !isVoting,
+                    onVote = onVote,
+                )
+                Surface(
+                    shape = RoundedCornerShape(PirateTokens.radius.full),
+                    color = PirateTokens.colors.surfaceSubtle,
+                    border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = PhosphorIcons.ChatCircle,
+                            contentDescription = null,
+                            tint = PirateTokens.colors.textSecondary,
+                        )
+                        Text(
+                            text = comments.toString(),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PirateTokens.colors.textPrimary,
+                        )
+                    }
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(8.dp))
-        PirateButton(
-            text = "Open post",
-            onClick = onClick,
-            modifier = Modifier.fillMaxWidth(),
+    }
+}
+
+@Composable
+private fun CommunityAvatar(label: String, modifier: Modifier = Modifier) {
+    val colors = communityPlaceholderColors(label)
+    Box(
+        modifier = modifier
+            .size(72.dp)
+            .clip(RoundedCornerShape(PirateTokens.radius.full))
+            .background(colors.first),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = initials(label),
+            style = MaterialTheme.typography.headlineSmall,
+            color = colors.second,
         )
+    }
+}
+
+@Composable
+private fun UserAvatar(label: String) {
+    Box(
+        modifier = Modifier
+            .size(46.dp)
+            .clip(RoundedCornerShape(PirateTokens.radius.full))
+            .background(Color(0xFFF4BF45)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = ":)",
+            style = MaterialTheme.typography.titleSmall,
+            color = Color(0xFF101010),
+        )
+    }
+}
+
+private fun initials(label: String): String =
+    label
+        .split(" ", "-", "_")
+        .filter { it.isNotBlank() }
+        .take(2)
+        .joinToString("") { it.first().uppercase() }
+        .ifBlank { "C" }
+
+private fun communityPlaceholderColors(label: String): Pair<Color, Color> {
+    val palette = listOf(
+        Color(0xFF243F46) to Color(0xFFD9F0F2),
+        Color(0xFF314936) to Color(0xFFE2F3DE),
+        Color(0xFF3F3A5F) to Color(0xFFECE8FF),
+        Color(0xFF4B4555) to Color(0xFFF0EAF6),
+        Color(0xFF33465F) to Color(0xFFE6EEF8),
+        Color(0xFF4C4A37) to Color(0xFFF4F0D9),
+    )
+    return palette[Math.floorMod(label.hashCode(), palette.size)]
+}
+
+private fun relativeTimeLabel(timestamp: String): String {
+    val createdAt = try {
+        Instant.parse(timestamp)
+    } catch (_: DateTimeParseException) {
+        return ""
+    }
+    val duration = Duration.between(createdAt, Instant.now()).coerceAtLeast(Duration.ZERO)
+    val minutes = duration.toMinutes()
+    val hours = duration.toHours()
+    val days = duration.toDays()
+    return when {
+        minutes < 1 -> "now"
+        minutes < 60 -> "${minutes}m"
+        hours < 24 -> "${hours}h"
+        days < 30 -> "${days}d"
+        days < 365 -> "${days / 30}mo"
+        else -> "${days / 365}y"
     }
 }
