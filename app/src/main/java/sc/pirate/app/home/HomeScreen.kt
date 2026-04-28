@@ -351,14 +351,14 @@ fun HomeScreen(
                     )
                 },
                 actions = {
-                    if (hasSession) {
-                        IconButton(onClick = onNavigateToCompose) {
-                            Icon(
-                                imageVector = PhosphorIcons.Plus,
-                                contentDescription = "Create post",
-                                tint = PirateTokens.colors.textPrimary,
-                            )
-                        }
+                    IconButton(onClick = {
+                        if (hasSession) onNavigateToCompose() else authPromptAction = "Creating a post"
+                    }) {
+                        Icon(
+                            imageVector = PhosphorIcons.Plus,
+                            contentDescription = "Create post",
+                            tint = PirateTokens.colors.textPrimary,
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

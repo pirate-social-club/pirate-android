@@ -48,16 +48,18 @@ private fun PirateAppShell() {
             route = PirateRoute.Home.route,
             label = "Home",
             icon = PhosphorIcons.House,
+            activeIcon = PhosphorIcons.HouseFill,
             activeRoutes = setOf(PirateRoute.Home.route, PirateRoute.Community.route),
         ),
-        BottomNavItem(PirateRoute.Wallet.route, "Wallet", PhosphorIcons.Wallet),
+        BottomNavItem(PirateRoute.Wallet.route, "Wallet", PhosphorIcons.Wallet, PhosphorIcons.WalletFill),
         BottomNavItem(
             route = PirateRoute.Chat.route,
             label = "Chat",
             icon = PhosphorIcons.ChatCircle,
+            activeIcon = PhosphorIcons.ChatCircleFill,
         ),
-        BottomNavItem(PirateRoute.Inbox.route, "Inbox", PhosphorIcons.Bell),
-        BottomNavItem(PirateRoute.Me.route, "Profile", PhosphorIcons.UserCircle),
+        BottomNavItem(PirateRoute.Inbox.route, "Inbox", PhosphorIcons.Bell, PhosphorIcons.BellFill),
+        BottomNavItem(PirateRoute.Me.route, "Profile", PhosphorIcons.UserCircle, PhosphorIcons.UserCircleFill),
     )
 
     PirateScaffold(bottomItems = bottomItems) { navController, modifier ->

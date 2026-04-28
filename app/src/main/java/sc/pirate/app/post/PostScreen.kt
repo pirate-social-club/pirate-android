@@ -448,7 +448,7 @@ fun PostScreen(
                     }
                 },
                 actions = {
-                    if (hasSession && onNavigateToCompose != null) {
+                    if (onNavigateToCompose != null) {
                         val communityId = state.post?.post?.communityId
                         if (!communityId.isNullOrBlank()) {
                             IconButton(onClick = { onNavigateToCompose(communityId) }) {

@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -36,6 +35,7 @@ data class BottomNavItem(
     val route: String,
     val label: String,
     val icon: ImageVector,
+    val activeIcon: ImageVector = icon,
     val activeRoutes: Set<String> = setOf(route),
 )
 
@@ -124,17 +124,9 @@ private fun BottomNavIcon(
     } else {
         PirateTokens.colors.textSecondary
     }
-    val backgroundColor = if (selected) {
-        PirateTokens.colors.surfaceAccent
-    } else {
-        androidx.compose.ui.graphics.Color.Transparent
-    }
-
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clip(CircleShape)
-            .background(backgroundColor)
             .clickable(
                 role = Role.Button,
                 onClickLabel = item.label,
@@ -143,7 +135,7 @@ private fun BottomNavIcon(
         contentAlignment = androidx.compose.ui.Alignment.Center,
     ) {
         Icon(
-            imageVector = item.icon,
+            imageVector = if (selected) item.activeIcon else item.icon,
             contentDescription = item.label,
             tint = iconColor,
             modifier = Modifier.size(26.dp),

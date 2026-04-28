@@ -1,29 +1,38 @@
 package sc.pirate.app.post
 
 import android.app.Application
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -35,6 +44,7 @@ import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.FormNote
+import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
@@ -172,45 +182,83 @@ fun PostComposerScreen(
         }
     }
 
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(
-        onDismissRequest = onBack,
-        sheetState = sheetState,
-        containerColor = PirateTokens.colors.bgPage,
+    val canPublish = hasSession && state.eligibility?.status == "already_joined"
+    val hasDraft = when (state.postType) {
+        "link" -> state.linkUrl.isNotBlank()
+        "text" -> state.title.isNotBlank()
+        else -> false
+    }
+    val canAttemptPost = !state.loadingEligibility && hasDraft
+
+    Scaffold(
         modifier = modifier,
-    ) {
-        val canPublish = hasSession && state.eligibility?.status == "already_joined"
-        val hasDraft = when (state.postType) {
-            "link" -> state.linkUrl.isNotBlank()
-            else -> state.title.isNotBlank()
-        }
-        val submitLabel = if (hasSession && !canPublish) "Open community" else "Post"
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .fillMaxHeight(0.92f)
-                .imePadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 16.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+        containerColor = PirateTokens.colors.bgPage,
+        topBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp),
             ) {
-                Text(
-                    text = "Create post",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = PirateTokens.colors.textPrimary,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onBack) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                ) {
                     Icon(
-                        PhosphorIcons.CaretLeft,
+                        PhosphorIcons.X,
                         contentDescription = "Close",
                         tint = PirateTokens.colors.textPrimary,
                     )
                 }
+                Text(
+                    text = "Create post",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = PirateTokens.colors.textPrimary,
+                    modifier = Modifier.align(Alignment.Center),
+                )
             }
+        },
+        bottomBar = {
+            Surface(
+                color = PirateTokens.colors.bgPage,
+                border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
+            ) {
+                PirateButton(
+                    text = "Post",
+                    onClick = {
+                        when {
+                            !hasSession -> onSignIn()
+                            !canPublish -> onOpenCommunity()
+                            else -> viewModel.submit(communityId)
+                        }
+                    },
+                    loading = state.submitting,
+                    enabled = canAttemptPost && !state.submitting,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(16.dp),
+                )
+            }
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .imePadding()
+                .padding(horizontal = 16.dp),
+        ) {
+            CommunitySelectorPill(
+                label = if (communityId.isBlank()) "Choose a community" else "c/$communityId",
+                onClick = onOpenCommunity,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ComposerTabs(
+                selected = state.postType,
+                onSelect = viewModel::selectPostType,
+                enabled = !state.submitting,
+            )
             Spacer(modifier = Modifier.height(12.dp))
 
             when {
@@ -241,32 +289,6 @@ fun PostComposerScreen(
                 }
             }
 
-            Text(
-                text = "Post type",
-                style = MaterialTheme.typography.labelLarge,
-                color = PirateTokens.colors.textSecondary,
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PirateButton(
-                    text = if (state.postType == "text") "Text selected" else "Text",
-                    onClick = { viewModel.selectPostType("text") },
-                    enabled = state.postType != "text" && !state.submitting,
-                    modifier = Modifier.weight(1f),
-                )
-                PirateButton(
-                    text = if (state.postType == "link") "Link selected" else "Link",
-                    onClick = { viewModel.selectPostType("link") },
-                    enabled = state.postType != "link" && !state.submitting,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
             OutlinedTextField(
                 value = state.title,
                 onValueChange = viewModel::updateTitle,
@@ -291,39 +313,179 @@ fun PostComposerScreen(
                 Spacer(modifier = Modifier.height(12.dp))
             }
 
+            Text(
+                text = if (state.postType == "link") "Comment" else "Body",
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            BodyEditorChrome {
+                OutlinedTextField(
+                    value = state.body,
+                    onValueChange = viewModel::updateBody,
+                    placeholder = { Text(if (state.postType == "link") "Add context" else "Write your post") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    maxLines = 12,
+                    enabled = !state.submitting,
+                )
+            }
+
+            if (state.postType == "image" || state.postType == "song") {
+                Spacer(modifier = Modifier.height(8.dp))
+                FormNote(
+                    message = "This post type is visible for parity with mobile web. Native upload wiring is next; use Text or Link for this build.",
+                    tone = FormTone.Warning,
+                )
+            }
+
             OutlinedTextField(
-                value = state.body,
-                onValueChange = viewModel::updateBody,
-                label = { Text(if (state.postType == "link") "Comment" else "Body") },
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                maxLines = 12,
-                enabled = !state.submitting,
+                value = "Public",
+                onValueChange = {},
+                enabled = false,
+                leadingIcon = {
+                    Icon(PhosphorIcons.Globe, contentDescription = null)
+                },
+                trailingIcon = {
+                    Icon(PhosphorIcons.CaretDown, contentDescription = null)
+                },
+                modifier = Modifier
+                    .fillMaxWidth(0.38f)
+                    .padding(top = 16.dp),
             )
 
             if (state.error != null) {
                 Spacer(modifier = Modifier.height(8.dp))
-                FormNote(message = state.error!!, tone = sc.pirate.app.ui.FormTone.Error)
+                FormNote(message = state.error!!, tone = FormTone.Error)
             }
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            PirateButton(
-                text = submitLabel,
-                onClick = {
-                    when {
-                        !hasSession -> onSignIn()
-                        !canPublish -> onOpenCommunity()
-                        else -> viewModel.submit(communityId)
-                    }
-                },
-                loading = state.submitting,
-                enabled = when {
-                    state.loadingEligibility -> false
-                    hasSession && !canPublish -> true
-                    else -> hasDraft
-                },
-                modifier = Modifier.fillMaxWidth(),
+@Composable
+private fun CommunitySelectorPill(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = PirateTokens.colors.surfaceSubtle,
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                PhosphorIcons.Users,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
+                color = PirateTokens.colors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                PhosphorIcons.CaretDown,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
             )
         }
+    }
+}
+
+@Composable
+private fun ComposerTabs(
+    selected: String,
+    onSelect: (String) -> Unit,
+    enabled: Boolean,
+) {
+    val tabs = listOf(
+        ComposerTab("text", PhosphorIcons.TextT, "Text"),
+        ComposerTab("image", PhosphorIcons.ImageSquare, "Image"),
+        ComposerTab("link", PhosphorIcons.Link, "Link"),
+        ComposerTab("song", PhosphorIcons.MusicNote, "Music"),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        tabs.forEach { tab ->
+            val active = selected == tab.id
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = enabled) { onSelect(tab.id) }
+                    .padding(top = 10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(
+                    imageVector = tab.icon,
+                    contentDescription = tab.label,
+                    tint = if (active) PirateTokens.colors.textPrimary else PirateTokens.colors.textSecondary,
+                    modifier = Modifier.size(22.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .padding(top = 10.dp)
+                        .height(1.dp)
+                        .fillMaxWidth()
+                        .background(if (active) PirateTokens.colors.accentDanger else androidx.compose.ui.graphics.Color.Transparent),
+                )
+            }
+        }
+    }
+}
+
+private data class ComposerTab(
+    val id: String,
+    val icon: ImageVector,
+    val label: String,
+)
+
+@Composable
+private fun BodyEditorChrome(content: @Composable Column.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(290.dp)
+            .border(1.dp, PirateTokens.colors.borderSoft, RoundedCornerShape(PirateTokens.radius.lg)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(26.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            listOf("B", "I", "S", "''", "#").forEach { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = PirateTokens.colors.textSecondary,
+                )
+            }
+            Icon(
+                PhosphorIcons.Link,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            content = content,
+        )
     }
 }

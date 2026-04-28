@@ -130,15 +130,15 @@ fun GlobalSubmitScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Submit",
+                        text = "Create post",
                         color = PirateTokens.colors.textPrimary,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            PhosphorIcons.CaretLeft,
-                            contentDescription = "Back",
+                            PhosphorIcons.X,
+                            contentDescription = "Close",
                             tint = PirateTokens.colors.textPrimary,
                         )
                     }
@@ -203,7 +203,7 @@ fun GlobalSubmitScreen(
                         item {
                             Text(
                                 text = "Choose a community",
-                                style = MaterialTheme.typography.headlineSmall,
+                                style = MaterialTheme.typography.titleMedium,
                                 color = PirateTokens.colors.textPrimary,
                             )
                         }
