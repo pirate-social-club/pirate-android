@@ -23,14 +23,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import sc.pirate.app.api.model.Profile
+import sc.pirate.app.api.model.SessionExchangeResponse
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.ui.shortAddress
 
 data class ProfileUiState(
     val profile: Profile? = null,
+    val session: SessionExchangeResponse? = null,
     val loading: Boolean = true,
     val requiresAuth: Boolean = false,
     val error: String? = null,
@@ -50,7 +53,8 @@ class MeProfileViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _state.value = ProfileUiState(loading = true)
             try {
-                if (app.sessionStore.get() == null) {
+                val session = app.sessionStore.get()
+                if (session == null) {
                     _state.value = ProfileUiState(
                         loading = false,
                         requiresAuth = true,
@@ -58,7 +62,7 @@ class MeProfileViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
                 val profile = profileRepository.getMe()
-                _state.value = ProfileUiState(profile = profile, loading = false)
+                _state.value = ProfileUiState(profile = profile, session = session, loading = false)
             } catch (e: Exception) {
                 _state.value = ProfileUiState(
                     loading = false,
@@ -152,6 +156,10 @@ private fun ProfileContent(
         } else if (state.profile != null) {
             val profile = state.profile
             val handle = profile.globalHandle?.let { "${it.label}.pirate" }.orEmpty()
+            val attachmentCount = state.session?.walletAttachments?.size ?: 0
+            val primaryWalletAddress = profile.primaryWalletAddress
+                ?: state.session?.walletAttachments?.firstOrNull { it.isPrimary }?.walletAddress
+                ?: state.session?.walletAttachments?.firstOrNull()?.walletAddress
 
             PirateCard {
                 Text(
@@ -173,6 +181,27 @@ private fun ProfileContent(
                         text = profile.bio,
                         style = MaterialTheme.typography.bodyLarge,
                         color = PirateTokens.colors.textPrimary,
+                    )
+                }
+                if (!primaryWalletAddress.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Primary wallet",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textSecondary,
+                    )
+                    Text(
+                        text = shortAddress(primaryWalletAddress),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = PirateTokens.colors.textPrimary,
+                    )
+                }
+                if (attachmentCount > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "$attachmentCount attached wallet${if (attachmentCount == 1) "" else "s"}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textSecondary,
                     )
                 }
             }

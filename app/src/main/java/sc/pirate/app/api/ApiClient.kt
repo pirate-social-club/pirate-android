@@ -31,7 +31,7 @@ private fun displayApiErrorMessage(error: ErrorResponse?, status: Int): String {
 
 class ApiClient(private val sessionStore: SessionStore) {
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+    internal val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
@@ -48,12 +48,13 @@ class ApiClient(private val sessionStore: SessionStore) {
         method: String = "GET",
         body: String? = null,
         requireAuth: Boolean = true,
+        optionalAuth: Boolean = false,
     ): String {
         val response = withContext(Dispatchers.IO) {
             val url = "$baseUrl$path"
             val requestBuilder = Request.Builder().url(url)
 
-            if (requireAuth) {
+            if (requireAuth || optionalAuth) {
                 val token = sessionStore.getAccessToken()
                 if (token != null) {
                     requestBuilder.header("Authorization", "Bearer $token")
@@ -98,16 +99,28 @@ class ApiClient(private val sessionStore: SessionStore) {
         return response.body
     }
 
-    private suspend fun getString(path: String, requireAuth: Boolean = true): String =
+    internal suspend fun getString(path: String, requireAuth: Boolean = true): String =
         request(path, "GET", requireAuth = requireAuth)
 
-    private suspend fun postString(path: String, body: String? = null, requireAuth: Boolean = true): String =
+    private suspend fun getStringOptionalAuth(path: String): String {
+        return try {
+            request(path, "GET", requireAuth = false, optionalAuth = true)
+        } catch (error: ApiError) {
+            if (error.status == 401 && error.code == "auth_error") {
+                request(path, "GET", requireAuth = false)
+            } else {
+                throw error
+            }
+        }
+    }
+
+    internal suspend fun postString(path: String, body: String? = null, requireAuth: Boolean = true): String =
         request(path, "POST", body, requireAuth)
 
     private suspend fun patchString(path: String, body: String): String =
         request(path, "PATCH", body)
 
-    private fun buildQueryPath(path: String, params: List<Pair<String, String?>>): String {
+    internal fun buildQueryPath(path: String, params: List<Pair<String, String?>>): String {
         val query = params
             .mapNotNull { (key, value) ->
                 value?.takeIf { it.isNotBlank() }?.let {
@@ -121,71 +134,69 @@ class ApiClient(private val sessionStore: SessionStore) {
     private fun encodeQueryValue(value: String): String =
         URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
 
-    private fun encodePathSegment(value: String): String =
+    internal fun encodePathSegment(value: String): String =
         "https://pirate.local/$value".toHttpUrl().encodedPathSegments.last()
 
-    object Auth {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
+    val auth = AuthEndpoints(this)
+    val onboarding = OnboardingEndpoints(this)
+    val verification = VerificationEndpoints(this)
+    val feed = FeedEndpoints(this)
+    val communities = CommunitiesEndpoints(this)
+    val publicCommunities = PublicCommunitiesEndpoints(this)
+    val posts = PostsEndpoints(this)
+    val publicPosts = PublicPostsEndpoints(this)
+    val comments = CommentsEndpoints(this)
+    val publicComments = PublicCommentsEndpoints(this)
+    val profiles = ProfilesEndpoints(this)
+    val notifications = NotificationsEndpoints(this)
 
-        fun init(c: ApiClient) { client = c }
-
+    class AuthEndpoints internal constructor(private val api: ApiClient) {
         suspend fun sessionExchange(proof: SessionExchangeProof): SessionExchangeResponse {
-            val body = json.encodeToString(SessionExchangeRequest.serializer(), SessionExchangeRequest(proof))
-            val response = client.postString("/auth/session/exchange", body, requireAuth = false)
-            return json.decodeFromString(SessionExchangeResponse.serializer(), response)
+            val body = api.json.encodeToString(SessionExchangeRequest.serializer(), SessionExchangeRequest(proof))
+            val response = api.postString("/auth/session/exchange", body, requireAuth = false)
+            return api.json.decodeFromString(SessionExchangeResponse.serializer(), response)
         }
     }
 
-    object Onboarding {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
-
-        fun init(c: ApiClient) { client = c }
-
+    class OnboardingEndpoints internal constructor(private val api: ApiClient) {
         suspend fun getStatus(): OnboardingStatus {
-            val response = client.getString("/onboarding/status")
-            return json.decodeFromString(OnboardingStatus.serializer(), response)
+            val response = api.getString("/onboarding/status")
+            return api.json.decodeFromString(OnboardingStatus.serializer(), response)
         }
 
         suspend fun dismiss(): OnboardingStatus {
-            val response = client.postString("/onboarding/dismiss", "{}")
-            return json.decodeFromString(OnboardingStatus.serializer(), response)
+            val response = api.postString("/onboarding/dismiss", "{}")
+            return api.json.decodeFromString(OnboardingStatus.serializer(), response)
         }
 
         suspend fun startRedditVerification(username: String): RedditVerification {
-            val body = json.encodeToString(StartRedditVerificationRequest.serializer(), StartRedditVerificationRequest(username))
-            val response = client.postString("/onboarding/reddit-verification", body)
-            return json.decodeFromString(RedditVerification.serializer(), response)
+            val body = api.json.encodeToString(StartRedditVerificationRequest.serializer(), StartRedditVerificationRequest(username))
+            val response = api.postString("/onboarding/reddit-verification", body)
+            return api.json.decodeFromString(RedditVerification.serializer(), response)
         }
 
         suspend fun startRedditImport(username: String): String {
-            val body = json.encodeToString(StartRedditImportRequest.serializer(), StartRedditImportRequest(username))
-            val response = client.postString("/onboarding/reddit-imports", body)
+            val body = api.json.encodeToString(StartRedditImportRequest.serializer(), StartRedditImportRequest(username))
+            val response = api.postString("/onboarding/reddit-imports", body)
             return response
         }
 
         suspend fun getLatestRedditImport(): RedditImportSummary {
-            val response = client.getString("/onboarding/reddit-imports/latest")
-            return json.decodeFromString(RedditImportSummary.serializer(), response)
+            val response = api.getString("/onboarding/reddit-imports/latest")
+            return api.json.decodeFromString(RedditImportSummary.serializer(), response)
         }
     }
 
-    object Verification {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
-
-        fun init(c: ApiClient) { client = c }
-
+    class VerificationEndpoints internal constructor(private val api: ApiClient) {
         suspend fun startSession(input: StartVerificationSessionRequest): VerificationSession {
-            val body = json.encodeToString(StartVerificationSessionRequest.serializer(), input)
-            val response = client.postString("/verification-sessions", body)
-            return json.decodeFromString(VerificationSession.serializer(), response)
+            val body = api.json.encodeToString(StartVerificationSessionRequest.serializer(), input)
+            val response = api.postString("/verification-sessions", body)
+            return api.json.decodeFromString(VerificationSession.serializer(), response)
         }
 
         suspend fun getSession(sessionId: String): VerificationSession {
-            val response = client.getString("/verification-sessions/${sessionId}")
-            return json.decodeFromString(VerificationSession.serializer(), response)
+            val response = api.getString("/verification-sessions/${sessionId}")
+            return api.json.decodeFromString(VerificationSession.serializer(), response)
         }
 
         suspend fun completeSession(
@@ -195,51 +206,46 @@ class ApiClient(private val sessionStore: SessionStore) {
             proofHash: String? = null,
             providerPayloadRef: String? = null,
         ): VerificationSession {
-            val body = json.encodeToString(
+            val body = api.json.encodeToString(
                 CompleteVerificationSessionRequest.serializer(),
                 CompleteVerificationSessionRequest(attestationId, proof, proofHash, providerPayloadRef),
             )
-            val response = client.postString("/verification-sessions/$sessionId/complete", body)
-            return json.decodeFromString(VerificationSession.serializer(), response)
+            val response = api.postString("/verification-sessions/$sessionId/complete", body)
+            return api.json.decodeFromString(VerificationSession.serializer(), response)
         }
 
         suspend fun startNamespaceSession(family: String, rootLabel: String): NamespaceVerificationSession {
-            val body = json.encodeToString(
+            val body = api.json.encodeToString(
                 StartNamespaceVerificationSessionRequest.serializer(),
                 StartNamespaceVerificationSessionRequest(family, rootLabel),
             )
-            val response = client.postString("/namespace-verification-sessions", body)
-            return json.decodeFromString(NamespaceVerificationSession.serializer(), response)
+            val response = api.postString("/namespace-verification-sessions", body)
+            return api.json.decodeFromString(NamespaceVerificationSession.serializer(), response)
         }
 
         suspend fun completeNamespaceSession(sessionId: String, restartChallenge: Boolean? = null): NamespaceVerificationSession {
-            val body = json.encodeToString(
+            val body = api.json.encodeToString(
                 CompleteNamespaceVerificationSessionRequest.serializer(),
                 CompleteNamespaceVerificationSessionRequest(restartChallenge),
             )
-            val response = client.postString("/namespace-verification-sessions/$sessionId/complete", body)
-            return json.decodeFromString(NamespaceVerificationSession.serializer(), response)
+            val response = api.postString("/namespace-verification-sessions/$sessionId/complete", body)
+            return api.json.decodeFromString(NamespaceVerificationSession.serializer(), response)
         }
 
         suspend fun getNamespaceSession(sessionId: String): NamespaceVerificationSession {
-            val response = client.getString("/namespace-verification-sessions/$sessionId")
-            return json.decodeFromString(NamespaceVerificationSession.serializer(), response)
+            val response = api.getString("/namespace-verification-sessions/$sessionId")
+            return api.json.decodeFromString(NamespaceVerificationSession.serializer(), response)
         }
     }
 
-    object Feed {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
-
-        fun init(c: ApiClient) { client = c }
-
+    class FeedEndpoints internal constructor(private val api: ApiClient) {
         suspend fun home(
             cursor: String? = null,
             locale: String? = null,
             sort: String? = null,
             timeRange: String? = null,
         ): HomeFeedResponse {
-            val path = client.buildQueryPath(
+            val path = api.buildQueryPath(
                 "/feed/home",
                 listOf(
                     "cursor" to cursor,
@@ -248,63 +254,68 @@ class ApiClient(private val sessionStore: SessionStore) {
                     "time_range" to timeRange,
                 ),
             )
-            val response = client.getString(path)
-            return json.decodeFromString(HomeFeedResponse.serializer(), response)
+            val response = api.getStringOptionalAuth(path)
+            return api.json.decodeFromString(HomeFeedResponse.serializer(), response)
         }
     }
 
-    object Communities {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
-
-        fun init(c: ApiClient) { client = c }
-
+    class CommunitiesEndpoints internal constructor(private val api: ApiClient) {
         suspend fun create(request: CreateCommunityRequest): CommunityCreateAcceptedResponse {
-            val body = json.encodeToString(CreateCommunityRequest.serializer(), request)
-            val response = client.postString("/communities", body)
-            return json.decodeFromString(CommunityCreateAcceptedResponse.serializer(), response)
+            val body = api.json.encodeToString(CreateCommunityRequest.serializer(), request)
+            val response = api.postString("/communities", body)
+            return api.json.decodeFromString(CommunityCreateAcceptedResponse.serializer(), response)
         }
 
         suspend fun get(communityId: String): Community {
-            val response = client.getString("/communities/$communityId")
-            return json.decodeFromString(Community.serializer(), response)
+            val response = api.getString("/communities/$communityId")
+            return api.json.decodeFromString(Community.serializer(), response)
         }
 
         suspend fun preview(communityId: String, locale: String? = null): CommunityPreview {
-            val path = client.buildQueryPath(
+            val path = api.buildQueryPath(
                 "/communities/$communityId/preview",
                 listOf("locale" to locale),
             )
-            val response = client.getString(path)
-            return json.decodeFromString(CommunityPreview.serializer(), response)
+            val response = api.getString(path)
+            return api.json.decodeFromString(CommunityPreview.serializer(), response)
         }
 
         suspend fun getJoinEligibility(communityId: String): JoinEligibility {
-            val response = client.getString("/communities/$communityId/join-eligibility")
-            return json.decodeFromString(JoinEligibility.serializer(), response)
+            val response = api.getString("/communities/$communityId/join-eligibility")
+            return api.json.decodeFromString(JoinEligibility.serializer(), response)
         }
 
         suspend fun join(communityId: String): CommunityJoinResponse {
-            val response = client.postString("/communities/$communityId/join")
-            return json.decodeFromString(CommunityJoinResponse.serializer(), response)
+            val response = api.postString("/communities/$communityId/join")
+            return api.json.decodeFromString(CommunityJoinResponse.serializer(), response)
+        }
+
+        suspend fun follow(communityId: String): CommunityFollowResponse {
+            val response = api.request("/communities/$communityId/follow", "PUT", "{}")
+            return api.json.decodeFromString(CommunityFollowResponse.serializer(), response)
+        }
+
+        suspend fun unfollow(communityId: String): CommunityFollowResponse {
+            val response = api.request("/communities/$communityId/follow", "DELETE")
+            return api.json.decodeFromString(CommunityFollowResponse.serializer(), response)
         }
 
         suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
-            val body = json.encodeToString(
+            val body = api.json.encodeToString(
                 AttachNamespaceRequest.serializer(),
                 AttachNamespaceRequest(namespaceVerificationId),
             )
-            val response = client.postString("/communities/$communityId/namespace", body)
-            return json.decodeFromString(Community.serializer(), response)
+            val response = api.postString("/communities/$communityId/namespace", body)
+            return api.json.decodeFromString(Community.serializer(), response)
         }
 
         suspend fun setPendingNamespaceSession(communityId: String, sessionId: String?): Community {
-            val body = json.encodeToString(
+            val body = api.json.encodeToString(
                 SetPendingNamespaceSessionRequest.serializer(),
                 SetPendingNamespaceSessionRequest(sessionId),
             )
-            val response = client.request("/communities/$communityId/pending-namespace-session", "PUT", body)
-            return json.decodeFromString(Community.serializer(), response)
+            val response = api.request("/communities/$communityId/pending-namespace-session", "PUT", body)
+            return api.json.decodeFromString(Community.serializer(), response)
         }
 
         suspend fun listPosts(
@@ -315,7 +326,7 @@ class ApiClient(private val sessionStore: SessionStore) {
             sort: String? = null,
             flairId: String? = null,
         ): PostListResponse {
-            val path = client.buildQueryPath(
+            val path = api.buildQueryPath(
                 "/communities/$communityId/posts",
                 listOf(
                     "cursor" to cursor,
@@ -325,14 +336,14 @@ class ApiClient(private val sessionStore: SessionStore) {
                     "sort" to sort,
                 ),
             )
-            val response = client.getString(path)
-            return json.decodeFromString(PostListResponse.serializer(), response)
+            val response = api.getString(path)
+            return api.json.decodeFromString(PostListResponse.serializer(), response)
         }
 
         suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse {
-            val body = json.encodeToString(CreatePostRequest.serializer(), request)
-            val response = client.postString("/communities/$communityId/posts", body)
-            return json.decodeFromString(LocalizedPostResponse.serializer(), response)
+            val body = api.json.encodeToString(CreatePostRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/posts", body)
+            return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
         }
 
         suspend fun listComments(
@@ -343,7 +354,7 @@ class ApiClient(private val sessionStore: SessionStore) {
             locale: String? = null,
             sort: String? = null,
         ): CommentListResponse {
-            val path = client.buildQueryPath(
+            val path = api.buildQueryPath(
                 "/communities/$communityId/posts/$postId/comments",
                 listOf(
                     "cursor" to cursor,
@@ -352,8 +363,8 @@ class ApiClient(private val sessionStore: SessionStore) {
                     "sort" to sort,
                 ),
             )
-            val response = client.getString(path)
-            return json.decodeFromString(CommentListResponse.serializer(), response)
+            val response = api.getString(path)
+            return api.json.decodeFromString(CommentListResponse.serializer(), response)
         }
 
         suspend fun createComment(
@@ -361,35 +372,69 @@ class ApiClient(private val sessionStore: SessionStore) {
             postId: String,
             request: CreateCommentRequest,
         ) {
-            val body = json.encodeToString(CreateCommentRequest.serializer(), request)
-            client.postString("/communities/$communityId/posts/$postId/comments", body)
+            val body = api.json.encodeToString(CreateCommentRequest.serializer(), request)
+            api.postString("/communities/$communityId/posts/$postId/comments", body)
         }
     }
 
-    object Posts {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
+    class PublicCommunitiesEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun preview(communityId: String, locale: String? = null): CommunityPreview {
+            val path = api.buildQueryPath(
+                "/public-communities/${api.encodePathSegment(communityId)}",
+                listOf("locale" to locale),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(CommunityPreview.serializer(), response)
+        }
 
-        fun init(c: ApiClient) { client = c }
+        suspend fun listPosts(
+            communityId: String,
+            limit: Int? = null,
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+            flairId: String? = null,
+        ): PostListResponse {
+            val path = api.buildQueryPath(
+                "/public-communities/${api.encodePathSegment(communityId)}/posts",
+                listOf(
+                    "cursor" to cursor,
+                    "flair_id" to flairId,
+                    "limit" to limit?.toString(),
+                    "locale" to locale,
+                    "sort" to sort,
+                ),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(PostListResponse.serializer(), response)
+        }
+    }
 
+    class PostsEndpoints internal constructor(private val api: ApiClient) {
         suspend fun get(postId: String): LocalizedPostResponse {
-            val response = client.getString("/posts/$postId")
-            return json.decodeFromString(LocalizedPostResponse.serializer(), response)
+            val response = api.getString("/posts/$postId")
+            return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
         }
 
         suspend fun vote(postId: String, value: Int): PostVoteResponse {
-            val body = json.encodeToString(PostVoteRequest.serializer(), PostVoteRequest(value))
-            val response = client.postString("/posts/$postId/vote", body)
-            return json.decodeFromString(PostVoteResponse.serializer(), response)
+            val body = api.json.encodeToString(PostVoteRequest.serializer(), PostVoteRequest(value))
+            val response = api.postString("/posts/$postId/vote", body)
+            return api.json.decodeFromString(PostVoteResponse.serializer(), response)
         }
     }
 
-    object Comments {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
+    class PublicPostsEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun get(postId: String, locale: String? = null): LocalizedPostResponse {
+            val path = api.buildQueryPath(
+                "/public-posts/${api.encodePathSegment(postId)}",
+                listOf("locale" to locale),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
+        }
+    }
 
-        fun init(c: ApiClient) { client = c }
-
+    class CommentsEndpoints internal constructor(private val api: ApiClient) {
         suspend fun listReplies(
             commentId: String,
             limit: Int? = null,
@@ -397,7 +442,7 @@ class ApiClient(private val sessionStore: SessionStore) {
             locale: String? = null,
             sort: String? = null,
         ): CommentListResponse {
-            val path = client.buildQueryPath(
+            val path = api.buildQueryPath(
                 "/comments/$commentId/replies",
                 listOf(
                     "cursor" to cursor,
@@ -406,108 +451,124 @@ class ApiClient(private val sessionStore: SessionStore) {
                     "sort" to sort,
                 ),
             )
-            val response = client.getString(path)
-            return json.decodeFromString(CommentListResponse.serializer(), response)
+            val response = api.getString(path)
+            return api.json.decodeFromString(CommentListResponse.serializer(), response)
         }
 
         suspend fun createReply(commentId: String, request: CreateCommentRequest) {
-            val body = json.encodeToString(CreateCommentRequest.serializer(), request)
-            client.postString("/comments/$commentId/replies", body)
+            val body = api.json.encodeToString(CreateCommentRequest.serializer(), request)
+            api.postString("/comments/$commentId/replies", body)
         }
 
         suspend fun vote(commentId: String, value: Int): CommentVoteResponse {
-            val body = json.encodeToString(CommentVoteRequest.serializer(), CommentVoteRequest(value))
-            val response = client.postString("/comments/$commentId/vote", body)
-            return json.decodeFromString(CommentVoteResponse.serializer(), response)
+            val body = api.json.encodeToString(CommentVoteRequest.serializer(), CommentVoteRequest(value))
+            val response = api.postString("/comments/$commentId/vote", body)
+            return api.json.decodeFromString(CommentVoteResponse.serializer(), response)
         }
     }
 
-    object Profiles {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
+    class PublicCommentsEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun listPostComments(
+            postId: String,
+            limit: Int? = null,
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+        ): CommentListResponse {
+            val path = api.buildQueryPath(
+                "/public-comments/posts/${api.encodePathSegment(postId)}/comments",
+                listOf(
+                    "cursor" to cursor,
+                    "limit" to limit?.toString(),
+                    "locale" to locale,
+                    "sort" to sort,
+                ),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(CommentListResponse.serializer(), response)
+        }
 
-        fun init(c: ApiClient) { client = c }
+        suspend fun listReplies(
+            commentId: String,
+            limit: Int? = null,
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+        ): CommentListResponse {
+            val path = api.buildQueryPath(
+                "/public-comments/${api.encodePathSegment(commentId)}/replies",
+                listOf(
+                    "cursor" to cursor,
+                    "limit" to limit?.toString(),
+                    "locale" to locale,
+                    "sort" to sort,
+                ),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(CommentListResponse.serializer(), response)
+        }
+    }
 
+    class ProfilesEndpoints internal constructor(private val api: ApiClient) {
         suspend fun getMe(): Profile {
-            val response = client.getString("/profiles/me")
-            return json.decodeFromString(Profile.serializer(), response)
+            val response = api.getString("/profiles/me")
+            return api.json.decodeFromString(Profile.serializer(), response)
         }
 
         suspend fun getByUserId(userId: String): Profile {
-            val response = client.getString("/profiles/$userId")
-            return json.decodeFromString(Profile.serializer(), response)
+            val response = api.getString("/profiles/$userId")
+            return api.json.decodeFromString(Profile.serializer(), response)
         }
 
         suspend fun getPublicByHandle(handleLabel: String): PublicProfileResolution {
-            val response = client.getString(
-                "/public-profiles/${client.encodePathSegment(handleLabel)}",
+            val response = api.getString(
+                "/public-profiles/${api.encodePathSegment(handleLabel)}",
                 requireAuth = false,
             )
-            return json.decodeFromString(PublicProfileResolution.serializer(), response)
+            return api.json.decodeFromString(PublicProfileResolution.serializer(), response)
         }
 
         suspend fun updateMe(input: ProfileUpdateInput): Profile {
-            val body = json.encodeToString(ProfileUpdateInput.serializer(), input)
-            val response = client.patchString("/profiles/me", body)
-            return json.decodeFromString(Profile.serializer(), response)
+            val body = api.json.encodeToString(ProfileUpdateInput.serializer(), input)
+            val response = api.patchString("/profiles/me", body)
+            return api.json.decodeFromString(Profile.serializer(), response)
         }
 
         suspend fun renameHandle(desiredLabel: String): RenameHandleResponse {
-            val body = json.encodeToString(RenameHandleRequest.serializer(), RenameHandleRequest(desiredLabel))
-            val response = client.postString("/profiles/me/global-handle/rename", body)
-            return json.decodeFromString(RenameHandleResponse.serializer(), response)
+            val body = api.json.encodeToString(RenameHandleRequest.serializer(), RenameHandleRequest(desiredLabel))
+            val response = api.postString("/profiles/me/global-handle/rename", body)
+            return api.json.decodeFromString(RenameHandleResponse.serializer(), response)
         }
     }
 
-    object Notifications {
-        private lateinit var client: ApiClient
-        private val json get() = client.json
-
-        fun init(c: ApiClient) { client = c }
-
+    class NotificationsEndpoints internal constructor(private val api: ApiClient) {
         suspend fun getTasks(): NotificationTasksResponse {
-            val response = client.getString("/notifications/tasks")
-            return json.decodeFromString(NotificationTasksResponse.serializer(), response)
+            val response = api.getString("/notifications/tasks")
+            return api.json.decodeFromString(NotificationTasksResponse.serializer(), response)
         }
 
         suspend fun getFeed(limit: Int? = null, cursor: String? = null): NotificationFeedResponse {
-            val path = client.buildQueryPath(
+            val path = api.buildQueryPath(
                 "/notifications/feed",
                 listOf(
                     "cursor" to cursor,
                     "limit" to limit?.toString(),
                 ),
             )
-            val response = client.getString(path)
-            return json.decodeFromString(NotificationFeedResponse.serializer(), response)
+            val response = api.getString(path)
+            return api.json.decodeFromString(NotificationFeedResponse.serializer(), response)
         }
 
         suspend fun markRead(eventIds: List<String> = emptyList()) {
-            val body = json.encodeToString(MarkNotificationsReadRequest.serializer(), MarkNotificationsReadRequest(eventIds))
-            client.postString("/notifications/mark-read", body)
+            val body = api.json.encodeToString(MarkNotificationsReadRequest.serializer(), MarkNotificationsReadRequest(eventIds))
+            api.postString("/notifications/mark-read", body)
         }
 
         suspend fun dismissTask(taskId: String): UserTask {
-            val body = json.encodeToString(DismissNotificationTaskRequest.serializer(), DismissNotificationTaskRequest(taskId))
-            val response = client.postString("/notifications/dismiss-task", body)
-            return json.decodeFromString(UserTask.serializer(), response)
+            val body = api.json.encodeToString(DismissNotificationTaskRequest.serializer(), DismissNotificationTaskRequest(taskId))
+            val response = api.postString("/notifications/dismiss-task", body)
+            return api.json.decodeFromString(UserTask.serializer(), response)
         }
-    }
-
-    fun initEndpoints() {
-        Auth.init(this)
-        Onboarding.init(this)
-        Verification.init(this)
-        Feed.init(this)
-        Communities.init(this)
-        Posts.init(this)
-        Comments.init(this)
-        Profiles.init(this)
-        Notifications.init(this)
-    }
-
-    init {
-        initEndpoints()
     }
 
     companion object {

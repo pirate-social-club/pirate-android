@@ -73,6 +73,7 @@ data class Profile(
     val bio: String? = null,
     @SerialName("avatar_ref") val avatarRef: String? = null,
     @SerialName("global_handle") val globalHandle: GlobalHandle? = null,
+    @SerialName("primary_wallet_address") val primaryWalletAddress: String? = null,
     @SerialName("preferred_locale") val preferredLocale: String? = null,
     @SerialName("created_at") val createdAt: String,
 )
@@ -452,7 +453,7 @@ data class SuggestedCommunity(
 @Serializable
 data class RedditImportSummary(
     @SerialName("account_age_days") val accountAgeDays: Int? = null,
-    @SerialName("global_karma") val globalKarma: Int? = null,
+    @SerialName("imported_reddit_score") val importedRedditScore: Int? = null,
     @SerialName("top_subreddits") val topSubreddits: List<SubredditKarma> = emptyList(),
     @SerialName("moderator_of") val moderatorOf: List<String> = emptyList(),
     @SerialName("inferred_interests") val inferredInterests: List<String> = emptyList(),
@@ -500,7 +501,10 @@ data class NamespaceVerificationSession(
 
 @Serializable
 data class WalletAttachmentSummary(
+    @SerialName("wallet_attachment_id") val walletAttachmentId: String? = null,
+    @SerialName("chain_namespace") val chainNamespace: String? = null,
     @SerialName("wallet_address") val walletAddress: String,
+    @SerialName("is_primary") val isPrimary: Boolean = false,
     @SerialName("chain_id") val chainId: String? = null,
 )
 
@@ -523,6 +527,13 @@ data class Job(
 data class CommunityJoinResponse(
     @SerialName("community_id") val communityId: String,
     val status: String,
+)
+
+@Serializable
+data class CommunityFollowResponse(
+    @SerialName("community_id") val communityId: String,
+    val following: Boolean,
+    @SerialName("follower_count") val followerCount: Int? = null,
 )
 
 @Serializable

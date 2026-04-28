@@ -26,6 +26,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
+import com.google.accompanist.navigation.material.ExperimentalMaterialNavigationApi
+import com.google.accompanist.navigation.material.ModalBottomSheetLayout
+import com.google.accompanist.navigation.material.rememberBottomSheetNavigator
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTokens
 
@@ -37,70 +40,76 @@ data class BottomNavItem(
 )
 
 @Composable
+@OptIn(ExperimentalMaterialNavigationApi::class)
 fun PirateScaffold(
     bottomItems: List<BottomNavItem>,
     content: @Composable (NavHostController, Modifier) -> Unit,
 ) {
-    val navController = rememberNavController()
+    val bottomSheetNavigator = rememberBottomSheetNavigator()
+    val navController = rememberNavController(bottomSheetNavigator)
     val navBackStackEntry = navController.currentBackStackEntryAsState().value
     val currentRoute = navBackStackEntry?.destination?.route
 
     val showBottomBar = currentRoute in listOf(
         PirateRoute.Home.route,
+        PirateRoute.Chat.route,
+        PirateRoute.Community.route,
         PirateRoute.Wallet.route,
         PirateRoute.Inbox.route,
         PirateRoute.Me.route,
     )
 
-    Scaffold(
-        contentWindowInsets = WindowInsets(0),
-        bottomBar = {
-            if (showBottomBar) {
-                Surface(
-                    color = PirateTokens.colors.bgPage.copy(alpha = 0.95f),
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(64.dp)
-                            .navigationBarsPadding()
-                            .padding(horizontal = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceAround,
+    ModalBottomSheetLayout(bottomSheetNavigator = bottomSheetNavigator) {
+        Scaffold(
+            contentWindowInsets = WindowInsets(0),
+            bottomBar = {
+                if (showBottomBar) {
+                    Surface(
+                        color = PirateTokens.colors.bgPage.copy(alpha = 0.95f),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 0.dp,
                     ) {
-                        bottomItems.forEach { item ->
-                            val selected = currentRoute in item.activeRoutes
-                            BottomNavIcon(
-                                item = item,
-                                selected = selected,
-                                onClick = {
-                                    if (!selected) {
-                                        navController.navigate(item.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) {
-                                                saveState = true
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(64.dp)
+                                .navigationBarsPadding()
+                                .padding(horizontal = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                        ) {
+                            bottomItems.forEach { item ->
+                                val selected = currentRoute in item.activeRoutes
+                                BottomNavIcon(
+                                    item = item,
+                                    selected = selected,
+                                    onClick = {
+                                        if (!selected) {
+                                            navController.navigate(item.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) {
+                                                    saveState = true
+                                                }
+                                                launchSingleTop = true
+                                                restoreState = true
                                             }
-                                            launchSingleTop = true
-                                            restoreState = true
                                         }
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
-            }
-        },
-    ) { innerPadding ->
-        content(
-            navController,
-            Modifier.padding(
-                start = innerPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                top = innerPadding.calculateTopPadding(),
-                end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                bottom = innerPadding.calculateBottomPadding(),
-            ).statusBarsPadding()
-        )
+            },
+        ) { innerPadding ->
+            content(
+                navController,
+                Modifier.padding(
+                    start = innerPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                    top = innerPadding.calculateTopPadding(),
+                    end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                    bottom = innerPadding.calculateBottomPadding(),
+                ).statusBarsPadding()
+            )
+        }
     }
 }
 

@@ -23,10 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PirateCard
+import sc.pirate.app.ui.shortAddress
+import sc.pirate.app.walletconnect.ReownUiState
 
 @Composable
 fun AuthScreen(
     state: AuthUiState,
+    walletConnectState: ReownUiState,
+    onOpenWalletConnect: () -> Unit,
+    onLoginWallet: () -> Unit,
     onLoginGoogle: () -> Unit,
     onLoginTwitter: () -> Unit,
     onSendEmailCode: (String) -> Unit,
@@ -77,7 +82,13 @@ fun AuthScreen(
             is AuthUiState.Error -> {
                 ErrorMessage(message = state.message)
                 Spacer(modifier = Modifier.height(16.dp))
-                LoginButtons(onLoginGoogle, onLoginTwitter)
+                LoginButtons(
+                    walletConnectState = walletConnectState,
+                    onOpenWalletConnect = onOpenWalletConnect,
+                    onLoginWallet = onLoginWallet,
+                    onLoginGoogle = onLoginGoogle,
+                    onLoginTwitter = onLoginTwitter,
+                )
                 Spacer(modifier = Modifier.height(24.dp))
                 EmailLoginForm(onSendEmailCode, onLoginEmail)
             }
@@ -98,7 +109,13 @@ fun AuthScreen(
                 }
             }
             is AuthUiState.Idle -> {
-                LoginButtons(onLoginGoogle, onLoginTwitter)
+                LoginButtons(
+                    walletConnectState = walletConnectState,
+                    onOpenWalletConnect = onOpenWalletConnect,
+                    onLoginWallet = onLoginWallet,
+                    onLoginGoogle = onLoginGoogle,
+                    onLoginTwitter = onLoginTwitter,
+                )
 
                 Spacer(modifier = Modifier.height(24.dp))
 
@@ -119,9 +136,53 @@ private fun ErrorMessage(message: String) {
 
 @Composable
 private fun LoginButtons(
+    walletConnectState: ReownUiState,
+    onOpenWalletConnect: () -> Unit,
+    onLoginWallet: () -> Unit,
     onLoginGoogle: () -> Unit,
     onLoginTwitter: () -> Unit,
 ) {
+    Button(
+        onClick = if (walletConnectState.isConnected) onLoginWallet else onOpenWalletConnect,
+        modifier = Modifier.fillMaxWidth(),
+        enabled = walletConnectState.available || walletConnectState.isConnected,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = PirateTokens.colors.surfaceInteractive,
+            contentColor = PirateTokens.colors.textPrimary,
+        ),
+    ) {
+        Text(
+            when {
+                !walletConnectState.available -> "Wallet connect unavailable"
+                walletConnectState.isConnected -> "Continue with connected wallet"
+                else -> "Continue with wallet"
+            },
+            modifier = Modifier.padding(vertical = 4.dp),
+        )
+    }
+
+    walletConnectState.statusMessage
+        ?.takeIf { !walletConnectState.available && it.isNotBlank() }
+        ?.let { message ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.textSecondary,
+            )
+        }
+
+    walletConnectState.connectedAddress?.takeIf { it.isNotBlank() }?.let { address ->
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Connected: ${shortAddress(address)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = PirateTokens.colors.textSecondary,
+        )
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
     Button(
         onClick = onLoginGoogle,
         modifier = Modifier.fillMaxWidth(),

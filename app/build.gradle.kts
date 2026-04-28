@@ -1,4 +1,6 @@
+import java.net.URI
 import java.util.Properties
+import org.gradle.api.GradleException
 
 plugins {
   id("com.android.application")
@@ -42,11 +44,34 @@ android {
     val apiBaseUrl = runtimeProp("API_BASE_URL") ?: "https://api.pirate.sc"
     buildConfigField("String", "API_BASE_URL", buildConfigString(apiBaseUrl))
 
+    val privyEnabled = runtimeProp("PRIVY_ENABLED")
+      ?.lowercase()
+      ?.let { it == "true" || it == "1" }
+      ?: true
+    buildConfigField("boolean", "PRIVY_ENABLED", privyEnabled.toString())
+
     val privyAppId = runtimeProp("PRIVY_APP_ID") ?: "cmnbdx9xk00ty0clapn2q8pdj"
     buildConfigField("String", "PRIVY_APP_ID", buildConfigString(privyAppId))
 
     val privyAppClientId = runtimeProp("PRIVY_APP_CLIENT_ID") ?: "client-WY6Xkpp2wLef8Y9cWBrZ1GhnmqAtnVh9YisfZ2dA3c7DW"
     buildConfigField("String", "PRIVY_APP_CLIENT_ID", buildConfigString(privyAppClientId))
+
+    val privyRedirectScheme = runtimeProp("PRIVY_REDIRECT_SCHEME") ?: "pirate"
+    buildConfigField("String", "PRIVY_REDIRECT_SCHEME", buildConfigString(privyRedirectScheme))
+    manifestPlaceholders["privyRedirectScheme"] = privyRedirectScheme
+
+    val reownProjectId = runtimeProp("REOWN_PROJECT_ID") ?: ""
+    buildConfigField("String", "REOWN_PROJECT_ID", buildConfigString(reownProjectId))
+
+    val reownRedirectUri = runtimeProp("REOWN_REDIRECT_URI") ?: "pirate://wallet-connect"
+    buildConfigField("String", "REOWN_REDIRECT_URI", buildConfigString(reownRedirectUri))
+    val parsedReownRedirectUri = try {
+      URI(reownRedirectUri)
+    } catch (error: Exception) {
+      throw GradleException("REOWN_REDIRECT_URI must be a valid URI. Received: $reownRedirectUri", error)
+    }
+    manifestPlaceholders["reownRedirectScheme"] = parsedReownRedirectUri.scheme ?: "pirate"
+    manifestPlaceholders["reownRedirectHost"] = parsedReownRedirectUri.host ?: "wallet-connect"
   }
 
   buildTypes {
@@ -85,6 +110,7 @@ android {
 }
 
 dependencies {
+  implementation(platform("com.reown:android-bom:1.6.10"))
   implementation(platform("androidx.compose:compose-bom:2026.02.00"))
   implementation("androidx.activity:activity-compose:1.12.4")
   implementation("androidx.compose.ui:ui")
@@ -99,6 +125,9 @@ dependencies {
   implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
 
   implementation("io.privy:privy-core:0.9.2")
+  implementation("com.reown:android-core")
+  implementation("com.reown:appkit")
+  implementation("com.google.accompanist:accompanist-navigation-material:0.36.0")
 
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

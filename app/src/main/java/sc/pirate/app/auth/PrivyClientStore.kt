@@ -1,6 +1,7 @@
 package sc.pirate.app.auth
 
 import android.content.Context
+import io.privy.auth.PrivyUser
 import io.privy.logging.PrivyLogLevel
 import io.privy.sdk.Privy
 import io.privy.sdk.PrivyConfig
@@ -13,6 +14,10 @@ internal object PrivyClientStore {
 
     @Volatile
     private var currentClient: Privy? = null
+
+    @Volatile
+    var lastAuthenticatedUser: PrivyUser? = null
+        private set
 
     fun get(context: Context, config: PrivyRuntimeConfig): Privy {
         val appContext = context.applicationContext
@@ -33,5 +38,9 @@ internal object PrivyClientStore {
             currentClient = client
             client
         }
+    }
+
+    fun setUser(user: PrivyUser?) {
+        lastAuthenticatedUser = user
     }
 }

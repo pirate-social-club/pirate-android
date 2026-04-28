@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -15,10 +17,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -59,9 +61,16 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     private val _state = MutableStateFlow(PostComposerUiState())
     val state: StateFlow<PostComposerUiState> = _state.asStateFlow()
 
-    fun loadEligibility(communityId: String) {
+    fun loadEligibility(communityId: String, hasSession: Boolean) {
         viewModelScope.launch {
             _state.value = _state.value.copy(loadingEligibility = true, error = null)
+            if (!hasSession) {
+                _state.value = _state.value.copy(
+                    eligibility = null,
+                    loadingEligibility = false,
+                )
+                return@launch
+            }
             try {
                 _state.value = _state.value.copy(
                     eligibility = communityRepository.getJoinEligibility(communityId),
@@ -144,6 +153,8 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
 fun PostComposerScreen(
     viewModel: PostComposerViewModel,
     communityId: String,
+    hasSession: Boolean,
+    onSignIn: () -> Unit,
     onPosted: (String) -> Unit,
     onOpenCommunity: () -> Unit,
     onBack: () -> Unit,
@@ -151,8 +162,8 @@ fun PostComposerScreen(
 ) {
     val state by viewModel.state.collectAsState()
 
-    LaunchedEffect(communityId) {
-        viewModel.loadEligibility(communityId)
+    LaunchedEffect(communityId, hasSession) {
+        viewModel.loadEligibility(communityId, hasSession)
     }
 
     LaunchedEffect(state.submitted) {
@@ -162,35 +173,47 @@ fun PostComposerScreen(
         }
     }
 
-    androidx.compose.material3.Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Create post",
-                        color = PirateTokens.colors.textPrimary,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = PirateTokens.colors.textPrimary,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = PirateTokens.colors.bgPage,
-                ),
-            )
-        },
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onBack,
+        sheetState = sheetState,
+        containerColor = PirateTokens.colors.bgPage,
         modifier = modifier,
-    ) { innerPadding ->
-        val canPost = state.eligibility?.status == "already_joined"
+    ) {
+        val canPublish = hasSession && state.eligibility?.status == "already_joined"
+        val hasDraft = when (state.postType) {
+            "link" -> state.linkUrl.isNotBlank()
+            else -> state.title.isNotBlank()
+        }
+        val submitLabel = if (hasSession && !canPublish) "Open community" else "Post"
         Column(
-            modifier = Modifier.padding(innerPadding).padding(16.dp).fillMaxSize(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.92f)
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp),
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "Create post",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = PirateTokens.colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.Filled.ArrowBack,
+                        contentDescription = "Close",
+                        tint = PirateTokens.colors.textPrimary,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+
             when {
                 state.loadingEligibility -> {
                     StatusCard(
@@ -202,10 +225,10 @@ fun PostComposerScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                 }
 
-                !canPost -> {
+                hasSession && !canPublish -> {
                     StatusCard(
-                        title = "Join before posting",
-                        description = "Posting is available after you join this community.",
+                        title = "Join before publishing",
+                        description = "You can keep editing this draft. Publishing is available after you join.",
                         tone = StatusTone.Warning,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -232,13 +255,13 @@ fun PostComposerScreen(
                 PirateButton(
                     text = if (state.postType == "text") "Text selected" else "Text",
                     onClick = { viewModel.selectPostType("text") },
-                    enabled = canPost && state.postType != "text",
+                    enabled = state.postType != "text" && !state.submitting,
                     modifier = Modifier.weight(1f),
                 )
                 PirateButton(
                     text = if (state.postType == "link") "Link selected" else "Link",
                     onClick = { viewModel.selectPostType("link") },
-                    enabled = canPost && state.postType != "link",
+                    enabled = state.postType != "link" && !state.submitting,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -251,7 +274,7 @@ fun PostComposerScreen(
                 label = { Text("Title") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                enabled = canPost,
+                enabled = !state.submitting,
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -263,7 +286,7 @@ fun PostComposerScreen(
                     label = { Text("Link URL") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    enabled = canPost,
+                    enabled = !state.submitting,
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -275,7 +298,7 @@ fun PostComposerScreen(
                 label = { Text(if (state.postType == "link") "Comment" else "Body") },
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 maxLines = 12,
-                enabled = canPost,
+                enabled = !state.submitting,
             )
 
             if (state.error != null) {
@@ -286,12 +309,19 @@ fun PostComposerScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             PirateButton(
-                text = "Post",
-                onClick = { viewModel.submit(communityId) },
+                text = submitLabel,
+                onClick = {
+                    when {
+                        !hasSession -> onSignIn()
+                        !canPublish -> onOpenCommunity()
+                        else -> viewModel.submit(communityId)
+                    }
+                },
                 loading = state.submitting,
-                enabled = canPost && when (state.postType) {
-                    "link" -> state.linkUrl.isNotBlank()
-                    else -> state.title.isNotBlank()
+                enabled = when {
+                    state.loadingEligibility -> false
+                    hasSession && !canPublish -> true
+                    else -> hasDraft
                 },
                 modifier = Modifier.fillMaxWidth(),
             )

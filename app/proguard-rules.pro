@@ -6,3 +6,10 @@
 
 -keep class io.privy.** { *; }
 -dontwarn io.privy.**
+
+-keep class com.sun.jna.** { *; }
+-keepclassmembers class com.sun.jna.** { native <methods>; *; }
+-keep class uniffi.** { *; }
+-keepclassmembers class ** { public *; protected *; }
+-dontwarn uniffi.**
+-dontwarn com.sun.jna.**

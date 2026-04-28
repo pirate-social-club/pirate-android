@@ -52,6 +52,8 @@ Optional runtime values can also be set there:
 API_BASE_URL=http://127.0.0.1:8787
 PRIVY_APP_ID=...
 PRIVY_APP_CLIENT_ID=...
+REOWN_PROJECT_ID=...
+REOWN_REDIRECT_URI=pirate://wallet-connect
 ```
 
 When `API_BASE_URL` is omitted, Android defaults to `https://api.pirate.sc` so CI-built APKs can load production public data on a phone. Use `local.properties` only when you intentionally want a local or staging API target.
@@ -74,6 +76,15 @@ Required local properties:
 PRIVY_APP_ID=your_privy_app_id
 PRIVY_APP_CLIENT_ID=your_privy_app_client_id
 ```
+
+Wallet connect uses Reown/AppKit. To enable external wallets locally, also set:
+
+```properties
+REOWN_PROJECT_ID=your_reown_project_id
+REOWN_REDIRECT_URI=pirate://wallet-connect
+```
+
+If `REOWN_PROJECT_ID` is omitted, the wallet UI degrades gracefully and external wallet connect stays unavailable for that build.
 
 When these values are omitted, Android defaults to the production Pirate Privy app used by the legacy Android project. Blacksmith/GitHub Actions builds can override them from repository secrets named `PRIVY_APP_ID` and `PRIVY_APP_CLIENT_ID`. Local `local.properties` values take precedence over environment variables.
 

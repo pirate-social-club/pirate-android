@@ -51,6 +51,29 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         loginWithOAuth(OAuthProvider.Twitter)
     }
 
+    fun loginWithConnectedWallet() {
+        if (privyConfig.disabledReason() != null) {
+            _state.value = AuthUiState.Unavailable(privyConfig.disabledReason()!!)
+            return
+        }
+
+        viewModelScope.launch {
+            _state.value = AuthUiState.Loading
+            try {
+                val privy = PrivyClientStore.get(getApplication(), privyConfig)
+                privy.awaitReady()
+                val linkedWallet = app.reownManager.loginWithConnectedWallet(privy)
+                PrivyClientStore.setUser(linkedWallet.user)
+                exchangePrivyToken(
+                    user = linkedWallet.user,
+                    walletAddress = linkedWallet.walletAddress,
+                )
+            } catch (e: Exception) {
+                _state.value = AuthUiState.Error(e.message ?: "Wallet login failed")
+            }
+        }
+    }
+
     private fun loginWithOAuth(provider: OAuthProvider) {
         if (privyConfig.disabledReason() != null) {
             _state.value = AuthUiState.Unavailable(privyConfig.disabledReason()!!)
@@ -63,8 +86,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val privy = PrivyClientStore.get(getApplication(), privyConfig)
                 val user = privy.oAuth.login(
                     oAuthProvider = provider,
-                    appUrlScheme = "pirate",
+                    appUrlScheme = privyConfig.redirectScheme,
                 ).getOrThrow()
+                PrivyClientStore.setUser(user)
                 exchangePrivyToken(user)
             } catch (e: Exception) {
                 _state.value = AuthUiState.Error(e.message ?: "OAuth login failed")
@@ -86,6 +110,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     code = code.trim(),
                     email = email.trim(),
                 ).getOrThrow()
+                PrivyClientStore.setUser(user)
                 exchangePrivyToken(user)
             } catch (e: Exception) {
                 _state.value = AuthUiState.Error(e.message ?: "Email login failed")
@@ -109,12 +134,16 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun exchangePrivyToken(user: PrivyUser) {
+    private suspend fun exchangePrivyToken(
+        user: PrivyUser,
+        walletAddress: String? = null,
+    ) {
         val accessToken = user.getAccessToken().getOrThrow()
         val session = authRepository.exchangeSession(
             SessionExchangeProof(
                 type = "privy_access_token",
                 privyAccessToken = accessToken,
+                walletAddress = walletAddress,
             )
         )
         sessionStore.set(session)
@@ -129,6 +158,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     privy.logout()
                 }
             } catch (_: Exception) { }
+            PrivyClientStore.setUser(null)
             sessionStore.clear()
             _state.value = privyConfig.disabledReason()?.let(AuthUiState::Unavailable) ?: AuthUiState.Idle
         }

@@ -24,7 +24,14 @@ class SessionStore(private val context: Context) {
     @Volatile private var cacheLoaded: Boolean = false
 
     suspend fun get(): SessionExchangeResponse? {
-        if (cacheLoaded) return cachedSession
+        if (cacheLoaded) {
+            val cached = cachedSession
+            if (cached != null && SessionExpiry.isExpired(cached.accessToken)) {
+                clear()
+                return null
+            }
+            return cached
+        }
 
         val prefs = context.sessionDataStore.data.first()
         val raw = prefs[KEY_SESSION]
@@ -34,6 +41,10 @@ class SessionStore(private val context: Context) {
             } catch (_: Exception) {
                 null
             }
+        }
+        if (session != null && SessionExpiry.isExpired(session.accessToken)) {
+            clear()
+            return null
         }
         cachedSession = session
         cacheLoaded = true
@@ -49,7 +60,9 @@ class SessionStore(private val context: Context) {
                 null
             }
         }.onEach {
-            cachedSession = it
+            cachedSession = it?.takeUnless { session ->
+                SessionExpiry.isExpired(session.accessToken)
+            }
             cacheLoaded = true
         }
 

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,17 +42,21 @@ import sc.pirate.app.api.CreateCommentRequest
 import sc.pirate.app.api.model.CommentListItem
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
+import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.ui.adjustedVoteCount
 
 data class PostUiState(
     val post: LocalizedPostResponse? = null,
     val comments: List<CommentListItem> = emptyList(),
     val nextCommentsCursor: String? = null,
+    val commentSort: String = "best",
     val loading: Boolean = true,
     val commentsLoading: Boolean = false,
     val commentsLoadingMore: Boolean = false,
@@ -77,18 +82,33 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     private val postRepository get() = app.repositories.postRepository
     private val _state = MutableStateFlow(PostUiState())
     val state: StateFlow<PostUiState> = _state.asStateFlow()
+    private var currentPostId: String? = null
+    private var currentHasSession: Boolean = false
 
-    fun loadPost(postId: String) {
+    fun loadPost(postId: String, hasSession: Boolean, commentSort: String = _state.value.commentSort) {
+        currentPostId = postId
+        currentHasSession = hasSession
+        val existingState = _state.value
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
+            _state.value = existingState.copy(
+                loading = true,
+                error = null,
+                commentSort = commentSort,
+            )
             try {
-                val post = postRepository.getPost(postId)
+                val post = if (hasSession) {
+                    postRepository.getPost(postId)
+                } else {
+                    postRepository.getPublicPost(postId)
+                }
                 _state.value = PostUiState(
                     post = post,
+                    commentSort = commentSort,
+                    commentDraft = existingState.commentDraft,
                     loading = false,
                     commentsLoading = true,
                 )
-                loadTopLevelComments(post)
+                loadTopLevelComments(post, hasSession)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     loading = false,
@@ -96,6 +116,12 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun setCommentSort(sort: String) {
+        val postId = currentPostId ?: return
+        if (sort == _state.value.commentSort) return
+        loadPost(postId = postId, hasSession = currentHasSession, commentSort = sort)
     }
 
     fun updateCommentDraft(value: String) {
@@ -127,7 +153,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     commentSubmitting = false,
                     commentsLoading = true,
                 )
-                loadTopLevelComments(post)
+                loadTopLevelComments(post, hasSession = true)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     commentSubmitting = false,
@@ -150,13 +176,22 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = postRepository.listComments(
-                    communityId = post.post.communityId,
-                    postId = post.post.postId,
-                    cursor = cursor,
-                    limit = 25,
-                    sort = "best",
-                )
+                val response = if (app.sessionStore.get() != null) {
+                    postRepository.listComments(
+                        communityId = post.post.communityId,
+                        postId = post.post.postId,
+                        cursor = cursor,
+                        limit = 25,
+                        sort = current.commentSort,
+                    )
+                } else {
+                    postRepository.listPublicComments(
+                        postId = post.post.postId,
+                        cursor = cursor,
+                        limit = 25,
+                        sort = current.commentSort,
+                    )
+                }
                 _state.value = _state.value.copy(
                     comments = (_state.value.comments + response.items).distinctBy { it.comment.commentId },
                     nextCommentsCursor = response.nextCursor,
@@ -182,11 +217,19 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = postRepository.listReplies(
-                    commentId = parentCommentId,
-                    limit = 10,
-                    sort = "best",
-                )
+                val response = if (app.sessionStore.get() != null) {
+                    postRepository.listReplies(
+                        commentId = parentCommentId,
+                        limit = 10,
+                        sort = "best",
+                    )
+                } else {
+                    postRepository.listPublicReplies(
+                        commentId = parentCommentId,
+                        limit = 10,
+                        sort = "best",
+                    )
+                }
                 _state.value = _state.value.copy(
                     repliesByParentId = _state.value.repliesByParentId + (parentCommentId to response.items),
                     nextRepliesCursorByParentId = _state.value.nextRepliesCursorByParentId +
@@ -215,12 +258,21 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = postRepository.listReplies(
-                    commentId = parentCommentId,
-                    cursor = cursor,
-                    limit = 10,
-                    sort = "best",
-                )
+                val response = if (app.sessionStore.get() != null) {
+                    postRepository.listReplies(
+                        commentId = parentCommentId,
+                        cursor = cursor,
+                        limit = 10,
+                        sort = "best",
+                    )
+                } else {
+                    postRepository.listPublicReplies(
+                        commentId = parentCommentId,
+                        cursor = cursor,
+                        limit = 10,
+                        sort = "best",
+                    )
+                }
                 val currentReplies = _state.value.repliesByParentId[parentCommentId].orEmpty()
                 _state.value = _state.value.copy(
                     repliesByParentId = _state.value.repliesByParentId + (
@@ -308,14 +360,22 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun loadTopLevelComments(post: LocalizedPostResponse) {
+    private suspend fun loadTopLevelComments(post: LocalizedPostResponse, hasSession: Boolean) {
         try {
-            val response = postRepository.listComments(
-                communityId = post.post.communityId,
-                postId = post.post.postId,
-                limit = 25,
-                sort = "best",
-            )
+            val response = if (hasSession) {
+                postRepository.listComments(
+                    communityId = post.post.communityId,
+                    postId = post.post.postId,
+                    limit = 25,
+                    sort = _state.value.commentSort,
+                )
+            } else {
+                postRepository.listPublicComments(
+                    postId = post.post.postId,
+                    limit = 25,
+                    sort = _state.value.commentSort,
+                )
+            }
             _state.value = _state.value.copy(
                 comments = response.items,
                 nextCommentsCursor = response.nextCursor,
@@ -332,18 +392,27 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
+private val commentSortOptions = listOf(
+    ChipOption("best", "Best"),
+    ChipOption("new", "New"),
+    ChipOption("top", "Top"),
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PostScreen(
     postId: String,
+    hasSession: Boolean,
+    onNavigateToCompose: ((String) -> Unit)? = null,
+    onSignIn: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
 
-    LaunchedEffect(postId) {
-        viewModel.loadPost(postId)
+    LaunchedEffect(postId, hasSession) {
+        viewModel.loadPost(postId, hasSession)
     }
 
     androidx.compose.material3.Scaffold(
@@ -362,6 +431,20 @@ fun PostScreen(
                             contentDescription = "Back",
                             tint = PirateTokens.colors.textPrimary,
                         )
+                    }
+                },
+                actions = {
+                    if (hasSession && onNavigateToCompose != null) {
+                        val communityId = state.post?.post?.communityId
+                        if (!communityId.isNullOrBlank()) {
+                            IconButton(onClick = { onNavigateToCompose(communityId) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = "Create post",
+                                    tint = PirateTokens.colors.textPrimary,
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -445,7 +528,9 @@ fun PostScreen(
                             Spacer(modifier = Modifier.height(12.dp))
                             PirateButton(
                                 text = if (state.commentSubmitting) "Posting" else "Post comment",
-                                onClick = viewModel::submitComment,
+                                onClick = {
+                                    if (hasSession) viewModel.submitComment() else onSignIn()
+                                },
                                 enabled = state.commentDraft.isNotBlank(),
                                 loading = state.commentSubmitting,
                                 modifier = Modifier.fillMaxWidth(),
@@ -458,6 +543,15 @@ fun PostScreen(
                             text = "Comments",
                             style = MaterialTheme.typography.titleLarge,
                             color = PirateTokens.colors.textPrimary,
+                        )
+                    }
+
+                    item {
+                        PirateChipRow(
+                            options = commentSortOptions,
+                            selectedValue = state.commentSort,
+                            onSelected = viewModel::setCommentSort,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
 
@@ -533,8 +627,13 @@ fun PostScreen(
                                     onLoadReplies = { viewModel.loadReplies(commentId) },
                                     onLoadMoreReplies = { viewModel.loadMoreReplies(commentId) },
                                     onReplyDraftChange = { value -> viewModel.updateReplyDraft(commentId, value) },
-                                    onSubmitReply = { viewModel.submitReply(commentId) },
-                                    onVote = { value -> viewModel.voteComment(commentId, value) },
+                                    onSubmitReply = {
+                                        if (hasSession) viewModel.submitReply(commentId) else onSignIn()
+                                    },
+                                    onVote = { value ->
+                                        if (hasSession) viewModel.voteComment(commentId, value) else onSignIn()
+                                    },
+                                    hasSession = hasSession,
                                 )
                             }
                         }
@@ -588,9 +687,6 @@ private fun List<CommentListItem>.replaceComment(previousComment: CommentListIte
         if (item.comment.commentId == previousComment.comment.commentId) previousComment else item
     }
 
-private fun adjustedVoteCount(current: Int, previousValue: Int?, nextValue: Int, targetValue: Int): Int =
-    current + (if (nextValue == targetValue) 1 else 0) - (if (previousValue == targetValue) 1 else 0)
-
 private fun voteScoreDelta(previousValue: Int?, nextValue: Int): Int =
     nextValue - (previousValue ?: 0)
 
@@ -610,6 +706,7 @@ private fun CommentRow(
     onReplyDraftChange: (String) -> Unit,
     onSubmitReply: () -> Unit,
     onVote: (Int) -> Unit,
+    hasSession: Boolean,
 ) {
     val model = comment.comment
     PirateCard(modifier = Modifier.fillMaxWidth()) {

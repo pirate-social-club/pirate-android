@@ -30,6 +30,7 @@ sealed class PirateRoute(val route: String) {
     data object Auth : PirateRoute("auth")
     data object Onboarding : PirateRoute("onboarding")
     data object Home : PirateRoute("home")
+    data object Chat : PirateRoute("chat")
     data object YourCommunities : PirateRoute("your_communities")
     data object Community : PirateRoute("community/{communityId}") {
         const val ARG_COMMUNITY_ID = "communityId"

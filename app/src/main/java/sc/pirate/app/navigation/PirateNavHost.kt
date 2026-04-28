@@ -1,13 +1,21 @@
 package sc.pirate.app.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.reown.appkit.ui.appKitGraph
+import com.reown.appkit.ui.openAppKit
 import androidx.lifecycle.viewmodel.compose.viewModel
+import sc.pirate.app.PirateApp
 import sc.pirate.app.auth.AuthScreen
 import sc.pirate.app.auth.AuthViewModel
 import sc.pirate.app.auth.AuthUiState
@@ -33,20 +41,32 @@ import sc.pirate.app.submit.GlobalSubmitScreen
 import sc.pirate.app.verification.SelfVerificationScreen
 import sc.pirate.app.verification.VeryVerificationScreen
 import sc.pirate.app.wallet.WalletScreen
+import sc.pirate.app.wallet.WalletViewModel
+import sc.pirate.app.ui.FeatureStubScreen
 
 @Composable
 fun PirateNavHost(
     navController: NavHostController,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val app = context.applicationContext as PirateApp
+    val session by app.sessionStore.observe().collectAsState(initial = null)
+    val hasSession = session != null
+
     NavHost(
         navController = navController,
         startDestination = PirateRoute.Home.route,
         modifier = modifier,
+        enterTransition = { EnterTransition.None },
+        exitTransition = { ExitTransition.None },
+        popEnterTransition = { EnterTransition.None },
+        popExitTransition = { ExitTransition.None },
     ) {
         composable(PirateRoute.Auth.route) {
             val vm: AuthViewModel = viewModel()
-            val state = vm.state.value
+            val state by vm.state.collectAsState()
+            val walletConnectState by app.reownManager.state.collectAsState()
 
             if (state is AuthUiState.Authenticated) {
                 navController.navigate(PirateRoute.Onboarding.route) {
@@ -55,6 +75,18 @@ fun PirateNavHost(
             } else {
                 AuthScreen(
                     state = state,
+                    walletConnectState = walletConnectState,
+                    onOpenWalletConnect = {
+                        navController.openAppKit(
+                            shouldOpenChooseNetwork = false,
+                            onError = { error ->
+                                app.reownManager.refreshState(
+                                    error.message ?: "Could not open wallet chooser."
+                                )
+                            },
+                        )
+                    },
+                    onLoginWallet = vm::loginWithConnectedWallet,
                     onLoginGoogle = vm::loginWithGoogle,
                     onLoginTwitter = vm::loginWithTwitter,
                     onSendEmailCode = vm::sendEmailCode,
@@ -78,13 +110,26 @@ fun PirateNavHost(
 
         composable(PirateRoute.Home.route) {
             HomeScreen(
+                hasSession = hasSession,
                 onNavigateToCommunity = { id ->
                     navController.navigate(PirateRoute.Community.buildRoute(id))
                 },
                 onNavigateToPost = { id ->
                     navController.navigate(PirateRoute.Post.buildRoute(id))
                 },
+                onNavigateToCompose = {
+                    navController.navigate(PirateRoute.GlobalSubmit.route)
+                },
             )
+        }
+
+        composable(PirateRoute.Chat.route) {
+            AuthGate(hasSession, navController) {
+                FeatureStubScreen(
+                    title = "Chat",
+                    body = "Encrypted chat is moving into the Android app. This slot now matches the mobile web footer and will host chat once the native screen lands.",
+                )
+            }
         }
 
         composable(
@@ -98,6 +143,7 @@ fun PirateNavHost(
             CommunityScreen(
                 viewModel = vm,
                 communityId = communityId,
+                hasSession = hasSession,
                 onNavigateToPost = { postId ->
                     navController.navigate(PirateRoute.Post.buildRoute(postId))
                 },
@@ -120,6 +166,13 @@ fun PirateNavHost(
             val postId = backStackEntry.arguments?.getString(PirateRoute.Post.ARG_POST_ID).orEmpty()
             PostScreen(
                 postId = postId,
+                hasSession = hasSession,
+                onNavigateToCompose = { communityId ->
+                    navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
+                },
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -135,6 +188,10 @@ fun PirateNavHost(
             PostComposerScreen(
                 viewModel = vm,
                 communityId = communityId,
+                hasSession = hasSession,
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
                 onPosted = { postId ->
                     navController.navigate(PirateRoute.Post.buildRoute(postId)) {
                         popUpTo(PirateRoute.ComposePost.buildRoute(communityId)) {
@@ -150,38 +207,63 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.Inbox.route) {
-            InboxScreen(
-                onOpenPost = { postId ->
-                    navController.navigate(PirateRoute.Post.buildRoute(postId))
-                },
-                onOpenCommunity = { communityId ->
-                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
-                },
-                onOpenCommunityNamespace = { communityId ->
-                    navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
-                },
-                onSignIn = {
-                    navController.navigate(PirateRoute.Auth.route)
-                },
-            )
+            AuthGate(hasSession, navController) {
+                InboxScreen(
+                    onOpenPost = { postId ->
+                        navController.navigate(PirateRoute.Post.buildRoute(postId))
+                    },
+                    onOpenCommunity = { communityId ->
+                        navController.navigate(PirateRoute.Community.buildRoute(communityId))
+                    },
+                    onOpenCommunityNamespace = { communityId ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
+                    },
+                    onSignIn = {
+                        navController.navigate(PirateRoute.Auth.route)
+                    },
+                )
+            }
         }
 
         composable(PirateRoute.Wallet.route) {
-            WalletScreen(
-                onSignIn = {
-                    navController.navigate(PirateRoute.Auth.route)
-                },
-            )
+            AuthGate(hasSession, navController) {
+                val walletConnectState by app.reownManager.state.collectAsState()
+                val vm: WalletViewModel = viewModel()
+                val walletUiState by vm.state.collectAsState()
+                WalletScreen(
+                    session = session,
+                    walletConnectState = walletConnectState,
+                    walletUiState = walletUiState,
+                    onOpenWalletConnect = {
+                        navController.openAppKit(
+                            shouldOpenChooseNetwork = false,
+                            onError = { error ->
+                                app.reownManager.refreshState(
+                                    error.message ?: "Could not open wallet chooser."
+                                )
+                            },
+                        )
+                    },
+                    onLinkWallet = vm::linkConnectedWallet,
+                    onClearWalletFeedback = vm::clearFeedback,
+                    onDisconnectWallet = app.reownManager::disconnect,
+                    onSignIn = {
+                        navController.navigate(PirateRoute.Auth.route)
+                    },
+                )
+            }
         }
 
         composable(PirateRoute.Me.route) {
-            val vm: MeProfileViewModel = viewModel()
-            MeProfileScreen(
-                viewModel = vm,
-                onSignIn = {
-                    navController.navigate(PirateRoute.Auth.route)
-                },
-            )
+            AuthGate(hasSession, navController) {
+                val vm: MeProfileViewModel = viewModel()
+                MeProfileScreen(
+                    viewModel = vm,
+                    onSignIn = {
+                        navController.navigate(PirateRoute.Auth.route)
+                    },
+                )
+            }
         }
 
         composable(
@@ -191,35 +273,41 @@ fun PirateNavHost(
             }),
         ) { backStackEntry ->
             val userId = backStackEntry.arguments?.getString(PirateRoute.User.ARG_USER_ID).orEmpty()
-            val vm: UserProfileViewModel = viewModel()
-            UserProfileScreen(userId = userId, viewModel = vm)
+            AuthGate(hasSession, navController) {
+                val vm: UserProfileViewModel = viewModel()
+                UserProfileScreen(userId = userId, viewModel = vm)
+            }
         }
 
         composable(PirateRoute.CreateCommunity.route) {
-            CreateCommunityScreen(
-                onBack = { navController.popBackStack() },
-                onVerifyWithId = {
-                    navController.navigate(PirateRoute.VerifySelf.buildRoute("community_creation"))
-                },
-                onCreated = { communityId ->
-                    navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace")) {
-                        popUpTo(PirateRoute.CreateCommunity.route) {
-                            inclusive = true
+            AuthGate(hasSession, navController) {
+                CreateCommunityScreen(
+                    onBack = { navController.popBackStack() },
+                    onVerifyWithId = {
+                        navController.navigate(PirateRoute.VerifySelf.buildRoute("community_creation"))
+                    },
+                    onCreated = { communityId ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace")) {
+                            popUpTo(PirateRoute.CreateCommunity.route) {
+                                inclusive = true
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
 
         composable(PirateRoute.YourCommunities.route) {
-            YourCommunitiesScreen(
-                onNavigateToCommunity = { communityId ->
-                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
-                },
-                onSignIn = {
-                    navController.navigate(PirateRoute.Auth.route)
-                },
-            )
+            AuthGate(hasSession, navController) {
+                YourCommunitiesScreen(
+                    onNavigateToCommunity = { communityId ->
+                        navController.navigate(PirateRoute.Community.buildRoute(communityId))
+                    },
+                    onSignIn = {
+                        navController.navigate(PirateRoute.Auth.route)
+                    },
+                )
+            }
         }
 
         composable(PirateRoute.GlobalSubmit.route) {
@@ -244,14 +332,18 @@ fun PirateNavHost(
                 ?.getString(PirateRoute.VerifySelf.ARG_INTENT)
                 ?.takeIf { it in PirateRouteSections.verificationIntents }
                 ?: PirateRoute.VerifySelf.DEFAULT_INTENT
-            SelfVerificationScreen(
-                verificationIntent = intent,
-                onBack = { navController.popBackStack() },
-            )
+            AuthGate(hasSession, navController) {
+                SelfVerificationScreen(
+                    verificationIntent = intent,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(PirateRoute.VerifyVery.route) {
-            VeryVerificationScreen(onBack = { navController.popBackStack() })
+            AuthGate(hasSession, navController) {
+                VeryVerificationScreen(onBack = { navController.popBackStack() })
+            }
         }
 
         composable(
@@ -264,10 +356,12 @@ fun PirateNavHost(
                 ?.getString(PirateRoute.Settings.ARG_SECTION)
                 ?.takeIf { it in PirateRouteSections.settings }
                 ?: PirateRoute.Settings.DEFAULT_SECTION
-            SettingsScreen(
-                section = section,
-                onBack = { navController.popBackStack() },
-            )
+            AuthGate(hasSession, navController) {
+                SettingsScreen(
+                    section = section,
+                    onBack = { navController.popBackStack() },
+                )
+            }
         }
 
         composable(
@@ -277,14 +371,16 @@ fun PirateNavHost(
             }),
         ) { backStackEntry ->
             val communityId = backStackEntry.arguments?.getString(PirateRoute.CommunityModerationIndex.ARG_COMMUNITY_ID).orEmpty()
-            CommunityModerationScreen(
-                communityId = communityId,
-                section = null,
-                onBack = { navController.popBackStack() },
-                onOpenCommunity = {
-                    navController.navigate(PirateRoute.Community.buildRoute(it))
-                },
-            )
+            AuthGate(hasSession, navController) {
+                CommunityModerationScreen(
+                    communityId = communityId,
+                    section = null,
+                    onBack = { navController.popBackStack() },
+                    onOpenCommunity = {
+                        navController.navigate(PirateRoute.Community.buildRoute(it))
+                    },
+                )
+            }
         }
 
         composable(
@@ -295,21 +391,22 @@ fun PirateNavHost(
                 },
                 navArgument(PirateRoute.CommunityModerationSection.ARG_SECTION) {
                     type = NavType.StringType
-                },
-            ),
+                }),
         ) { backStackEntry ->
             val communityId = backStackEntry.arguments?.getString(PirateRoute.CommunityModerationSection.ARG_COMMUNITY_ID).orEmpty()
             val section = backStackEntry.arguments
                 ?.getString(PirateRoute.CommunityModerationSection.ARG_SECTION)
                 ?.takeIf { it in PirateRouteSections.communityModeration }
-            CommunityModerationScreen(
-                communityId = communityId,
-                section = section,
-                onBack = { navController.popBackStack() },
-                onOpenCommunity = {
-                    navController.navigate(PirateRoute.Community.buildRoute(it))
-                },
-            )
+            AuthGate(hasSession, navController) {
+                CommunityModerationScreen(
+                    communityId = communityId,
+                    section = section,
+                    onBack = { navController.popBackStack() },
+                    onOpenCommunity = {
+                        navController.navigate(PirateRoute.Community.buildRoute(it))
+                    },
+                )
+            }
         }
 
         composable(
@@ -327,5 +424,24 @@ fun PirateNavHost(
                 onBack = { navController.popBackStack() },
             )
         }
+
+        appKitGraph(navController)
+    }
+}
+
+@Composable
+private fun AuthGate(
+    hasSession: Boolean,
+    navController: NavHostController,
+    content: @Composable () -> Unit,
+) {
+    if (hasSession) {
+        content()
+    } else {
+        sc.pirate.app.ui.SignInRequiredScreen(
+            onSignIn = {
+                navController.navigate(PirateRoute.Auth.route)
+            },
+        )
     }
 }

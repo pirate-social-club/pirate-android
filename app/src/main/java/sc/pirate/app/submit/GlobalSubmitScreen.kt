@@ -43,7 +43,6 @@ import sc.pirate.app.ui.StatusTone
 data class GlobalSubmitUiState(
     val loading: Boolean = true,
     val communities: List<SubmitCommunityOption> = emptyList(),
-    val requiresAuth: Boolean = false,
     val error: String? = null,
 )
 
@@ -66,9 +65,10 @@ class GlobalSubmitViewModel(application: Application) : AndroidViewModel(applica
             _state.value = _state.value.copy(loading = true, error = null)
             try {
                 if (app.sessionStore.get() == null) {
+                    val feed = feedRepository.home(sort = "best")
                     _state.value = GlobalSubmitUiState(
                         loading = false,
-                        requiresAuth = true,
+                        communities = feed.topCommunities.map { it.toSubmitOption() },
                     )
                     return@launch
                 }
@@ -162,25 +162,6 @@ fun GlobalSubmitScreen(
                         color = PirateTokens.colors.accentBrand,
                         modifier = Modifier.align(Alignment.Center),
                     )
-                }
-
-                state.requiresAuth -> {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        StatusCard(
-                            title = "Sign in to post",
-                            description = "Create a session before choosing a community.",
-                            tone = StatusTone.Default,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        PirateButton(
-                            text = "Sign in",
-                            onClick = onSignIn,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
                 }
 
                 state.error != null -> {

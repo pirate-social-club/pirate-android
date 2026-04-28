@@ -9,6 +9,7 @@ import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.api.StartVerificationSessionRequest
 import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.CommunityCreateAcceptedResponse
+import sc.pirate.app.api.model.CommunityFollowResponse
 import sc.pirate.app.api.model.CommunityJoinResponse
 import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CommentListResponse
@@ -58,9 +59,20 @@ interface CommunityRepository {
     suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community
     suspend fun setPendingNamespaceSession(communityId: String, sessionId: String?): Community
     suspend fun getPreview(communityId: String, locale: String? = null): CommunityPreview
+    suspend fun getPublicPreview(communityId: String, locale: String? = null): CommunityPreview
     suspend fun getJoinEligibility(communityId: String): JoinEligibility
     suspend fun joinCommunity(communityId: String): CommunityJoinResponse
+    suspend fun followCommunity(communityId: String): CommunityFollowResponse
+    suspend fun unfollowCommunity(communityId: String): CommunityFollowResponse
     suspend fun listPosts(
+        communityId: String,
+        limit: Int? = null,
+        cursor: String? = null,
+        locale: String? = null,
+        sort: String? = null,
+        flairId: String? = null,
+    ): PostListResponse
+    suspend fun listPublicPosts(
         communityId: String,
         limit: Int? = null,
         cursor: String? = null,
@@ -73,6 +85,7 @@ interface CommunityRepository {
 
 interface PostRepository {
     suspend fun getPost(postId: String): LocalizedPostResponse
+    suspend fun getPublicPost(postId: String): LocalizedPostResponse
     suspend fun votePost(postId: String, value: Int): PostVoteResponse
     suspend fun listComments(
         communityId: String,
@@ -82,8 +95,22 @@ interface PostRepository {
         locale: String? = null,
         sort: String? = null,
     ): CommentListResponse
+    suspend fun listPublicComments(
+        postId: String,
+        limit: Int? = null,
+        cursor: String? = null,
+        locale: String? = null,
+        sort: String? = null,
+    ): CommentListResponse
     suspend fun createComment(communityId: String, postId: String, request: CreateCommentRequest)
     suspend fun listReplies(
+        commentId: String,
+        limit: Int? = null,
+        cursor: String? = null,
+        locale: String? = null,
+        sort: String? = null,
+    ): CommentListResponse
+    suspend fun listPublicReplies(
         commentId: String,
         limit: Int? = null,
         cursor: String? = null,
@@ -128,27 +155,27 @@ class ApiAuthRepository(
     private val apiClient: ApiClient,
 ) : AuthRepository {
     override suspend fun exchangeSession(proof: SessionExchangeProof): SessionExchangeResponse {
-        return ApiClient.Auth.sessionExchange(proof)
+        return apiClient.auth.sessionExchange(proof)
     }
 }
 
 class ApiOnboardingRepository(
     private val apiClient: ApiClient,
 ) : OnboardingRepository {
-    override suspend fun getStatus(): OnboardingStatus = ApiClient.Onboarding.getStatus()
+    override suspend fun getStatus(): OnboardingStatus = apiClient.onboarding.getStatus()
 
-    override suspend fun dismiss(): OnboardingStatus = ApiClient.Onboarding.dismiss()
+    override suspend fun dismiss(): OnboardingStatus = apiClient.onboarding.dismiss()
 
     override suspend fun startRedditVerification(username: String): RedditVerification {
-        return ApiClient.Onboarding.startRedditVerification(username)
+        return apiClient.onboarding.startRedditVerification(username)
     }
 
     override suspend fun startRedditImport(username: String): String {
-        return ApiClient.Onboarding.startRedditImport(username)
+        return apiClient.onboarding.startRedditImport(username)
     }
 
     override suspend fun getLatestRedditImport(): RedditImportSummary {
-        return ApiClient.Onboarding.getLatestRedditImport()
+        return apiClient.onboarding.getLatestRedditImport()
     }
 }
 
@@ -161,7 +188,7 @@ class ApiFeedRepository(
         sort: String?,
         timeRange: String?,
     ): HomeFeedResponse {
-        return ApiClient.Feed.home(
+        return apiClient.feed.home(
             cursor = cursor,
             locale = locale,
             sort = sort,
@@ -174,31 +201,43 @@ class ApiCommunityRepository(
     private val apiClient: ApiClient,
 ) : CommunityRepository {
     override suspend fun createCommunity(request: CreateCommunityRequest): CommunityCreateAcceptedResponse {
-        return ApiClient.Communities.create(request)
+        return apiClient.communities.create(request)
     }
 
     override suspend fun getCommunity(communityId: String): Community {
-        return ApiClient.Communities.get(communityId)
+        return apiClient.communities.get(communityId)
     }
 
     override suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
-        return ApiClient.Communities.attachNamespace(communityId, namespaceVerificationId)
+        return apiClient.communities.attachNamespace(communityId, namespaceVerificationId)
     }
 
     override suspend fun setPendingNamespaceSession(communityId: String, sessionId: String?): Community {
-        return ApiClient.Communities.setPendingNamespaceSession(communityId, sessionId)
+        return apiClient.communities.setPendingNamespaceSession(communityId, sessionId)
     }
 
     override suspend fun getPreview(communityId: String, locale: String?): CommunityPreview {
-        return ApiClient.Communities.preview(communityId, locale)
+        return apiClient.communities.preview(communityId, locale)
+    }
+
+    override suspend fun getPublicPreview(communityId: String, locale: String?): CommunityPreview {
+        return apiClient.publicCommunities.preview(communityId, locale)
     }
 
     override suspend fun getJoinEligibility(communityId: String): JoinEligibility {
-        return ApiClient.Communities.getJoinEligibility(communityId)
+        return apiClient.communities.getJoinEligibility(communityId)
     }
 
     override suspend fun joinCommunity(communityId: String): CommunityJoinResponse {
-        return ApiClient.Communities.join(communityId)
+        return apiClient.communities.join(communityId)
+    }
+
+    override suspend fun followCommunity(communityId: String): CommunityFollowResponse {
+        return apiClient.communities.follow(communityId)
+    }
+
+    override suspend fun unfollowCommunity(communityId: String): CommunityFollowResponse {
+        return apiClient.communities.unfollow(communityId)
     }
 
     override suspend fun listPosts(
@@ -209,7 +248,25 @@ class ApiCommunityRepository(
         sort: String?,
         flairId: String?,
     ): PostListResponse {
-        return ApiClient.Communities.listPosts(
+        return apiClient.communities.listPosts(
+            communityId = communityId,
+            limit = limit,
+            cursor = cursor,
+            locale = locale,
+            sort = sort,
+            flairId = flairId,
+        )
+    }
+
+    override suspend fun listPublicPosts(
+        communityId: String,
+        limit: Int?,
+        cursor: String?,
+        locale: String?,
+        sort: String?,
+        flairId: String?,
+    ): PostListResponse {
+        return apiClient.publicCommunities.listPosts(
             communityId = communityId,
             limit = limit,
             cursor = cursor,
@@ -220,16 +277,18 @@ class ApiCommunityRepository(
     }
 
     override suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse {
-        return ApiClient.Communities.createPost(communityId, request)
+        return apiClient.communities.createPost(communityId, request)
     }
 }
 
 class ApiPostRepository(
     private val apiClient: ApiClient,
 ) : PostRepository {
-    override suspend fun getPost(postId: String): LocalizedPostResponse = ApiClient.Posts.get(postId)
+    override suspend fun getPost(postId: String): LocalizedPostResponse = apiClient.posts.get(postId)
 
-    override suspend fun votePost(postId: String, value: Int): PostVoteResponse = ApiClient.Posts.vote(postId, value)
+    override suspend fun getPublicPost(postId: String): LocalizedPostResponse = apiClient.publicPosts.get(postId)
+
+    override suspend fun votePost(postId: String, value: Int): PostVoteResponse = apiClient.posts.vote(postId, value)
 
     override suspend fun listComments(
         communityId: String,
@@ -239,7 +298,7 @@ class ApiPostRepository(
         locale: String?,
         sort: String?,
     ): CommentListResponse {
-        return ApiClient.Communities.listComments(
+        return apiClient.communities.listComments(
             communityId = communityId,
             postId = postId,
             limit = limit,
@@ -249,8 +308,40 @@ class ApiPostRepository(
         )
     }
 
+    override suspend fun listPublicComments(
+        postId: String,
+        limit: Int?,
+        cursor: String?,
+        locale: String?,
+        sort: String?,
+    ): CommentListResponse {
+        return apiClient.publicComments.listPostComments(
+            postId = postId,
+            limit = limit,
+            cursor = cursor,
+            locale = locale,
+            sort = sort,
+        )
+    }
+
     override suspend fun createComment(communityId: String, postId: String, request: CreateCommentRequest) {
-        ApiClient.Communities.createComment(communityId, postId, request)
+        apiClient.communities.createComment(communityId, postId, request)
+    }
+
+    override suspend fun listPublicReplies(
+        commentId: String,
+        limit: Int?,
+        cursor: String?,
+        locale: String?,
+        sort: String?,
+    ): CommentListResponse {
+        return apiClient.publicComments.listReplies(
+            commentId = commentId,
+            limit = limit,
+            cursor = cursor,
+            locale = locale,
+            sort = sort,
+        )
     }
 
     override suspend fun listReplies(
@@ -260,7 +351,7 @@ class ApiPostRepository(
         locale: String?,
         sort: String?,
     ): CommentListResponse {
-        return ApiClient.Comments.listReplies(
+        return apiClient.comments.listReplies(
             commentId = commentId,
             limit = limit,
             cursor = cursor,
@@ -270,29 +361,29 @@ class ApiPostRepository(
     }
 
     override suspend fun createReply(commentId: String, request: CreateCommentRequest) {
-        ApiClient.Comments.createReply(commentId, request)
+        apiClient.comments.createReply(commentId, request)
     }
 
     override suspend fun voteComment(commentId: String, value: Int): CommentVoteResponse {
-        return ApiClient.Comments.vote(commentId, value)
+        return apiClient.comments.vote(commentId, value)
     }
 }
 
 class ApiProfileRepository(
     private val apiClient: ApiClient,
 ) : ProfileRepository {
-    override suspend fun getMe(): Profile = ApiClient.Profiles.getMe()
+    override suspend fun getMe(): Profile = apiClient.profiles.getMe()
 
-    override suspend fun getByUserId(userId: String): Profile = ApiClient.Profiles.getByUserId(userId)
+    override suspend fun getByUserId(userId: String): Profile = apiClient.profiles.getByUserId(userId)
 
     override suspend fun getPublicByHandle(handleLabel: String): PublicProfileResolution {
-        return ApiClient.Profiles.getPublicByHandle(handleLabel)
+        return apiClient.profiles.getPublicByHandle(handleLabel)
     }
 
-    override suspend fun updateMe(input: ProfileUpdateInput): Profile = ApiClient.Profiles.updateMe(input)
+    override suspend fun updateMe(input: ProfileUpdateInput): Profile = apiClient.profiles.updateMe(input)
 
     override suspend fun renameHandle(desiredLabel: String): RenameHandleResponse {
-        return ApiClient.Profiles.renameHandle(desiredLabel)
+        return apiClient.profiles.renameHandle(desiredLabel)
     }
 }
 
@@ -300,18 +391,18 @@ class ApiVerificationRepository(
     private val apiClient: ApiClient,
 ) : VerificationRepository {
     override suspend fun startSession(input: StartVerificationSessionRequest): VerificationSession {
-        return ApiClient.Verification.startSession(input)
+        return apiClient.verification.startSession(input)
     }
 
     override suspend fun getSession(verificationSessionId: String): VerificationSession {
-        return ApiClient.Verification.getSession(verificationSessionId)
+        return apiClient.verification.getSession(verificationSessionId)
     }
 
     override suspend fun completeSession(
         verificationSessionId: String,
         input: CompleteVerificationSessionRequest,
     ): VerificationSession {
-        return ApiClient.Verification.completeSession(
+        return apiClient.verification.completeSession(
             sessionId = verificationSessionId,
             attestationId = input.attestationId,
             proof = input.proof,
@@ -324,36 +415,36 @@ class ApiVerificationRepository(
         family: String,
         rootLabel: String,
     ): sc.pirate.app.api.model.NamespaceVerificationSession {
-        return ApiClient.Verification.startNamespaceSession(family, rootLabel)
+        return apiClient.verification.startNamespaceSession(family, rootLabel)
     }
 
     override suspend fun getNamespaceSession(sessionId: String): sc.pirate.app.api.model.NamespaceVerificationSession {
-        return ApiClient.Verification.getNamespaceSession(sessionId)
+        return apiClient.verification.getNamespaceSession(sessionId)
     }
 
     override suspend fun completeNamespaceSession(
         sessionId: String,
         restartChallenge: Boolean?,
     ): sc.pirate.app.api.model.NamespaceVerificationSession {
-        return ApiClient.Verification.completeNamespaceSession(sessionId, restartChallenge)
+        return apiClient.verification.completeNamespaceSession(sessionId, restartChallenge)
     }
 }
 
 class ApiNotificationRepository(
     private val apiClient: ApiClient,
 ) : NotificationRepository {
-    override suspend fun getTasks(): NotificationTasksResponse = ApiClient.Notifications.getTasks()
+    override suspend fun getTasks(): NotificationTasksResponse = apiClient.notifications.getTasks()
 
     override suspend fun getFeed(limit: Int?, cursor: String?): NotificationFeedResponse {
-        return ApiClient.Notifications.getFeed(limit = limit, cursor = cursor)
+        return apiClient.notifications.getFeed(limit = limit, cursor = cursor)
     }
 
     override suspend fun markRead(eventIds: List<String>) {
-        ApiClient.Notifications.markRead(eventIds)
+        apiClient.notifications.markRead(eventIds)
     }
 
     override suspend fun dismissTask(taskId: String): UserTask {
-        return ApiClient.Notifications.dismissTask(taskId)
+        return apiClient.notifications.dismissTask(taskId)
     }
 }
 
