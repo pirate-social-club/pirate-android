@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -37,6 +35,7 @@ import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.FormNote
+import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
@@ -206,7 +205,7 @@ fun PostComposerScreen(
                 )
                 IconButton(onClick = onBack) {
                     Icon(
-                        Icons.Filled.ArrowBack,
+                        PhosphorIcons.CaretLeft,
                         contentDescription = "Close",
                         tint = PirateTokens.colors.textPrimary,
                     )

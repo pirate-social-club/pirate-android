@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -57,6 +54,7 @@ import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.EmptyFeedState
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
+import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.PirateChipRow
@@ -330,7 +328,7 @@ fun CommunityScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Filled.ArrowBack,
+                            PhosphorIcons.CaretLeft,
                             contentDescription = "Back",
                             tint = PirateTokens.colors.textPrimary,
                         )
@@ -340,7 +338,7 @@ fun CommunityScreen(
                     if (canCreatePost) {
                         IconButton(onClick = onNavigateToCompose) {
                             Icon(
-                                imageVector = Icons.Filled.Add,
+                                imageVector = PhosphorIcons.Plus,
                                 contentDescription = "Create post",
                                 tint = PirateTokens.colors.textPrimary,
                             )

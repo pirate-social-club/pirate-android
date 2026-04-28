@@ -120,6 +120,27 @@ fun PirateNavHost(
                 onNavigateToCompose = {
                     navController.navigate(PirateRoute.GlobalSubmit.route)
                 },
+                onNavigateToYourCommunities = {
+                    navController.navigate(PirateRoute.YourCommunities.route)
+                },
+                onNavigateToWallet = {
+                    navController.navigate(PirateRoute.Wallet.route)
+                },
+                onNavigateToChat = {
+                    navController.navigate(PirateRoute.Chat.route)
+                },
+                onNavigateToInbox = {
+                    navController.navigate(PirateRoute.Inbox.route)
+                },
+                onNavigateToProfile = {
+                    navController.navigate(PirateRoute.Me.route)
+                },
+                onNavigateToCreateCommunity = {
+                    navController.navigate(PirateRoute.CreateCommunity.route)
+                },
+                onSignIn = {
+                    navController.navigate(PirateRoute.Auth.route)
+                },
             )
         }
 

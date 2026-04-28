@@ -11,25 +11,28 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,11 +44,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import sc.pirate.app.PirateApp
-import sc.pirate.app.api.model.HomeFeedCommunitySummary
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.AuthRequiredSheet
 import sc.pirate.app.ui.ChipOption
+import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.StatusCard
@@ -242,15 +246,96 @@ fun HomeScreen(
     onNavigateToCommunity: (String) -> Unit,
     onNavigateToPost: (String) -> Unit,
     onNavigateToCompose: () -> Unit,
+    onNavigateToYourCommunities: () -> Unit,
+    onNavigateToWallet: () -> Unit,
+    onNavigateToChat: () -> Unit,
+    onNavigateToInbox: () -> Unit,
+    onNavigateToProfile: () -> Unit,
+    onNavigateToCreateCommunity: () -> Unit,
+    onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val feed = state.feed
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
 
-    Scaffold(
+    authPromptAction?.let { action ->
+        AuthRequiredSheet(
+            actionLabel = action,
+            onDismiss = { authPromptAction = null },
+            onSignIn = {
+                authPromptAction = null
+                onSignIn()
+            },
+        )
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            HomeNavigationDrawer(
+                onClose = { scope.launch { drawerState.close() } },
+                onHome = { scope.launch { drawerState.close() } },
+                onPopular = {
+                    scope.launch {
+                        drawerState.close()
+                        viewModel.setSort("top")
+                    }
+                },
+                onYourCommunities = {
+                    scope.launch {
+                        drawerState.close()
+                        onNavigateToYourCommunities()
+                    }
+                },
+                onWallet = {
+                    scope.launch {
+                        drawerState.close()
+                        onNavigateToWallet()
+                    }
+                },
+                onChat = {
+                    scope.launch {
+                        drawerState.close()
+                        onNavigateToChat()
+                    }
+                },
+                onInbox = {
+                    scope.launch {
+                        drawerState.close()
+                        onNavigateToInbox()
+                    }
+                },
+                onProfile = {
+                    scope.launch {
+                        drawerState.close()
+                        onNavigateToProfile()
+                    }
+                },
+                onCreateCommunity = {
+                    scope.launch {
+                        drawerState.close()
+                        if (hasSession) onNavigateToCreateCommunity() else authPromptAction = "Creating a community"
+                    }
+                },
+            )
+        },
+    ) {
+        Scaffold(
         topBar = {
             TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(
+                            imageVector = PhosphorIcons.List,
+                            contentDescription = "Open navigation",
+                            tint = PirateTokens.colors.textPrimary,
+                        )
+                    }
+                },
                 title = {
                     Text(
                         text = "Pirate",
@@ -261,7 +346,7 @@ fun HomeScreen(
                     if (hasSession) {
                         IconButton(onClick = onNavigateToCompose) {
                             Icon(
-                                imageVector = Icons.Filled.Add,
+                                imageVector = PhosphorIcons.Plus,
                                 contentDescription = "Create post",
                                 tint = PirateTokens.colors.textPrimary,
                             )
@@ -274,15 +359,15 @@ fun HomeScreen(
             )
         },
         modifier = modifier,
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.Start,
-        ) {
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.Start,
+            ) {
             when {
                 state.loading -> {
                     item {
@@ -342,32 +427,12 @@ fun HomeScreen(
                         }
                     }
 
-                    if (state.voteError != null) {
-                        item {
-                            StatusCard(
-                                title = "Vote unavailable",
-                                description = state.voteError.orEmpty(),
-                                tone = StatusTone.Warning,
-                            )
-                        }
-                    }
-
                     if (state.paginationError != null) {
                         item {
                             StatusCard(
                                 title = "More posts unavailable",
                                 description = state.paginationError.orEmpty(),
                                 tone = StatusTone.Warning,
-                            )
-                        }
-                    }
-
-                    if (feed.topCommunities.isNotEmpty()) {
-                        item {
-                            TopCommunitiesRow(
-                                communities = feed.topCommunities,
-                                onNavigateToCommunity = onNavigateToCommunity,
-                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
                     }
@@ -380,7 +445,20 @@ fun HomeScreen(
                             isVoting = isVoting,
                             onOpenPost = { onNavigateToPost(post.postId) },
                             onOpenCommunity = { onNavigateToCommunity(item.community.communityId) },
-                            onVote = { value -> viewModel.votePost(post.postId, value) },
+                            onVote = { value ->
+                                if (hasSession) {
+                                    viewModel.votePost(post.postId, value)
+                                } else {
+                                    authPromptAction = "Voting"
+                                }
+                            },
+                            onComment = {
+                                if (hasSession) {
+                                    onNavigateToPost(post.postId)
+                                } else {
+                                    authPromptAction = "Commenting"
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
@@ -398,43 +476,88 @@ fun HomeScreen(
                 }
             }
         }
+        }
     }
 }
 
 @Composable
-private fun TopCommunitiesRow(
-    communities: List<HomeFeedCommunitySummary>,
-    onNavigateToCommunity: (String) -> Unit,
+private fun HomeNavigationDrawer(
+    onClose: () -> Unit,
+    onHome: () -> Unit,
+    onPopular: () -> Unit,
+    onYourCommunities: () -> Unit,
+    onWallet: () -> Unit,
+    onChat: () -> Unit,
+    onInbox: () -> Unit,
+    onProfile: () -> Unit,
+    onCreateCommunity: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-            text = "Top communities",
-            style = MaterialTheme.typography.labelLarge,
-            color = PirateTokens.colors.textSecondary,
-            modifier = Modifier.padding(horizontal = 4.dp),
-        )
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(communities.take(8), key = { it.communityId }) { community ->
-                Surface(
-                    shape = RoundedCornerShape(PirateTokens.radius.full),
-                    color = PirateTokens.colors.bgElevated,
-                    border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
-                    modifier = Modifier.clickable {
-                        onNavigateToCommunity(community.communityId)
-                    },
-                ) {
-                    Text(
-                        text = community.routeSlug?.let { "c/$it" } ?: community.displayName,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textPrimary,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+    ModalDrawerSheet(
+        modifier = modifier,
+        drawerContainerColor = PirateTokens.colors.bgPage,
+        drawerContentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "Pirate",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = PirateTokens.colors.textPrimary,
+                )
+                IconButton(onClick = onClose) {
+                    Icon(
+                        imageVector = PhosphorIcons.CaretLeft,
+                        contentDescription = "Close navigation",
+                        tint = PirateTokens.colors.textPrimary,
                     )
                 }
             }
+            DrawerRow("Home", PhosphorIcons.House, onHome)
+            DrawerRow("Popular", PhosphorIcons.CaretUp, onPopular)
+            DrawerRow("Your Communities", PhosphorIcons.UserCircle, onYourCommunities)
+            DrawerRow("Wallet", PhosphorIcons.Wallet, onWallet)
+            DrawerRow("Chat", PhosphorIcons.ChatCircle, onChat)
+            DrawerRow("Inbox", PhosphorIcons.Bell, onInbox)
+            DrawerRow("Profile", PhosphorIcons.UserCircle, onProfile)
+            DrawerRow("Create Community", PhosphorIcons.Plus, onCreateCommunity)
         }
+    }
+}
+
+@Composable
+private fun DrawerRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = PirateTokens.colors.textSecondary,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = PirateTokens.colors.textPrimary,
+        )
     }
 }
 
@@ -445,6 +568,7 @@ private fun HomePostCard(
     onOpenPost: () -> Unit,
     onOpenCommunity: () -> Unit,
     onVote: (Int) -> Unit,
+    onComment: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val postResponse = item.post
@@ -543,6 +667,7 @@ private fun HomePostCard(
                     text = "$comments comments",
                     style = MaterialTheme.typography.labelLarge,
                     color = PirateTokens.colors.textSecondary,
+                    modifier = Modifier.clickable(onClick = onComment),
                 )
                 Spacer(modifier = Modifier.weight(1f))
                 post.postType?.takeIf { it.isNotBlank() && it != "text" }?.let { postType ->
@@ -579,7 +704,7 @@ private fun VoteControl(
                 enabled = enabled,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowUp,
+                    imageVector = PhosphorIcons.CaretUp,
                     contentDescription = "Upvote",
                     tint = if (viewerVote == 1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
                 )
@@ -594,7 +719,7 @@ private fun VoteControl(
                 enabled = enabled,
             ) {
                 Icon(
-                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    imageVector = PhosphorIcons.CaretDown,
                     contentDescription = "Downvote",
                     tint = if (viewerVote == -1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
                 )

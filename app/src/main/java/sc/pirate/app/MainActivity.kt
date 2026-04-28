@@ -5,17 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.ChatBubble
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.Composable
 import sc.pirate.app.navigation.PirateNavHost
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTheme
 import sc.pirate.app.ui.BottomNavItem
+import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateScaffold
 
 class MainActivity : ComponentActivity() {
@@ -52,17 +47,17 @@ private fun PirateAppShell() {
         BottomNavItem(
             route = PirateRoute.Home.route,
             label = "Home",
-            icon = Icons.Filled.Home,
+            icon = PhosphorIcons.House,
             activeRoutes = setOf(PirateRoute.Home.route, PirateRoute.Community.route),
         ),
-        BottomNavItem(PirateRoute.Wallet.route, "Wallet", Icons.Filled.AccountBalanceWallet),
+        BottomNavItem(PirateRoute.Wallet.route, "Wallet", PhosphorIcons.Wallet),
         BottomNavItem(
             route = PirateRoute.Chat.route,
             label = "Chat",
-            icon = Icons.Filled.ChatBubble,
+            icon = PhosphorIcons.ChatCircle,
         ),
-        BottomNavItem(PirateRoute.Inbox.route, "Inbox", Icons.Filled.Notifications),
-        BottomNavItem(PirateRoute.Me.route, "Profile", Icons.Filled.Person),
+        BottomNavItem(PirateRoute.Inbox.route, "Inbox", PhosphorIcons.Bell),
+        BottomNavItem(PirateRoute.Me.route, "Profile", PhosphorIcons.UserCircle),
     )
 
     PirateScaffold(bottomItems = bottomItems) { navController, modifier ->

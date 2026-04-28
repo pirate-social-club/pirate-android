@@ -12,9 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -28,6 +25,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,9 +42,11 @@ import sc.pirate.app.api.CreateCommentRequest
 import sc.pirate.app.api.model.CommentListItem
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.AuthRequiredSheet
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
+import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.PirateChipRow
@@ -410,9 +412,21 @@ fun PostScreen(
 ) {
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
+    var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(postId, hasSession) {
         viewModel.loadPost(postId, hasSession)
+    }
+
+    authPromptAction?.let { action ->
+        AuthRequiredSheet(
+            actionLabel = action,
+            onDismiss = { authPromptAction = null },
+            onSignIn = {
+                authPromptAction = null
+                onSignIn()
+            },
+        )
     }
 
     androidx.compose.material3.Scaffold(
@@ -427,7 +441,7 @@ fun PostScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Filled.ArrowBack,
+                            PhosphorIcons.CaretLeft,
                             contentDescription = "Back",
                             tint = PirateTokens.colors.textPrimary,
                         )
@@ -439,7 +453,7 @@ fun PostScreen(
                         if (!communityId.isNullOrBlank()) {
                             IconButton(onClick = { onNavigateToCompose(communityId) }) {
                                 Icon(
-                                    imageVector = Icons.Filled.Add,
+                                    imageVector = PhosphorIcons.Plus,
                                     contentDescription = "Create post",
                                     tint = PirateTokens.colors.textPrimary,
                                 )
@@ -529,7 +543,7 @@ fun PostScreen(
                             PirateButton(
                                 text = if (state.commentSubmitting) "Posting" else "Post comment",
                                 onClick = {
-                                    if (hasSession) viewModel.submitComment() else onSignIn()
+                                    if (hasSession) viewModel.submitComment() else authPromptAction = "Commenting"
                                 },
                                 enabled = state.commentDraft.isNotBlank(),
                                 loading = state.commentSubmitting,
@@ -553,17 +567,6 @@ fun PostScreen(
                             onSelected = viewModel::setCommentSort,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                    }
-
-                    if (state.commentVoteError != null) {
-                        item {
-                            StatusCard(
-                                title = "Vote unavailable",
-                                description = state.commentVoteError.orEmpty(),
-                                tone = StatusTone.Warning,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
                     }
 
                     if (state.commentsPaginationError != null) {
@@ -617,23 +620,9 @@ fun PostScreen(
                                 CommentRow(
                                     comment = comment,
                                     isVoting = commentId in state.votingCommentIds,
-                                    replies = state.repliesByParentId[commentId].orEmpty(),
-                                    repliesLoading = commentId in state.loadingRepliesParentIds,
-                                    repliesError = state.repliesErrorByParentId[commentId],
-                                    nextRepliesCursor = state.nextRepliesCursorByParentId[commentId],
-                                    replyDraft = state.replyDraftsByParentId[commentId].orEmpty(),
-                                    replySubmitting = commentId in state.submittingReplyParentIds,
-                                    replySubmitError = state.replySubmitErrorByParentId[commentId],
-                                    onLoadReplies = { viewModel.loadReplies(commentId) },
-                                    onLoadMoreReplies = { viewModel.loadMoreReplies(commentId) },
-                                    onReplyDraftChange = { value -> viewModel.updateReplyDraft(commentId, value) },
-                                    onSubmitReply = {
-                                        if (hasSession) viewModel.submitReply(commentId) else onSignIn()
-                                    },
                                     onVote = { value ->
-                                        if (hasSession) viewModel.voteComment(commentId, value) else onSignIn()
+                                        if (hasSession) viewModel.voteComment(commentId, value) else authPromptAction = "Voting"
                                     },
-                                    hasSession = hasSession,
                                 )
                             }
                         }
@@ -694,19 +683,7 @@ private fun voteScoreDelta(previousValue: Int?, nextValue: Int): Int =
 private fun CommentRow(
     comment: CommentListItem,
     isVoting: Boolean,
-    replies: List<CommentListItem>,
-    repliesLoading: Boolean,
-    repliesError: String?,
-    nextRepliesCursor: String?,
-    replyDraft: String,
-    replySubmitting: Boolean,
-    replySubmitError: String?,
-    onLoadReplies: () -> Unit,
-    onLoadMoreReplies: () -> Unit,
-    onReplyDraftChange: (String) -> Unit,
-    onSubmitReply: () -> Unit,
     onVote: (Int) -> Unit,
-    hasSession: Boolean,
 ) {
     val model = comment.comment
     PirateCard(modifier = Modifier.fillMaxWidth()) {
@@ -737,7 +714,7 @@ private fun CommentRow(
         if (model.directReplyCount > 0) {
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "${model.directReplyCount} replies",
+                text = "${model.directReplyCount} replies in thread",
                 style = MaterialTheme.typography.bodySmall,
                 color = PirateTokens.colors.textSecondary,
             )
@@ -760,93 +737,5 @@ private fun CommentRow(
                 modifier = Modifier.weight(1f),
             )
         }
-        if (model.directReplyCount > 0 && replies.isEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            PirateButton(
-                text = if (repliesLoading) "Loading replies" else "Show replies",
-                onClick = onLoadReplies,
-                loading = repliesLoading,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        if (repliesError != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-            FormNote(
-                message = repliesError,
-                tone = FormTone.Error,
-            )
-        }
-        if (replies.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Column(
-                modifier = Modifier.padding(start = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                replies.forEach { reply ->
-                    ReplyRow(reply = reply)
-                }
-                if (nextRepliesCursor != null) {
-                    PirateButton(
-                        text = if (repliesLoading) "Loading replies" else "Load more replies",
-                        onClick = onLoadMoreReplies,
-                        loading = repliesLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        OutlinedTextField(
-            value = replyDraft,
-            onValueChange = onReplyDraftChange,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            enabled = !replySubmitting,
-        )
-        if (replySubmitError != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-            FormNote(
-                message = replySubmitError,
-                tone = FormTone.Error,
-            )
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-        PirateButton(
-            text = if (replySubmitting) "Posting reply" else "Reply",
-            onClick = onSubmitReply,
-            enabled = replyDraft.isNotBlank(),
-            loading = replySubmitting,
-            modifier = Modifier.fillMaxWidth(),
-        )
-    }
-}
-
-@Composable
-private fun ReplyRow(reply: CommentListItem) {
-    val model = reply.comment
-    Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = model.anonymousLabel ?: model.authorUserId ?: "Anonymous",
-                style = MaterialTheme.typography.labelMedium,
-                color = PirateTokens.colors.textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "${model.score} score",
-                style = MaterialTheme.typography.labelSmall,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-        Text(
-            text = reply.translatedBody ?: model.body ?: "[removed]",
-            style = MaterialTheme.typography.bodyMedium,
-            color = PirateTokens.colors.textPrimary,
-        )
     }
 }

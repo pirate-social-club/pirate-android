@@ -8,8 +8,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,6 +32,7 @@ import sc.pirate.app.PirateApp
 import sc.pirate.app.api.CompleteVerificationSessionRequest
 import sc.pirate.app.api.StartVerificationSessionRequest
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
@@ -269,7 +268,7 @@ fun SelfVerificationScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Filled.ArrowBack,
+                            PhosphorIcons.CaretLeft,
                             contentDescription = "Back",
                             tint = PirateTokens.colors.textPrimary,
                         )

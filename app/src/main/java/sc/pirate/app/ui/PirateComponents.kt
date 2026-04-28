@@ -9,15 +9,19 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -202,5 +206,50 @@ fun SignInRequiredScreen(
             onClick = onSignIn,
             modifier = Modifier.fillMaxWidth(),
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AuthRequiredSheet(
+    actionLabel: String,
+    onDismiss: () -> Unit,
+    onSignIn: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = PirateTokens.colors.bgPage,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = "Sign in to continue",
+                style = MaterialTheme.typography.headlineSmall,
+                color = PirateTokens.colors.textPrimary,
+            )
+            Text(
+                text = "$actionLabel requires a Pirate account.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = PirateTokens.colors.textSecondary,
+            )
+            PirateButton(
+                text = "Sign in",
+                onClick = onSignIn,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            PirateButton(
+                text = "Not now",
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+        }
     }
 }
