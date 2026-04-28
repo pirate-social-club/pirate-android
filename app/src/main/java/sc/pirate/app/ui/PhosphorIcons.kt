@@ -111,6 +111,61 @@ object PhosphorIcons {
         lineTo(12f, 15f)
         lineTo(18f, 9f)
     }
+
+    val Fire = icon("Fire") {
+        moveTo(12f, 22f)
+        quadTo(6f, 19f, 6f, 13f)
+        quadTo(6f, 8f, 11f, 3f)
+        quadTo(12f, 7f, 15f, 9f)
+        quadTo(17f, 6f, 17f, 4f)
+        quadTo(21f, 8f, 21f, 14f)
+        quadTo(21f, 20f, 15f, 22f)
+        moveTo(12f, 22f)
+        quadTo(9f, 20f, 9f, 16f)
+        quadTo(9f, 13f, 12f, 10f)
+        quadTo(15f, 13f, 15f, 16f)
+        quadTo(15f, 20f, 12f, 22f)
+    }
+
+    val TrendUp = icon("TrendUp") {
+        moveTo(3f, 17f)
+        lineTo(9f, 11f)
+        lineTo(13f, 15f)
+        lineTo(21f, 7f)
+        moveTo(15f, 7f)
+        lineTo(21f, 7f)
+        lineTo(21f, 13f)
+    }
+
+    val Flag = icon("Flag") {
+        moveTo(5f, 21f)
+        lineTo(5f, 4f)
+        quadTo(9f, 2f, 13f, 4f)
+        quadTo(16f, 5.5f, 19f, 4f)
+        lineTo(19f, 13f)
+        quadTo(16f, 14.5f, 13f, 13f)
+        quadTo(9f, 11f, 5f, 13f)
+    }
+
+    val Robot = icon("Robot") {
+        moveTo(8f, 8f)
+        lineTo(16f, 8f)
+        quadTo(19f, 8f, 19f, 11f)
+        lineTo(19f, 17f)
+        quadTo(19f, 20f, 16f, 20f)
+        lineTo(8f, 20f)
+        quadTo(5f, 20f, 5f, 17f)
+        lineTo(5f, 11f)
+        quadTo(5f, 8f, 8f, 8f)
+        moveTo(12f, 8f)
+        lineTo(12f, 4f)
+        moveTo(9f, 14f)
+        lineTo(9.05f, 14f)
+        moveTo(15f, 14f)
+        lineTo(15.05f, 14f)
+        moveTo(9f, 17f)
+        lineTo(15f, 17f)
+    }
 }
 
 private fun icon(name: String, block: androidx.compose.ui.graphics.vector.PathBuilder.() -> Unit): ImageVector =
