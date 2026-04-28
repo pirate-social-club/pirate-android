@@ -2,6 +2,7 @@ package sc.pirate.app.ui
 
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.adamglin.PhosphorIcons as AdamPhosphorIcons
+import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.Bell
 import com.adamglin.phosphoricons.regular.CaretDown
 import com.adamglin.phosphoricons.regular.CaretLeft
