@@ -2,13 +2,16 @@ package sc.pirate.app.home
 
 import android.app.Application
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -43,6 +47,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeParseException
 import sc.pirate.app.PirateApp
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
@@ -364,8 +371,7 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                    .background(PirateTokens.colors.bgPage),
                 horizontalAlignment = Alignment.Start,
             ) {
             when {
@@ -409,7 +415,9 @@ fun HomeScreen(
                 else -> {
                     item {
                         Column(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             PirateChipRow(
@@ -430,10 +438,11 @@ fun HomeScreen(
                     if (state.paginationError != null) {
                         item {
                             StatusCard(
-                                title = "More posts unavailable",
-                                description = state.paginationError.orEmpty(),
-                                tone = StatusTone.Warning,
-                            )
+                            title = "More posts unavailable",
+                            description = state.paginationError.orEmpty(),
+                            tone = StatusTone.Warning,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
                         }
                     }
 
@@ -522,16 +531,30 @@ private fun HomeNavigationDrawer(
                     )
                 }
             }
-            DrawerRow("Home", PhosphorIcons.House, onHome)
+            DrawerSectionLabel("Feed")
+            DrawerRow("Best", PhosphorIcons.CaretUp, onHome)
             DrawerRow("Popular", PhosphorIcons.CaretUp, onPopular)
+            DrawerSectionLabel("Pirate")
+            DrawerRow("Home", PhosphorIcons.House, onHome)
             DrawerRow("Your Communities", PhosphorIcons.UserCircle, onYourCommunities)
+            DrawerRow("Agents", PhosphorIcons.ChatCircle, onChat)
+            DrawerRow("Create Community", PhosphorIcons.Plus, onCreateCommunity)
+            DrawerSectionLabel("Account")
             DrawerRow("Wallet", PhosphorIcons.Wallet, onWallet)
-            DrawerRow("Chat", PhosphorIcons.ChatCircle, onChat)
             DrawerRow("Inbox", PhosphorIcons.Bell, onInbox)
             DrawerRow("Profile", PhosphorIcons.UserCircle, onProfile)
-            DrawerRow("Create Community", PhosphorIcons.Plus, onCreateCommunity)
         }
     }
+}
+
+@Composable
+private fun DrawerSectionLabel(label: String) {
+    Text(
+        text = label.uppercase(),
+        style = MaterialTheme.typography.labelLarge,
+        color = PirateTokens.colors.textSecondary.copy(alpha = 0.55f),
+        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+    )
 }
 
 @Composable
@@ -590,14 +613,14 @@ private fun HomePostCard(
 
     Surface(
         modifier = modifier.clickable(onClick = onOpenPost),
-        shape = RoundedCornerShape(PirateTokens.radius.lg),
-        color = PirateTokens.colors.bgElevated,
-        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+        color = PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(0.dp),
+        border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
@@ -605,21 +628,38 @@ private fun HomePostCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = routeLabel,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = PirateTokens.colors.textPrimary,
-                    modifier = Modifier.clickable(onClick = onOpenCommunity),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "by $authorLabel",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = PirateTokens.colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                FeedAvatar(label = item.community.displayName)
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = routeLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PirateTokens.colors.textPrimary,
+                            modifier = Modifier.clickable(onClick = onOpenCommunity),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "· ${relativeTimeLabel(post.createdAt)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    if (authorLabel != "anonymous") {
+                        Text(
+                            text = authorLabel,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
 
             Text(
@@ -678,6 +718,51 @@ private fun HomePostCard(
                     )
                 }
             }
+        }
+    }
+}
+
+private fun relativeTimeLabel(timestamp: String): String {
+    val createdAt = try {
+        Instant.parse(timestamp)
+    } catch (_: DateTimeParseException) {
+        return ""
+    }
+    val duration = Duration.between(createdAt, Instant.now()).coerceAtLeast(Duration.ZERO)
+    val minutes = duration.toMinutes()
+    val hours = duration.toHours()
+    val days = duration.toDays()
+    return when {
+        minutes < 1 -> "now"
+        minutes < 60 -> "${minutes}m"
+        hours < 24 -> "${hours}h"
+        days < 30 -> "${days}d"
+        days < 365 -> "${days / 30}mo"
+        else -> "${days / 365}y"
+    }
+}
+
+@Composable
+private fun FeedAvatar(label: String) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(PirateTokens.radius.full))
+            .background(PirateTokens.colors.accentWarning),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(PirateTokens.radius.full))
+                .background(PirateTokens.colors.bgPage),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = label.trim().take(1).ifBlank { "P" },
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
         }
     }
 }
