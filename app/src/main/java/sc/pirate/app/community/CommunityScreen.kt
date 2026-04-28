@@ -308,6 +308,7 @@ fun CommunityScreen(
     val preview = state.preview
     val community = state.community
     val eligibility = state.eligibility
+    val canCreatePost = hasSession && eligibility?.status == "already_joined"
     val canOpenComposer = community != null || preview != null
 
     LaunchedEffect(communityId, hasSession) {
