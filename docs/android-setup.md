@@ -80,13 +80,13 @@ PRIVY_APP_CLIENT_ID=your_privy_app_client_id
 Wallet connect uses Reown/AppKit. To enable external wallets locally, also set:
 
 ```properties
-REOWN_PROJECT_ID=your_reown_project_id
+REOWN_PROJECT_ID=08db15bf8bdb09d1cbc714f4c39d11a8
 REOWN_REDIRECT_URI=pirate://wallet-connect
 ```
 
-If `REOWN_PROJECT_ID` is omitted, the wallet UI degrades gracefully and external wallet connect stays unavailable for that build.
+If `REOWN_PROJECT_ID` is omitted, Android defaults to the shared Pirate Reown project ID. Set it explicitly only when targeting a different Reown project.
 
-When these values are omitted, Android defaults to the production Pirate Privy app used by the legacy Android project. Blacksmith/GitHub Actions builds can override them from repository secrets named `PRIVY_APP_ID` and `PRIVY_APP_CLIENT_ID`. Local `local.properties` values take precedence over environment variables.
+When these values are omitted, Android defaults to the production Pirate Privy app used by the legacy Android project and the shared Pirate Reown project. Blacksmith/GitHub Actions builds set Reown explicitly and can override Privy from repository secrets named `PRIVY_APP_ID` and `PRIVY_APP_CLIENT_ID`. Local `local.properties` values take precedence over environment variables.
 
 Current auth flow:
 

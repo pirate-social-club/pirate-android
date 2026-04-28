@@ -60,7 +60,7 @@ android {
     buildConfigField("String", "PRIVY_REDIRECT_SCHEME", buildConfigString(privyRedirectScheme))
     manifestPlaceholders["privyRedirectScheme"] = privyRedirectScheme
 
-    val reownProjectId = runtimeProp("REOWN_PROJECT_ID") ?: ""
+    val reownProjectId = runtimeProp("REOWN_PROJECT_ID") ?: "08db15bf8bdb09d1cbc714f4c39d11a8"
     buildConfigField("String", "REOWN_PROJECT_ID", buildConfigString(reownProjectId))
 
     val reownRedirectUri = runtimeProp("REOWN_REDIRECT_URI") ?: "pirate://wallet-connect"

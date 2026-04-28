@@ -28,6 +28,8 @@ jobs:
       API_BASE_URL: https://api.pirate.sc
       PRIVY_APP_ID: ${{ secrets.PRIVY_APP_ID }}
       PRIVY_APP_CLIENT_ID: ${{ secrets.PRIVY_APP_CLIENT_ID }}
+      REOWN_PROJECT_ID: 08db15bf8bdb09d1cbc714f4c39d11a8
+      REOWN_REDIRECT_URI: pirate://wallet-connect
 
     steps:
       - name: Check out repository
