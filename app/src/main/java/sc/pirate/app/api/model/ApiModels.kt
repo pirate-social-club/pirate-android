@@ -3,6 +3,7 @@ package sc.pirate.app.api.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import java.time.Instant
 
 @Serializable
 data class SelfVerificationDisclosures(
@@ -277,8 +278,10 @@ data class ThreadSnapshot(
 
 @Serializable
 data class Post(
-    @SerialName("post_id") val postId: String,
-    @SerialName("community_id") val communityId: String,
+    @SerialName("post_id") private val contractPostId: String? = null,
+    @SerialName("id") private val feedPostId: String? = null,
+    @SerialName("community_id") private val contractCommunityId: String? = null,
+    @SerialName("community") private val feedCommunityId: String? = null,
     val title: String? = null,
     val body: String? = null,
     val caption: String? = null,
@@ -297,9 +300,14 @@ data class Post(
     @SerialName("access_mode") val accessMode: String? = null,
     @SerialName("asset_id") val assetId: String? = null,
     @SerialName("age_gate_policy") val ageGatePolicy: String? = null,
-    @SerialName("created_at") val createdAt: String,
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
-)
+) {
+    val postId: String get() = contractPostId ?: feedPostId.orEmpty()
+    val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
+    val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
+}
 
 @Serializable
 data class LocalizedPostResponse(
@@ -328,14 +336,17 @@ data class PostListResponse(
 
 @Serializable
 data class HomeFeedCommunitySummary(
-    @SerialName("community_id") val communityId: String? = null,
+    @SerialName("community_id") private val contractCommunityId: String? = null,
+    @SerialName("id") private val feedCommunityId: String? = null,
     @SerialName("display_name") val displayName: String,
     @SerialName("route_slug") val routeSlug: String? = null,
     @SerialName("avatar_ref") val avatarRef: String? = null,
     @SerialName("member_count") val memberCount: Int? = null,
     @SerialName("follower_count") val followerCount: Int? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
-)
+) {
+    val communityId: String? get() = contractCommunityId ?: feedCommunityId
+}
 
 @Serializable
 data class HomeFeedItem(
