@@ -277,6 +277,20 @@ data class ThreadSnapshot(
 )
 
 @Serializable
+data class PostMediaRef(
+    @SerialName("storage_ref") val storageRef: String,
+    @SerialName("mime_type") val mimeType: String? = null,
+    @SerialName("size_bytes") val sizeBytes: Long? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("poster_ref") val posterRef: String? = null,
+    @SerialName("poster_mime_type") val posterMimeType: String? = null,
+    @SerialName("poster_width") val posterWidth: Int? = null,
+    @SerialName("poster_height") val posterHeight: Int? = null,
+)
+
+@Serializable
 data class Post(
     @SerialName("post_id") private val contractPostId: String? = null,
     @SerialName("id") private val feedPostId: String? = null,
@@ -288,10 +302,12 @@ data class Post(
     @SerialName("link_url") val linkUrl: String? = null,
     @SerialName("link_og_image_url") val linkOgImageUrl: String? = null,
     @SerialName("link_og_title") val linkOgTitle: String? = null,
+    @SerialName("media_refs") val mediaRefs: List<PostMediaRef> = emptyList(),
     @SerialName("post_type") val postType: String? = null,
     val status: String? = null,
     val visibility: String? = null,
-    @SerialName("author_user_id") val authorUserId: String? = null,
+    @SerialName("author_user_id") private val contractAuthorUserId: String? = null,
+    @SerialName("author_user") private val feedAuthorUserId: String? = null,
     @SerialName("identity_mode") val identityMode: String? = null,
     @SerialName("anonymous_identity_scope") val anonymousIdentityScope: String? = null,
     @SerialName("anonymous_label") val anonymousLabel: String? = null,
@@ -306,6 +322,7 @@ data class Post(
 ) {
     val postId: String get() = contractPostId ?: feedPostId.orEmpty()
     val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
+    val authorUserId: String? get() = contractAuthorUserId ?: feedAuthorUserId
     val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
 }
 
@@ -313,6 +330,7 @@ data class Post(
 data class LocalizedPostResponse(
     val post: Post,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
+    @SerialName("comment_count") val commentCount: Int? = null,
     @SerialName("upvote_count") val upvoteCount: Int = 0,
     @SerialName("downvote_count") val downvoteCount: Int = 0,
     @SerialName("like_count") val likeCount: Int = 0,

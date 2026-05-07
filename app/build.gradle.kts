@@ -134,6 +134,7 @@ dependencies {
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
   implementation("io.coil-kt:coil-compose:2.6.0")
+  implementation("io.coil-kt:coil-svg:2.6.0")
 
   implementation("androidx.datastore:datastore-preferences:1.1.4")
 

@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,10 +32,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -42,9 +45,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,14 +59,14 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import sc.pirate.app.PirateApp
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.theme.PirateTokens
-import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
-import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
@@ -230,22 +235,14 @@ private fun HomeFeedResponse.replacePostItem(previousItem: HomeFeedItem): HomeFe
 
 private fun scoreText(item: HomeFeedItem): String {
     val score = item.post.upvoteCount - item.post.downvoteCount
-    val comments = item.post.threadSnapshot?.commentCount ?: 0
+    val comments = item.post.commentCount ?: item.post.threadSnapshot?.commentCount ?: 0
     return "$score score | $comments comments"
 }
 
-private val homeSortOptions = listOf(
-    ChipOption("best", "Best"),
-    ChipOption("new", "New"),
-    ChipOption("top", "Top"),
-)
-
-private val topTimeRangeOptions = listOf(
-    ChipOption("day", "Day"),
-    ChipOption("week", "Week"),
-    ChipOption("month", "Month"),
-    ChipOption("year", "Year"),
-    ChipOption("all", "All"),
+private data class MediaPreview(
+    val url: String,
+    val title: String,
+    val mimeType: String? = null,
 )
 
 @Composable
@@ -270,9 +267,17 @@ fun HomeScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
+    var mediaPreview by remember { mutableStateOf<MediaPreview?>(null) }
 
     authPromptAction?.let {
         signInDrawer { authPromptAction = null }
+    }
+
+    mediaPreview?.let { preview ->
+        MediaPreviewDialog(
+            preview = preview,
+            onDismiss = { mediaPreview = null },
+        )
     }
 
     ModalNavigationDrawer(
@@ -404,28 +409,6 @@ fun HomeScreen(
                     }
 
                     else -> {
-                        item {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                PirateChipRow(
-                                    options = homeSortOptions,
-                                    selectedValue = state.activeSort,
-                                    onSelected = viewModel::setSort,
-                                )
-                                if (state.activeSort == "top") {
-                                    PirateChipRow(
-                                        options = topTimeRangeOptions,
-                                        selectedValue = state.topTimeRange,
-                                        onSelected = viewModel::setTopTimeRange,
-                                    )
-                                }
-                            }
-                        }
-
                         if (state.paginationError != null) {
                             item {
                                 HomeInlineMessage(
@@ -444,6 +427,7 @@ fun HomeScreen(
                                 isVoting = isVoting,
                                 onOpenPost = { onNavigateToPost(post.postId) },
                                 onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
+                                onOpenMedia = { mediaPreview = it },
                                 onVote = { value ->
                                     if (hasSession) {
                                         viewModel.votePost(post.postId, value)
@@ -488,6 +472,54 @@ private fun userFacingFeedError(error: String?): String {
         "Could not load the home feed."
     } else {
         message
+    }
+}
+
+@Composable
+private fun MediaPreviewDialog(
+    preview: MediaPreview,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(Color.Black, RoundedCornerShape(8.dp))
+                .padding(12.dp),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    AsyncImage(
+                        model = preview.url,
+                        contentDescription = preview.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(6.dp)),
+                        contentScale = ContentScale.Fit,
+                    )
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.align(Alignment.TopEnd),
+                    ) {
+                        Icon(
+                            imageVector = PhosphorIcons.X,
+                            contentDescription = "Close preview",
+                            tint = Color.White,
+                        )
+                    }
+                }
+                Text(
+                    text = preview.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -667,6 +699,7 @@ private fun HomePostCard(
     isVoting: Boolean,
     onOpenPost: () -> Unit,
     onOpenCommunity: () -> Unit,
+    onOpenMedia: (MediaPreview) -> Unit,
     onVote: (Int) -> Unit,
     onComment: () -> Unit,
     modifier: Modifier = Modifier,
@@ -681,12 +714,14 @@ private fun HomePostCard(
     val body = postResponse.translatedBody
         ?: post.body
         ?: post.caption
-    val comments = postResponse.threadSnapshot?.commentCount ?: 0
+    val comments = postResponse.commentCount ?: postResponse.threadSnapshot?.commentCount ?: 0
     val score = postResponse.upvoteCount - postResponse.downvoteCount
     val routeLabel = item.community.routeSlug?.let { "c/$it" } ?: "c/${item.homeCommunityId()}"
     val authorLabel = post.anonymousLabel
         ?: post.authorUserId?.take(8)?.let { "u/$it" }
         ?: "anonymous"
+    val authorSeed = post.anonymousLabel ?: post.authorUserId ?: post.postId
+    val mediaPreview = item.primaryMediaPreview(title)
 
     Surface(
         modifier = modifier.clickable(onClick = onOpenPost),
@@ -705,7 +740,14 @@ private fun HomePostCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FeedAvatar(label = item.community.displayName)
+                FeedAvatar(
+                    label = item.community.displayName,
+                    avatarSrc = resolveCommunityAvatarSrc(
+                        avatarSrc = item.community.avatarRef,
+                        communityId = item.homeCommunityId(),
+                        displayName = item.community.displayName,
+                    ),
+                )
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -727,14 +769,24 @@ private fun HomePostCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (authorLabel != "anonymous") {
-                        Text(
-                            text = authorLabel,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = PirateTokens.colors.textSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                    if (authorLabel.isNotBlank()) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            FeedAvatar(
+                                label = authorLabel,
+                                avatarSrc = buildDefaultUserAvatarSrc(authorSeed),
+                                size = 18,
+                            )
+                            Text(
+                                text = authorLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = PirateTokens.colors.textSecondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                 }
             }
@@ -769,6 +821,13 @@ private fun HomePostCard(
                 )
             }
 
+            mediaPreview?.let { preview ->
+                FeedMediaPreview(
+                    preview = preview,
+                    onClick = { onOpenMedia(preview) },
+                )
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -787,13 +846,42 @@ private fun HomePostCard(
                     modifier = Modifier.clickable(onClick = onComment),
                 )
                 Spacer(modifier = Modifier.weight(1f))
-                post.postType?.takeIf { it.isNotBlank() && it != "text" }?.let { postType ->
-                    Text(
-                        text = postType,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textSecondary,
-                    )
-                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FeedMediaPreview(
+    preview: MediaPreview,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .clip(RoundedCornerShape(8.dp))
+            .background(PirateTokens.colors.bgElevated)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        AsyncImage(
+            model = preview.url,
+            contentDescription = preview.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+        if (preview.mimeType?.startsWith("video/") == true) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.54f),
+                shape = RoundedCornerShape(999.dp),
+            ) {
+                Text(
+                    text = "Video",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                )
             }
         }
     }
@@ -819,32 +907,123 @@ private fun relativeTimeLabel(timestamp: String): String {
     }
 }
 
+private fun HomeFeedItem.primaryMediaPreview(title: String): MediaPreview? {
+    val media = post.post.mediaRefs.firstOrNull()
+    if (media != null) {
+        val previewUrl = when {
+            media.mimeType?.startsWith("image/") == true -> media.storageRef
+            media.mimeType?.startsWith("video/") == true -> media.posterRef
+            else -> media.posterRef ?: media.storageRef
+        }?.takeIf { it.isNotBlank() }
+
+        if (previewUrl != null) {
+            return MediaPreview(
+                url = previewUrl,
+                title = title,
+                mimeType = media.mimeType,
+            )
+        }
+    }
+
+    return post.post.linkOgImageUrl
+        ?.takeIf { it.isNotBlank() }
+        ?.let { MediaPreview(url = it, title = title, mimeType = "image/*") }
+}
+
 @Composable
-private fun FeedAvatar(label: String) {
-    val colors = communityPlaceholderColors(label)
+private fun FeedAvatar(
+    label: String,
+    avatarSrc: String,
+    size: Int = 44,
+) {
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(size.dp)
             .clip(RoundedCornerShape(PirateTokens.radius.full))
-            .background(colors.first),
+            .background(PirateTokens.colors.bgElevated),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = label.trim().take(2).uppercase().ifBlank { "C" },
-            style = MaterialTheme.typography.labelLarge,
-            color = colors.second,
+        AsyncImage(
+            model = avatarSrc,
+            contentDescription = label,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
         )
     }
 }
 
-private fun communityPlaceholderColors(label: String): Pair<Color, Color> {
+private fun resolveCommunityAvatarSrc(
+    avatarSrc: String?,
+    communityId: String,
+    displayName: String,
+): String = avatarSrc?.trim()?.takeIf { it.isNotBlank() }
+    ?: buildDefaultCommunityAvatarSrc(communityId, displayName)
+
+private fun buildDefaultUserAvatarSrc(seedSource: String): String {
+    val seed = seedSource.trim()
+    if (seed.isBlank()) return ""
+    val background = userAvatarBackgroundColors[Math.floorMod(hashSeed(seed), userAvatarBackgroundColors.size)]
+    return "https://api.dicebear.com/9.x/thumbs/svg" +
+        "?seed=${encodeQuery(seed)}" +
+        "&size=128" +
+        "&radius=50" +
+        "&scale=92" +
+        "&backgroundColor=$background" +
+        "&eyesColor=111111" +
+        "&mouthColor=111111" +
+        "&shapeColor=f7f5f0,fffdf7,f6f3eb"
+}
+
+private val userAvatarBackgroundColors = listOf(
+    "d9a441",
+    "2f80ed",
+    "27ae60",
+    "eb5757",
+    "9b51e0",
+    "56ccf2",
+    "f2994a",
+    "219653",
+    "bb6bd9",
+    "f2c94c",
+)
+
+private fun hashSeed(seed: String): Int {
+    var hash = -2128831035
+    for (char in seed) {
+        hash = hash xor char.code
+        hash *= 16777619
+    }
+    return hash ushr 0
+}
+
+private fun buildDefaultCommunityAvatarSrc(communityId: String, displayName: String): String {
+    val seed = "${communityId.trim()}:${displayName.trim().replace(Regex("\\s+"), " ")}"
     val palette = listOf(
-        Color(0xFF243F46) to Color(0xFFD9F0F2),
-        Color(0xFF314936) to Color(0xFFE2F3DE),
-        Color(0xFF3F3A5F) to Color(0xFFECE8FF),
-        Color(0xFF4B4555) to Color(0xFFF0EAF6),
-        Color(0xFF33465F) to Color(0xFFE6EEF8),
-        Color(0xFF4C4A37) to Color(0xFFF4F0D9),
+        "#243f46" to "#d9f0f2",
+        "#314936" to "#e2f3de",
+        "#3f3a5f" to "#ece8ff",
+        "#4b4555" to "#f0eaf6",
+        "#33465f" to "#e6eef8",
+        "#4c4a37" to "#f4f0d9",
     )
-    return palette[Math.floorMod(label.hashCode(), palette.size)]
+    val colors = palette[Math.floorMod(seed.hashCode(), palette.size)]
+    val initials = displayName
+        .trim()
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .take(2)
+        .joinToString("") { it.first().uppercase() }
+        .ifBlank { "C" }
+    val svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="$initials">
+          <rect width="128" height="128" rx="64" fill="${colors.first}" />
+          <path d="M24 92C38 74 53 65 68 65C83 65 95 72 104 86" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="10" stroke-linecap="round" />
+          <text x="50%" y="55%" text-anchor="middle" dominant-baseline="middle" fill="${colors.second}" font-family="system-ui, Arial, sans-serif" font-size="44" font-weight="700">$initials</text>
+        </svg>
+    """.trimIndent()
+    return "data:image/svg+xml;charset=utf-8,${encodeQuery(svg)}"
+}
+
+private fun encodeQuery(value: String): String {
+    return URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
 }
