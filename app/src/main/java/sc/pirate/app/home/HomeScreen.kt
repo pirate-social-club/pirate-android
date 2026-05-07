@@ -13,9 +13,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -40,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -59,8 +62,6 @@ import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateChipRow
-import sc.pirate.app.ui.StatusCard
-import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
@@ -326,40 +327,40 @@ fun HomeScreen(
         },
     ) {
         Scaffold(
-        topBar = {
-            TopAppBar(
-                navigationIcon = {
-                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                        Icon(
-                            imageVector = PhosphorIcons.List,
-                            contentDescription = "Open navigation",
-                            tint = PirateTokens.colors.textPrimary,
+            topBar = {
+                TopAppBar(
+                    navigationIcon = {
+                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                            Icon(
+                                imageVector = PhosphorIcons.List,
+                                contentDescription = "Open navigation",
+                                tint = PirateTokens.colors.textPrimary,
+                            )
+                        }
+                    },
+                    title = {
+                        Text(
+                            text = "Pirate",
+                            color = PirateTokens.colors.textPrimary,
                         )
-                    }
-                },
-                title = {
-                    Text(
-                        text = "Pirate",
-                        color = PirateTokens.colors.textPrimary,
-                    )
-                },
-                actions = {
-                    IconButton(onClick = {
-                        if (hasSession) onNavigateToCompose() else authPromptAction = "Creating a post"
-                    }) {
-                        Icon(
-                            imageVector = PhosphorIcons.Plus,
-                            contentDescription = "Create post",
-                            tint = PirateTokens.colors.textPrimary,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = PirateTokens.colors.bgPage,
-                ),
-            )
-        },
-        modifier = modifier,
+                    },
+                    actions = {
+                        IconButton(onClick = {
+                            if (hasSession) onNavigateToCompose() else authPromptAction = "Creating a post"
+                        }) {
+                            Icon(
+                                imageVector = PhosphorIcons.Plus,
+                                contentDescription = "Create post",
+                                tint = PirateTokens.colors.textPrimary,
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = PirateTokens.colors.bgPage,
+                    ),
+                )
+            },
+            modifier = modifier,
         ) { innerPadding ->
             LazyColumn(
                 modifier = Modifier
@@ -368,118 +369,200 @@ fun HomeScreen(
                     .background(PirateTokens.colors.bgPage),
                 horizontalAlignment = Alignment.Start,
             ) {
-            when {
-                state.loading -> {
-                    item {
-                        StatusCard(
-                            title = "Loading feed",
-                            description = "Fetching the latest posts.",
-                            tone = StatusTone.Default,
-                        )
-                    }
-                }
-
-                state.error != null -> {
-                    item {
-                        StatusCard(
-                            title = "Feed unavailable",
-                            description = state.error.orEmpty(),
-                            tone = StatusTone.Warning,
-                        )
-                    }
-                    item {
-                        PirateButton(
-                            text = "Retry",
-                            onClick = viewModel::load,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-
-                feed == null || feed.items.isEmpty() -> {
-                    item {
-                        StatusCard(
-                            title = "No posts yet",
-                            description = "Join or create a community to start building your feed.",
-                            tone = StatusTone.Default,
-                        )
-                    }
-                }
-
-                else -> {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            PirateChipRow(
-                                options = homeSortOptions,
-                                selectedValue = state.activeSort,
-                                onSelected = viewModel::setSort,
+                when {
+                    state.loading -> {
+                        item {
+                            HomeCenteredState(
+                                title = "Loading feed",
+                                description = "Fetching the latest posts.",
+                                loading = true,
+                                modifier = Modifier.fillParentMaxSize(),
                             )
-                            if (state.activeSort == "top") {
+                        }
+                    }
+
+                    state.error != null -> {
+                        item {
+                            HomeCenteredState(
+                                title = "Feed unavailable",
+                                description = userFacingFeedError(state.error),
+                                actionText = "Retry",
+                                onAction = viewModel::load,
+                                modifier = Modifier.fillParentMaxSize(),
+                            )
+                        }
+                    }
+
+                    feed == null || feed.items.isEmpty() -> {
+                        item {
+                            HomeCenteredState(
+                                title = "No posts yet",
+                                description = "Join or create a community to start building your feed.",
+                                modifier = Modifier.fillParentMaxSize(),
+                            )
+                        }
+                    }
+
+                    else -> {
+                        item {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
                                 PirateChipRow(
-                                    options = topTimeRangeOptions,
-                                    selectedValue = state.topTimeRange,
-                                    onSelected = viewModel::setTopTimeRange,
+                                    options = homeSortOptions,
+                                    selectedValue = state.activeSort,
+                                    onSelected = viewModel::setSort,
+                                )
+                                if (state.activeSort == "top") {
+                                    PirateChipRow(
+                                        options = topTimeRangeOptions,
+                                        selectedValue = state.topTimeRange,
+                                        onSelected = viewModel::setTopTimeRange,
+                                    )
+                                }
+                            }
+                        }
+
+                        if (state.paginationError != null) {
+                            item {
+                                HomeInlineMessage(
+                                    title = "More posts unavailable",
+                                    description = state.paginationError.orEmpty(),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                                 )
                             }
                         }
-                    }
 
-                    if (state.paginationError != null) {
-                        item {
-                            StatusCard(
-                            title = "More posts unavailable",
-                            description = state.paginationError.orEmpty(),
-                            tone = StatusTone.Warning,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        )
-                        }
-                    }
-
-                    items(feed.items, key = { it.post.post.postId }) { item ->
-                        val post = item.post.post
-                        val isVoting = post.postId in state.votingPostIds
-                        HomePostCard(
-                            item = item,
-                            isVoting = isVoting,
-                            onOpenPost = { onNavigateToPost(post.postId) },
-                            onOpenCommunity = { onNavigateToCommunity(item.community.communityId) },
-                            onVote = { value ->
-                                if (hasSession) {
-                                    viewModel.votePost(post.postId, value)
-                                } else {
-                                    authPromptAction = "Voting"
-                                }
-                            },
-                            onComment = {
-                                if (hasSession) {
-                                    onNavigateToPost(post.postId)
-                                } else {
-                                    authPromptAction = "Commenting"
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-
-                    if (feed.nextCursor != null) {
-                        item {
-                            PirateButton(
-                                text = if (state.loadingMore) "Loading" else "Load more",
-                                onClick = viewModel::loadMore,
-                                loading = state.loadingMore,
+                        items(feed.items, key = { it.post.post.postId }) { item ->
+                            val post = item.post.post
+                            val isVoting = post.postId in state.votingPostIds
+                            HomePostCard(
+                                item = item,
+                                isVoting = isVoting,
+                                onOpenPost = { onNavigateToPost(post.postId) },
+                                onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
+                                onVote = { value ->
+                                    if (hasSession) {
+                                        viewModel.votePost(post.postId, value)
+                                    } else {
+                                        authPromptAction = "Voting"
+                                    }
+                                },
+                                onComment = {
+                                    if (hasSession) {
+                                        onNavigateToPost(post.postId)
+                                    } else {
+                                        authPromptAction = "Commenting"
+                                    }
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                        }
+
+                        if (feed.nextCursor != null) {
+                            item {
+                                PirateButton(
+                                    text = if (state.loadingMore) "Loading" else "Load more",
+                                    onClick = viewModel::loadMore,
+                                    loading = state.loadingMore,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+private fun HomeFeedItem.homeCommunityId(): String =
+    community.communityId?.takeIf { it.isNotBlank() } ?: post.post.communityId
+
+private fun userFacingFeedError(error: String?): String {
+    val message = error?.takeIf { it.isNotBlank() } ?: return "Could not load the home feed."
+    return if (message.contains("serial name") || message.contains("Fields [")) {
+        "Could not load the home feed."
+    } else {
+        message
+    }
+}
+
+@Composable
+private fun HomeCenteredState(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+    loading: Boolean = false,
+    actionText: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 28.dp, vertical = 32.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.widthIn(max = 360.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (loading) {
+                CircularProgressIndicator(
+                    color = PirateTokens.colors.accentBrand,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = PirateTokens.colors.textPrimary,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.textSecondary,
+                textAlign = TextAlign.Center,
+            )
+            if (actionText != null && onAction != null) {
+                PirateButton(
+                    text = actionText,
+                    onClick = onAction,
+                    modifier = Modifier.widthIn(min = 140.dp, max = 220.dp),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun HomeInlineMessage(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            color = PirateTokens.colors.textPrimary,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = description,
+            style = MaterialTheme.typography.bodyMedium,
+            color = PirateTokens.colors.textSecondary,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -600,7 +683,7 @@ private fun HomePostCard(
         ?: post.caption
     val comments = postResponse.threadSnapshot?.commentCount ?: 0
     val score = postResponse.upvoteCount - postResponse.downvoteCount
-    val routeLabel = item.community.routeSlug?.let { "c/$it" } ?: "c/${item.community.communityId}"
+    val routeLabel = item.community.routeSlug?.let { "c/$it" } ?: "c/${item.homeCommunityId()}"
     val authorLabel = post.anonymousLabel
         ?: post.authorUserId?.take(8)?.let { "u/$it" }
         ?: "anonymous"

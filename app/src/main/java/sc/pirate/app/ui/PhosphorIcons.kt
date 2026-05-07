@@ -12,6 +12,9 @@ object PhosphorIcons {
     val HouseFill: ImageVector = AdamPhosphorIcons.Fill.House
     val Wallet: ImageVector = AdamPhosphorIcons.Regular.Wallet
     val WalletFill: ImageVector = AdamPhosphorIcons.Fill.Wallet
+    val GoogleLogo: ImageVector = AdamPhosphorIcons.Regular.GoogleLogo
+    val TwitterLogo: ImageVector = AdamPhosphorIcons.Regular.TwitterLogo
+    val EnvelopeSimple: ImageVector = AdamPhosphorIcons.Regular.EnvelopeSimple
     val ChatCircle: ImageVector = AdamPhosphorIcons.Regular.ChatCircle
     val ChatCircleFill: ImageVector = AdamPhosphorIcons.Fill.ChatCircle
     val Bell: ImageVector = AdamPhosphorIcons.Regular.Bell

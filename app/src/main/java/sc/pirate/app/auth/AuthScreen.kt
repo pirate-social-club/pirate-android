@@ -1,17 +1,26 @@
 package sc.pirate.app.auth
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -25,11 +34,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.shortAddress
 import sc.pirate.app.walletconnect.ReownUiState
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @Composable
 fun AuthScreen(
@@ -98,6 +115,7 @@ fun SignInDrawer(
             onLogout = onLogout,
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 12.dp),
             centered = false,
@@ -105,6 +123,7 @@ fun SignInDrawer(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SignInContent(
     state: AuthUiState,
@@ -119,8 +138,16 @@ private fun SignInContent(
     modifier: Modifier = Modifier,
     centered: Boolean,
 ) {
+    val scrollState = rememberScrollState()
     Column(
-        modifier = if (centered) modifier.padding(24.dp) else modifier,
+        modifier = if (centered) {
+            modifier
+                .imePadding()
+                .verticalScroll(scrollState)
+                .padding(24.dp)
+        } else {
+            modifier.verticalScroll(scrollState)
+        },
         verticalArrangement = if (centered) Arrangement.Center else Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -132,13 +159,7 @@ private fun SignInContent(
 
         if (centered) Spacer(modifier = Modifier.height(8.dp))
 
-        Text(
-            text = "Use Privy to continue.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = PirateTokens.colors.textSecondary,
-        )
-
-        Spacer(modifier = Modifier.height(if (centered) 32.dp else 12.dp))
+        Spacer(modifier = Modifier.height(if (centered) 28.dp else 8.dp))
 
         when (state) {
             is AuthUiState.Loading -> {
@@ -147,7 +168,7 @@ private fun SignInContent(
             is AuthUiState.Unavailable -> {
                 PirateCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Privy is not configured",
+                        text = "Sign-in is not configured",
                         color = PirateTokens.colors.textPrimary,
                         style = MaterialTheme.typography.titleMedium,
                     )
@@ -202,7 +223,7 @@ private fun SignInContent(
                 EmailLoginForm(onSendEmailCode, onLoginEmail)
             }
         }
-        if (!centered) Spacer(modifier = Modifier.height(8.dp))
+        if (!centered) Spacer(modifier = Modifier.height(16.dp))
     }
 }
 
@@ -223,24 +244,16 @@ private fun LoginButtons(
     onLoginGoogle: () -> Unit,
     onLoginTwitter: () -> Unit,
 ) {
-    Button(
+    AuthProviderButton(
+        icon = PhosphorIcons.Wallet,
+        text = when {
+            !walletConnectState.available -> "Wallet unavailable"
+            walletConnectState.isConnected -> "Continue with Wallet"
+            else -> "Connect Wallet"
+        },
         onClick = if (walletConnectState.isConnected) onLoginWallet else onOpenWalletConnect,
-        modifier = Modifier.fillMaxWidth(),
         enabled = walletConnectState.available || walletConnectState.isConnected,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = PirateTokens.colors.surfaceInteractive,
-            contentColor = PirateTokens.colors.textPrimary,
-        ),
-    ) {
-        Text(
-            when {
-                !walletConnectState.available -> "Wallet connect unavailable"
-                walletConnectState.isConnected -> "Continue with connected wallet"
-                else -> "Continue with wallet"
-            },
-            modifier = Modifier.padding(vertical = 4.dp),
-        )
-    }
+    )
 
     walletConnectState.statusMessage
         ?.takeIf { !walletConnectState.available && it.isNotBlank() }
@@ -262,32 +275,63 @@ private fun LoginButtons(
         )
     }
 
-    Spacer(modifier = Modifier.height(12.dp))
+    Spacer(modifier = Modifier.height(10.dp))
 
-    Button(
-        onClick = onLoginGoogle,
-        modifier = Modifier.fillMaxWidth(),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = PirateTokens.colors.accentBrand,
-        ),
-    ) {
-        Text("Continue with Google", modifier = Modifier.padding(vertical = 4.dp))
-    }
-
-    Spacer(modifier = Modifier.height(12.dp))
-
-    Button(
+    AuthProviderButton(
+        icon = PhosphorIcons.X,
+        text = "X",
         onClick = onLoginTwitter,
-        modifier = Modifier.fillMaxWidth(),
+    )
+
+    Spacer(modifier = Modifier.height(10.dp))
+
+    AuthProviderButton(
+        icon = PhosphorIcons.GoogleLogo,
+        text = "Google",
+        onClick = onLoginGoogle,
+        emphasized = true,
+    )
+}
+
+@Composable
+private fun AuthProviderButton(
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    emphasized: Boolean = false,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        enabled = enabled,
         colors = ButtonDefaults.buttonColors(
-            containerColor = PirateTokens.colors.surfaceInteractive,
+            containerColor = if (emphasized) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceInteractive,
             contentColor = PirateTokens.colors.textPrimary,
+            disabledContainerColor = PirateTokens.colors.surfaceDisabled,
+            disabledContentColor = PirateTokens.colors.textSecondary,
         ),
     ) {
-        Text("Continue with X", modifier = Modifier.padding(vertical = 4.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.size(10.dp))
+            Text(text = text)
+        }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun EmailLoginForm(
     onSendCode: (String) -> Unit,
@@ -296,6 +340,9 @@ private fun EmailLoginForm(
     var email by remember { mutableStateOf("") }
     var code by remember { mutableStateOf("") }
     var codeSent by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val emailBringIntoView = remember { BringIntoViewRequester() }
+    val codeBringIntoView = remember { BringIntoViewRequester() }
 
     Text(
         text = "Or sign in with email",
@@ -309,8 +356,22 @@ private fun EmailLoginForm(
         value = email,
         onValueChange = { email = it },
         label = { Text("Email") },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .bringIntoViewRequester(emailBringIntoView)
+            .onFocusEvent { focusState ->
+                if (focusState.isFocused) {
+                    scope.launch {
+                        delay(250)
+                        emailBringIntoView.bringIntoView()
+                    }
+                }
+            },
         singleLine = true,
+        keyboardOptions = KeyboardOptions(
+            keyboardType = KeyboardType.Email,
+            imeAction = if (codeSent) ImeAction.Next else ImeAction.Done,
+        ),
     )
 
     Spacer(modifier = Modifier.height(8.dp))
@@ -320,8 +381,22 @@ private fun EmailLoginForm(
             value = code,
             onValueChange = { code = it },
             label = { Text("Verification code") },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .bringIntoViewRequester(codeBringIntoView)
+                .onFocusEvent { focusState ->
+                    if (focusState.isFocused) {
+                        scope.launch {
+                            delay(250)
+                            codeBringIntoView.bringIntoView()
+                        }
+                    }
+                },
             singleLine = true,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+                imeAction = ImeAction.Done,
+            ),
         )
 
         Spacer(modifier = Modifier.height(8.dp))

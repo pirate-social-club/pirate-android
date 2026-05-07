@@ -67,7 +67,7 @@ class GlobalSubmitViewModel(application: Application) : AndroidViewModel(applica
                     val feed = feedRepository.home(sort = "best")
                     _state.value = GlobalSubmitUiState(
                         loading = false,
-                        communities = feed.topCommunities.map { it.toSubmitOption() },
+                        communities = feed.topCommunities.mapNotNull { it.toSubmitOption() },
                     )
                     return@launch
                 }
@@ -75,7 +75,7 @@ class GlobalSubmitViewModel(application: Application) : AndroidViewModel(applica
                 val feed = feedRepository.home(sort = "best")
                 _state.value = GlobalSubmitUiState(
                     loading = false,
-                    communities = (createdCommunities + feed.topCommunities.map { it.toSubmitOption() })
+                    communities = (createdCommunities + feed.topCommunities.mapNotNull { it.toSubmitOption() })
                         .distinctBy { it.communityId },
                 )
             } catch (e: Exception) {
@@ -103,12 +103,14 @@ private fun PublicProfileCommunitySummary.toSubmitOption(): SubmitCommunityOptio
         detail = routeSlug ?: communityId,
     )
 
-private fun HomeFeedCommunitySummary.toSubmitOption(): SubmitCommunityOption =
-    SubmitCommunityOption(
-        communityId = communityId,
+private fun HomeFeedCommunitySummary.toSubmitOption(): SubmitCommunityOption? {
+    val id = communityId?.takeIf { it.isNotBlank() } ?: return null
+    return SubmitCommunityOption(
+        communityId = id,
         displayName = displayName,
         detail = "${memberCount ?: 0} members",
     )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -328,13 +328,13 @@ data class PostListResponse(
 
 @Serializable
 data class HomeFeedCommunitySummary(
-    @SerialName("community_id") val communityId: String,
+    @SerialName("community_id") val communityId: String? = null,
     @SerialName("display_name") val displayName: String,
     @SerialName("route_slug") val routeSlug: String? = null,
     @SerialName("avatar_ref") val avatarRef: String? = null,
     @SerialName("member_count") val memberCount: Int? = null,
     @SerialName("follower_count") val followerCount: Int? = null,
-    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("updated_at") val updatedAt: String? = null,
 )
 
 @Serializable
