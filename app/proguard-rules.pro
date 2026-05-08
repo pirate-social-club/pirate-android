@@ -22,3 +22,13 @@
 -keepclassmembers class ** { public *; protected *; }
 -dontwarn uniffi.**
 -dontwarn com.sun.jna.**
+
+# Optional transitive APIs referenced by crypto/RPC dependencies but not packaged
+# in the Android app runtime.
+-dontwarn com.squareup.okhttp.**
+-dontwarn groovy.lang.**
+-dontwarn io.netty.**
+-dontwarn io.vertx.**
+-dontwarn java.beans.**
+-dontwarn javax.naming.**
+-dontwarn sun.nio.ch.DirectBuffer
