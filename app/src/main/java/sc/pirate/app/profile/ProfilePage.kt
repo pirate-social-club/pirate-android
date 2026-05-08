@@ -50,7 +50,7 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.shortAddress
 
-enum class ProfilePageTab { Overview, Posts, Comments, Scrobbles, Wallet }
+enum class ProfilePageTab { Overview, Posts, Comments, Wallet }
 
 data class ProfileStat(
     val label: String,
@@ -78,7 +78,6 @@ fun PirateProfilePage(
         add(ProfilePageTab.Overview)
         add(ProfilePageTab.Posts)
         add(ProfilePageTab.Comments)
-        add(ProfilePageTab.Scrobbles)
         if (hasWalletTab) add(ProfilePageTab.Wallet)
     }
     var selectedTab by remember { mutableStateOf(ProfilePageTab.Overview) }
@@ -106,7 +105,6 @@ fun PirateProfilePage(
                 ProfilePageTab.Overview -> ProfilePanelShell(emptyCopy = "No activity yet")
                 ProfilePageTab.Posts -> ProfilePanelShell(emptyCopy = "No activity yet")
                 ProfilePageTab.Comments -> ProfilePanelShell(emptyCopy = "No activity yet")
-                ProfilePageTab.Scrobbles -> ProfilePanelShell(emptyCopy = "No activity yet")
                 ProfilePageTab.Wallet -> WalletPanel(walletAddress = data.walletAddress)
             }
         }
@@ -440,7 +438,6 @@ private val ProfilePageTab.icon: ImageVector
         ProfilePageTab.Overview -> PhosphorIcons.SquaresFour
         ProfilePageTab.Posts -> PhosphorIcons.Article
         ProfilePageTab.Comments -> PhosphorIcons.ChatCircle
-        ProfilePageTab.Scrobbles -> PhosphorIcons.MusicNotes
         ProfilePageTab.Wallet -> PhosphorIcons.Wallet
     }
 
@@ -449,7 +446,6 @@ private val ProfilePageTab.label: String
         ProfilePageTab.Overview -> "Overview"
         ProfilePageTab.Posts -> "Posts"
         ProfilePageTab.Comments -> "Comments"
-        ProfilePageTab.Scrobbles -> "Scrobbles"
         ProfilePageTab.Wallet -> "Wallet"
     }
 
