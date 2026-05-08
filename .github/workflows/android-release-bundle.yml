@@ -19,6 +19,9 @@ jobs:
       PRIVY_APP_CLIENT_ID: ${{ secrets.PRIVY_APP_CLIENT_ID }}
       REOWN_PROJECT_ID: 08db15bf8bdb09d1cbc714f4c39d11a8
       REOWN_REDIRECT_URI: pirate://wallet-connect
+      PIRATE_ANDROID_SLOW: "1"
+      PIRATE_ANDROID_MAX_WORKERS: "1"
+      GRADLE_OPTS: "-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low"
 
     steps:
       - name: Check out repository
