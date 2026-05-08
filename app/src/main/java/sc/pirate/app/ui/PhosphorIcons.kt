@@ -14,6 +14,8 @@ object PhosphorIcons {
     val WalletFill: ImageVector = AdamPhosphorIcons.Fill.Wallet
     val GoogleLogo: ImageVector = AdamPhosphorIcons.Regular.GoogleLogo
     val TwitterLogo: ImageVector = AdamPhosphorIcons.Regular.TwitterLogo
+    val AppleLogo: ImageVector = AdamPhosphorIcons.Fill.AppleLogo
+    val AndroidLogo: ImageVector = AdamPhosphorIcons.Fill.AndroidLogo
     val EnvelopeSimple: ImageVector = AdamPhosphorIcons.Regular.EnvelopeSimple
     val ChatCircle: ImageVector = AdamPhosphorIcons.Regular.ChatCircle
     val ChatCircleFill: ImageVector = AdamPhosphorIcons.Fill.ChatCircle
@@ -24,7 +26,9 @@ object PhosphorIcons {
     val List: ImageVector = AdamPhosphorIcons.Regular.List
     val Plus: ImageVector = AdamPhosphorIcons.Regular.Plus
     val X: ImageVector = AdamPhosphorIcons.Regular.X
+    val DotsThree: ImageVector = AdamPhosphorIcons.Regular.DotsThree
     val CaretLeft: ImageVector = AdamPhosphorIcons.Regular.CaretLeft
+    val CaretRight: ImageVector = AdamPhosphorIcons.Regular.CaretRight
     val CaretUp: ImageVector = AdamPhosphorIcons.Regular.CaretUp
     val CaretDown: ImageVector = AdamPhosphorIcons.Regular.CaretDown
     val Fire: ImageVector = AdamPhosphorIcons.Regular.Fire
@@ -35,6 +39,12 @@ object PhosphorIcons {
     val ImageSquare: ImageVector = AdamPhosphorIcons.Regular.ImageSquare
     val Link: ImageVector = AdamPhosphorIcons.Regular.Link
     val MusicNote: ImageVector = AdamPhosphorIcons.Regular.MusicNote
+    val MusicNotes: ImageVector = AdamPhosphorIcons.Regular.MusicNotes
+    val Article: ImageVector = AdamPhosphorIcons.Regular.Article
+    val SquaresFour: ImageVector = AdamPhosphorIcons.Regular.SquaresFour
     val Globe: ImageVector = AdamPhosphorIcons.Regular.Globe
     val Users: ImageVector = AdamPhosphorIcons.Regular.Users
+    val HandPalm: ImageVector = AdamPhosphorIcons.Regular.HandPalm
+    val IdentificationCard: ImageVector = AdamPhosphorIcons.Regular.IdentificationCard
+    val PaperPlaneRight: ImageVector = AdamPhosphorIcons.Regular.PaperPlaneRight
 }

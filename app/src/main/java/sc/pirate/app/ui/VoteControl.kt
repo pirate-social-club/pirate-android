@@ -3,7 +3,9 @@ package sc.pirate.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -25,7 +27,7 @@ fun VoteControl(
     modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = modifier,
+        modifier = modifier.height(38.dp),
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = PirateTokens.colors.surfaceSubtle,
         border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
@@ -38,11 +40,13 @@ fun VoteControl(
             IconButton(
                 onClick = { onVote(1) },
                 enabled = enabled,
+                modifier = Modifier.size(32.dp),
             ) {
                 Icon(
                     imageVector = PhosphorIcons.CaretUp,
                     contentDescription = "Upvote",
                     tint = if (viewerVote == 1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                    modifier = Modifier.size(18.dp),
                 )
             }
             Text(
@@ -53,11 +57,13 @@ fun VoteControl(
             IconButton(
                 onClick = { onVote(-1) },
                 enabled = enabled,
+                modifier = Modifier.size(32.dp),
             ) {
                 Icon(
                     imageVector = PhosphorIcons.CaretDown,
                     contentDescription = "Downvote",
                     tint = if (viewerVote == -1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }

@@ -6,6 +6,18 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.reown.appkit.ui.openAppKit
+import kotlinx.coroutines.delay
+import sc.pirate.app.auth.AuthViewModel
+import sc.pirate.app.auth.SignInDrawer
 import sc.pirate.app.navigation.PirateNavHost
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTheme
@@ -43,6 +55,35 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun PirateAppShell() {
+    val context = LocalContext.current
+    val app = context.applicationContext as PirateApp
+    val session by app.sessionStore.observe().collectAsState(initial = null)
+    val hasSession = session != null
+    val authVm: AuthViewModel = viewModel()
+    val authState by authVm.state.collectAsState()
+    val walletConnectState by app.reownManager.state.collectAsState()
+    val unreadChatCount by app.chatService.unreadCount.collectAsState()
+    val hideChatBottomNav by app.chatService.hideBottomNav.collectAsState()
+    var showSignInDrawer by remember { mutableStateOf(false) }
+    var pendingWalletOpen by remember { mutableStateOf(false) }
+    var unreadNotificationCount by remember { mutableStateOf(0) }
+
+    LaunchedEffect(hasSession) {
+        if (!hasSession) {
+            unreadNotificationCount = 0
+            return@LaunchedEffect
+        }
+        while (true) {
+            unreadNotificationCount = try {
+                val summary = app.repositories.notificationRepository.getSummary()
+                summary.openTaskCount + summary.unreadActivityCount
+            } catch (_: Exception) {
+                unreadNotificationCount
+            }
+            delay(60_000)
+        }
+    }
+
     val bottomItems = listOf(
         BottomNavItem(
             route = PirateRoute.Home.route,
@@ -51,18 +92,76 @@ private fun PirateAppShell() {
             activeIcon = PhosphorIcons.HouseFill,
             activeRoutes = setOf(PirateRoute.Home.route, PirateRoute.Community.route),
         ),
-        BottomNavItem(PirateRoute.Wallet.route, "Wallet", PhosphorIcons.Wallet, PhosphorIcons.WalletFill),
+        BottomNavItem(
+            PirateRoute.Wallet.route,
+            "Wallet",
+            PhosphorIcons.Wallet,
+            PhosphorIcons.WalletFill,
+            requiresAuth = true,
+        ),
         BottomNavItem(
             route = PirateRoute.Chat.route,
             label = "Chat",
             icon = PhosphorIcons.ChatCircle,
             activeIcon = PhosphorIcons.ChatCircleFill,
+            requiresAuth = true,
+            unreadCount = unreadChatCount,
         ),
-        BottomNavItem(PirateRoute.Inbox.route, "Inbox", PhosphorIcons.Bell, PhosphorIcons.BellFill),
-        BottomNavItem(PirateRoute.Me.route, "Profile", PhosphorIcons.UserCircle, PhosphorIcons.UserCircleFill),
+        BottomNavItem(
+            PirateRoute.Notifications.route,
+            "Notifications",
+            PhosphorIcons.Bell,
+            PhosphorIcons.BellFill,
+            activeRoutes = setOf(PirateRoute.Notifications.route, PirateRoute.Inbox.route),
+            requiresAuth = true,
+            unreadCount = unreadNotificationCount,
+        ),
+        BottomNavItem(
+            PirateRoute.Me.route,
+            "Profile",
+            PhosphorIcons.UserCircle,
+            PhosphorIcons.UserCircleFill,
+            requiresAuth = true,
+        ),
     )
 
-    PirateScaffold(bottomItems = bottomItems) { navController, modifier ->
+    PirateScaffold(
+        bottomItems = bottomItems,
+        hasSession = hasSession,
+        hideChatBottomBar = hideChatBottomNav,
+        onRequireAuth = { showSignInDrawer = true },
+    ) { navController, modifier ->
+        LaunchedEffect(pendingWalletOpen) {
+            if (pendingWalletOpen) {
+                delay(260)
+                pendingWalletOpen = false
+                navController.openAppKit(
+                    shouldOpenChooseNetwork = false,
+                    onError = { error ->
+                        app.reownManager.refreshState(
+                            error.message ?: "Could not open wallet chooser."
+                        )
+                    },
+                )
+            }
+        }
+
         PirateNavHost(navController = navController, modifier = modifier)
+        if (showSignInDrawer) {
+            SignInDrawer(
+                state = authState,
+                walletConnectState = walletConnectState,
+                onOpenWalletConnect = {
+                    pendingWalletOpen = true
+                },
+                onLoginWallet = authVm::loginWithConnectedWallet,
+                onLoginGoogle = authVm::loginWithGoogle,
+                onLoginTwitter = authVm::loginWithTwitter,
+                onSendEmailCode = authVm::sendEmailCode,
+                onLoginEmail = authVm::loginWithEmail,
+                onLogout = authVm::logout,
+                onDismiss = { showSignInDrawer = false },
+            )
+        }
     }
 }

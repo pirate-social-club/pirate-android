@@ -6,6 +6,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import sc.pirate.app.PirateApp
 import sc.pirate.app.auth.PrivyClientStore
 import sc.pirate.app.auth.PrivyRuntimeConfig
@@ -41,7 +42,9 @@ class SessionRefresher(private val app: PirateApp) {
         val privyConfig = PrivyRuntimeConfig.fromBuildConfig()
         if (privyConfig.disabledReason() != null) return
         val user = PrivyClientStore.lastAuthenticatedUser
-            ?: PrivyClientStore.get(app, privyConfig).getUser()
+            ?: withContext(Dispatchers.Main.immediate) {
+                PrivyClientStore.get(app, privyConfig).getUser()
+            }
         if (user == null) {
             Log.w(TAG, "Cannot refresh: no authenticated Privy user stored")
             return

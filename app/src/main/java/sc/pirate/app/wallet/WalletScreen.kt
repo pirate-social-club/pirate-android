@@ -1,28 +1,150 @@
 package sc.pirate.app.wallet
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import sc.pirate.app.R
 import sc.pirate.app.api.model.SessionExchangeResponse
 import sc.pirate.app.api.model.WalletAttachmentSummary
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PirateButton
-import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
-import sc.pirate.app.ui.shortAddress
 import sc.pirate.app.walletconnect.ReownUiState
+
+private data class WalletAssetRow(
+    val id: String,
+    val symbol: String,
+    val name: String,
+    val chainTitle: String,
+    val tokenIconRes: Int,
+    val chainIconRes: Int?,
+    val balance: String,
+    val fiatValue: String,
+)
+
+private val WalletAssetRows = listOf(
+    WalletAssetRow(
+        id = "ethereum-eth",
+        symbol = "ETH",
+        name = "Ether",
+        chainTitle = "Ethereum",
+        tokenIconRes = R.drawable.wallet_icon_ethereum,
+        chainIconRes = R.drawable.wallet_icon_ethereum,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "base-eth",
+        symbol = "ETH",
+        name = "Ether",
+        chainTitle = "Base",
+        tokenIconRes = R.drawable.wallet_icon_ethereum,
+        chainIconRes = R.drawable.wallet_icon_base,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "base-usdc",
+        symbol = "USDC",
+        name = "USD Coin",
+        chainTitle = "Base",
+        tokenIconRes = R.drawable.wallet_icon_usdc,
+        chainIconRes = R.drawable.wallet_icon_base,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "optimism-eth",
+        symbol = "ETH",
+        name = "Ether",
+        chainTitle = "Optimism",
+        tokenIconRes = R.drawable.wallet_icon_ethereum,
+        chainIconRes = R.drawable.wallet_icon_optimism,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "story-ip",
+        symbol = "IP",
+        name = "IP",
+        chainTitle = "Story",
+        tokenIconRes = R.drawable.wallet_icon_ip,
+        chainIconRes = R.drawable.wallet_icon_story,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "tempo-pathusd",
+        symbol = "pathUSD",
+        name = "pathUSD",
+        chainTitle = "Tempo",
+        tokenIconRes = R.drawable.wallet_icon_tempo,
+        chainIconRes = R.drawable.wallet_icon_tempo,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "bitcoin-btc",
+        symbol = "BTC",
+        name = "Bitcoin",
+        chainTitle = "Bitcoin",
+        tokenIconRes = R.drawable.wallet_icon_bitcoin,
+        chainIconRes = null,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "solana-sol",
+        symbol = "SOL",
+        name = "Solana",
+        chainTitle = "Solana",
+        tokenIconRes = R.drawable.wallet_icon_solana,
+        chainIconRes = R.drawable.wallet_icon_solana,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+    WalletAssetRow(
+        id = "cosmos-atom",
+        symbol = "ATOM",
+        name = "Cosmos Hub",
+        chainTitle = "Cosmos",
+        tokenIconRes = R.drawable.wallet_icon_cosmos,
+        chainIconRes = R.drawable.wallet_icon_cosmos,
+        balance = "0",
+        fiatValue = "\$0.00",
+    ),
+)
 
 @Composable
 fun WalletScreen(
@@ -45,364 +167,251 @@ fun WalletScreen(
         ?: attachments.firstOrNull { it.isPrimary }
         ?: attachments.firstOrNull()
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            Text(
-                text = "Wallet",
-                style = MaterialTheme.typography.headlineSmall,
-                color = PirateTokens.colors.textPrimary,
-            )
-        }
+    val walletAddress = primaryWallet?.walletAddress
+        ?: walletConnectState.connectedAddress
+    val canReceive = !walletAddress.isNullOrBlank()
 
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
         if (session == null) {
             item {
                 StatusCard(
                     title = "Sign in to view your wallet",
-                    description = "Pirate uses your attached wallet for gated communities, messaging identity, and wallet-based account state.",
+                    description = "Sign in to load balances, royalties, and wallet actions.",
                     tone = StatusTone.Default,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                 )
             }
             item {
                 PirateButton(
                     text = "Sign in",
                     onClick = onSignIn,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
                 )
             }
             return@LazyColumn
         }
 
         item {
-            WalletOverviewCard(
-                attachmentCount = attachments.size,
-                connectedAddress = walletConnectState.connectedAddress,
-                primaryWallet = primaryWallet,
+            WalletBalanceSection(
+                walletAddress = walletAddress,
+                actionsPending = walletConnectState.available && walletConnectState.statusMessage?.contains("ready", ignoreCase = true) == false,
+                onSend = {},
+                onReceive = if (canReceive) onOpenWalletConnect else null,
             )
-        }
-
-        when {
-            !walletConnectState.available -> {
-                item {
-                    StatusCard(
-                        title = "WalletConnect unavailable",
-                        description = walletConnectState.statusMessage ?: "WalletConnect is not configured for this build.",
-                        tone = StatusTone.Warning,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-
-            walletConnectState.isConnected -> {
-                item {
-                    ConnectedWalletCard(
-                        connectedAddress = walletConnectState.connectedAddress,
-                        connectorType = walletConnectState.connectorType,
-                        selectedChain = walletConnectState.selectedChain,
-                        statusMessage = walletConnectState.statusMessage,
-                    )
-                }
-
-                if (attachments.none {
-                        it.walletAddress.equals(walletConnectState.connectedAddress, ignoreCase = true)
-                    }) {
-                    item {
-                        PirateButton(
-                            text = if (walletUiState.linking) "Linking wallet..." else "Link wallet to Pirate",
-                            onClick = onLinkWallet,
-                            enabled = !walletUiState.linking,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                    item {
-                        StatusCard(
-                            title = "Link wallet to finish setup",
-                            description = "Connecting the wallet app is only the first half. Link it through Privy so Pirate can attach the address to your account and use it across the app.",
-                            tone = StatusTone.Default,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-
-                item {
-                    PirateButton(
-                        text = "Disconnect wallet app",
-                        onClick = onDisconnectWallet,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-
-            else -> {
-                item {
-                    StatusCard(
-                        title = "Connect an external wallet",
-                        description = "Open the wallet chooser to connect MetaMask, Coinbase Wallet, or another WalletConnect-compatible wallet app, then attach it to your Pirate account.",
-                        tone = StatusTone.Default,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                item {
-                    PirateButton(
-                        text = "Connect wallet",
-                        onClick = onOpenWalletConnect,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                walletConnectState.statusMessage?.takeIf { it.isNotBlank() }?.let { message ->
-                    item {
-                        Text(
-                            text = message,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = PirateTokens.colors.textSecondary,
-                        )
-                    }
-                }
-            }
-        }
-
-        walletUiState.linkedWalletAddress?.let { walletAddress ->
-            item {
-                StatusCard(
-                    title = "Wallet linked",
-                    description = "${shortAddress(walletAddress)} is now attached to your Pirate account.",
-                    tone = StatusTone.Success,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
-
-        walletUiState.error?.let { error ->
-            item {
-                StatusCard(
-                    title = "Wallet link failed",
-                    description = error,
-                    tone = StatusTone.Danger,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                PirateButton(
-                    text = "Clear message",
-                    onClick = onClearWalletFeedback,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
         }
 
         item {
-            WalletCapabilityCard(hasAttachments = attachments.isNotEmpty())
+            RoyaltiesSection(
+                claimableAmount = "\$0.00",
+                onClaim = {},
+            )
         }
 
-        if (attachments.isEmpty()) {
-            item {
-                StatusCard(
-                    title = "No wallet attachments yet",
-                    description = "Your account is signed in, but Pirate does not have an attached wallet to use for gated communities or wallet-backed identity yet.",
-                    tone = StatusTone.Default,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        } else {
-            item {
-                Text(
-                    text = "Attached wallets",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = PirateTokens.colors.textPrimary,
-                )
-            }
-            items(attachments, key = { it.walletAttachmentId ?: it.walletAddress }) { wallet ->
-                AttachedWalletCard(
-                    wallet = wallet,
-                    isPrimary = primaryWallet?.walletAddress.equals(wallet.walletAddress, ignoreCase = true) || wallet.isPrimary,
-                )
-            }
+        items(WalletAssetRows, key = { it.id }) { asset ->
+            MobileAssetRow(asset = asset)
         }
     }
 }
 
 @Composable
-private fun WalletOverviewCard(
-    primaryWallet: WalletAttachmentSummary?,
-    attachmentCount: Int,
-    connectedAddress: String?,
+private fun WalletBalanceSection(
+    walletAddress: String?,
+    actionsPending: Boolean,
+    onSend: (() -> Unit)?,
+    onReceive: (() -> Unit)?,
 ) {
-    PirateCard(modifier = Modifier.fillMaxWidth()) {
+    val showWalletActions = !walletAddress.isNullOrBlank() || actionsPending
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
         Text(
-            text = "Wallet hub",
-            style = MaterialTheme.typography.titleMedium,
-            color = PirateTokens.colors.textPrimary,
-        )
-        Text(
-            text = primaryWallet?.walletAddress?.let(::shortAddress) ?: "No primary wallet yet",
-            style = MaterialTheme.typography.headlineSmall,
-            color = PirateTokens.colors.textPrimary,
-        )
-        Text(
-            text = when {
-                primaryWallet != null -> "Primary Pirate wallet"
-                else -> "Attach a wallet to unlock wallet-based identity"
-            },
+            text = "Total balance",
             style = MaterialTheme.typography.bodyMedium,
             color = PirateTokens.colors.textSecondary,
         )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            WalletStat(label = "Attached", value = attachmentCount.toString(), modifier = Modifier.weight(1f))
-            WalletStat(
-                label = "App connection",
-                value = if (connectedAddress.isNullOrBlank()) "Idle" else "Live",
-                modifier = Modifier.weight(1f),
-            )
+        Text(
+            text = "\$0.00",
+            style = MaterialTheme.typography.displaySmall,
+            color = PirateTokens.colors.textPrimary,
+        )
+        if (showWalletActions) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                WalletActionButton(
+                    text = "Send",
+                    onClick = onSend,
+                    enabled = false,
+                    modifier = Modifier.weight(1f),
+                )
+                WalletActionButton(
+                    text = "Receive",
+                    onClick = onReceive,
+                    enabled = !actionsPending && !walletAddress.isNullOrBlank() && onReceive != null,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun WalletStat(
-    label: String,
-    value: String,
+private fun WalletActionButton(
+    text: String,
+    onClick: (() -> Unit)?,
+    enabled: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    PirateCard(modifier = modifier) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleLarge,
-            color = PirateTokens.colors.textPrimary,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = PirateTokens.colors.textSecondary,
-        )
+    OutlinedButton(
+        onClick = { onClick?.invoke() },
+        enabled = enabled,
+        modifier = modifier.height(56.dp),
+        shape = RoundedCornerShape(PirateTokens.radius.lg),
+        colors = ButtonDefaults.outlinedButtonColors(
+            contentColor = PirateTokens.colors.textPrimary,
+            disabledContentColor = PirateTokens.colors.textDisabled,
+        ),
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Text(text = text, style = MaterialTheme.typography.titleMedium)
     }
 }
 
 @Composable
-private fun ConnectedWalletCard(
-    connectedAddress: String?,
-    connectorType: String?,
-    selectedChain: String?,
-    statusMessage: String?,
+private fun RoyaltiesSection(
+    claimableAmount: String,
+    onClaim: () -> Unit,
 ) {
-    PirateCard(modifier = Modifier.fillMaxWidth()) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+    ) {
+        HorizontalDivider(color = PirateTokens.colors.borderSoft)
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Connected wallet app",
-            style = MaterialTheme.typography.titleMedium,
-            color = PirateTokens.colors.textPrimary,
-        )
-        Text(
-            text = connectedAddress?.let(::shortAddress) ?: "Connected",
-            style = MaterialTheme.typography.bodyLarge,
-            color = PirateTokens.colors.textPrimary,
-        )
-        connectorType?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = "Connector: $it",
-                style = MaterialTheme.typography.bodyMedium,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-        selectedChain?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = "Chain: $it",
-                style = MaterialTheme.typography.bodyMedium,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-        statusMessage?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-    }
-}
-
-@Composable
-private fun WalletCapabilityCard(hasAttachments: Boolean) {
-    PirateCard(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "What this wallet unlocks",
-            style = MaterialTheme.typography.titleMedium,
-            color = PirateTokens.colors.textPrimary,
-        )
-        val rows = if (hasAttachments) {
-            listOf(
-                "Gated community membership and posting checks",
-                "Wallet-backed identity across Pirate surfaces",
-                "Primary wallet context for future chat and commerce flows",
-            )
-        } else {
-            listOf(
-                "Community gates still need an attached wallet",
-                "Profile wallet surfaces stay incomplete until link succeeds",
-                "Wallet-based messaging and commerce stay unavailable",
-            )
-        }
-        rows.forEach { row ->
-            Text(
-                text = row,
-                style = MaterialTheme.typography.bodyMedium,
-                color = PirateTokens.colors.textSecondary,
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun AttachedWalletCard(
-    wallet: WalletAttachmentSummary,
-    isPrimary: Boolean,
-) {
-    PirateCard(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = shortAddress(wallet.walletAddress),
-            style = MaterialTheme.typography.titleMedium,
-            color = PirateTokens.colors.textPrimary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            text = when {
-                isPrimary -> "Primary wallet"
-                else -> "Attached wallet"
-            },
+            text = "Royalties",
             style = MaterialTheme.typography.bodyMedium,
             color = PirateTokens.colors.textSecondary,
         )
-        wallet.chainNamespace?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = "Namespace: $it",
-                style = MaterialTheme.typography.bodySmall,
-                color = PirateTokens.colors.textSecondary,
-                modifier = Modifier.padding(top = 8.dp),
+        Text(
+            text = claimableAmount,
+            style = MaterialTheme.typography.displaySmall,
+            color = PirateTokens.colors.textPrimary,
+        )
+        PirateButton(
+            text = "Claim",
+            onClick = onClaim,
+            enabled = false,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp)
+                .height(56.dp),
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun MobileAssetRow(asset: WalletAssetRow) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = PirateTokens.colors.bgPage,
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TokenChainMark(asset = asset)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = asset.symbol,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = asset.chainTitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = asset.balance,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textPrimary,
+                    )
+                    Text(
+                        text = asset.fiatValue,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PirateTokens.colors.textSecondary,
+                    )
+                }
+            }
+            HorizontalDivider(color = PirateTokens.colors.borderSoft)
+        }
+    }
+}
+
+@Composable
+private fun TokenChainMark(asset: WalletAssetRow) {
+    Box(modifier = Modifier.size(40.dp)) {
+        Surface(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .border(1.dp, PirateTokens.colors.borderSoft, CircleShape),
+            color = androidx.compose.ui.graphics.Color.White,
+        ) {
+            Image(
+                painter = painterResource(asset.tokenIconRes),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(6.dp),
             )
         }
-        wallet.chainId?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = "Chain ID: $it",
-                style = MaterialTheme.typography.bodySmall,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-        wallet.walletAttachmentId?.takeIf { it.isNotBlank() }?.let {
-            Text(
-                text = "Attachment: $it",
-                style = MaterialTheme.typography.bodySmall,
-                color = PirateTokens.colors.textSecondary,
-            )
+        asset.chainIconRes?.let { chainIconRes ->
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .border(1.dp, androidx.compose.ui.graphics.Color.White.copy(alpha = 0.7f), CircleShape),
+                color = androidx.compose.ui.graphics.Color.White,
+            ) {
+                Image(
+                    painter = painterResource(chainIconRes),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(2.dp),
+                )
+            }
         }
     }
 }

@@ -3,7 +3,9 @@ package sc.pirate.app.api
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -119,6 +121,49 @@ class ApiClient(private val sessionStore: SessionStore) {
 
     private suspend fun patchString(path: String, body: String): String =
         request(path, "PATCH", body)
+
+    private suspend fun postMultipartString(
+        path: String,
+        parts: MultipartBody,
+        requireAuth: Boolean = true,
+    ): String {
+        val response = withContext(Dispatchers.IO) {
+            val requestBuilder = Request.Builder().url("$baseUrl$path")
+            if (requireAuth) {
+                val token = sessionStore.getAccessToken()
+                if (token != null) {
+                    requestBuilder.header("Authorization", "Bearer $token")
+                }
+            }
+            client.newCall(
+                requestBuilder
+                    .post(parts)
+                    .build(),
+            ).execute().use { rawResponse ->
+                ApiResponse(
+                    successful = rawResponse.isSuccessful,
+                    status = rawResponse.code,
+                    body = rawResponse.body?.string().orEmpty(),
+                )
+            }
+        }
+
+        if (!response.successful) {
+            val errorResponse = try {
+                json.decodeFromString<ErrorResponse>(response.body)
+            } catch (_: Exception) {
+                null
+            }
+            throw ApiError(
+                code = errorResponse?.code ?: "internal_error",
+                message = displayApiErrorMessage(errorResponse, response.status),
+                status = response.status,
+                retryable = errorResponse?.retryable == true,
+            )
+        }
+
+        return response.body
+    }
 
     internal fun buildQueryPath(path: String, params: List<Pair<String, String?>>): String {
         val query = params
@@ -291,7 +336,7 @@ class ApiClient(private val sessionStore: SessionStore) {
         }
 
         suspend fun follow(communityId: String): CommunityFollowResponse {
-            val response = api.request("/communities/$communityId/follow", "PUT", "{}")
+            val response = api.request("/communities/$communityId/follow", "POST", "{}")
             return api.json.decodeFromString(CommunityFollowResponse.serializer(), response)
         }
 
@@ -528,10 +573,43 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(PublicProfileResolution.serializer(), response)
         }
 
+        suspend fun getPublicByWallet(walletAddress: String): PublicProfileResolution {
+            val response = api.getString(
+                "/public-profiles/by-wallet/${api.encodePathSegment(walletAddress)}",
+                requireAuth = false,
+            )
+            return api.json.decodeFromString(PublicProfileResolution.serializer(), response)
+        }
+
         suspend fun updateMe(input: ProfileUpdateInput): Profile {
             val body = api.json.encodeToString(ProfileUpdateInput.serializer(), input)
-            val response = api.patchString("/profiles/me", body)
+            val response = api.postString("/profiles/me", body)
             return api.json.decodeFromString(Profile.serializer(), response)
+        }
+
+        suspend fun publishXmtpInbox(inboxId: String): Profile {
+            val body = api.json.encodeToString(XmtpInboxUpdateInput.serializer(), XmtpInboxUpdateInput(inboxId))
+            val response = api.postString("/profiles/me/xmtp-inbox", body)
+            return api.json.decodeFromString(Profile.serializer(), response)
+        }
+
+        suspend fun uploadMedia(
+            kind: String,
+            bytes: ByteArray,
+            filename: String,
+            mimeType: String,
+        ): ProfileMediaUploadResponse {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("kind", kind)
+                .addFormDataPart(
+                    "file",
+                    filename,
+                    bytes.toRequestBody(mimeType.toMediaTypeOrNull()),
+                )
+                .build()
+            val response = api.postMultipartString("/profile-media", body)
+            return api.json.decodeFromString(ProfileMediaUploadResponse.serializer(), response)
         }
 
         suspend fun renameHandle(desiredLabel: String): RenameHandleResponse {
@@ -542,6 +620,11 @@ class ApiClient(private val sessionStore: SessionStore) {
     }
 
     class NotificationsEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun getSummary(): NotificationSummary {
+            val response = api.getString("/notifications/summary")
+            return api.json.decodeFromString(NotificationSummary.serializer(), response)
+        }
+
         suspend fun getTasks(): NotificationTasksResponse {
             val response = api.getString("/notifications/tasks")
             return api.json.decodeFromString(NotificationTasksResponse.serializer(), response)
@@ -586,6 +669,27 @@ private data class ApiResponse(
 data class ProfileUpdateInput(
     @kotlinx.serialization.SerialName("display_name") val displayName: String? = null,
     @kotlinx.serialization.SerialName("avatar_ref") val avatarRef: String? = null,
+    @kotlinx.serialization.SerialName("avatar_source") val avatarSource: String? = null,
+    @kotlinx.serialization.SerialName("cover_ref") val coverRef: String? = null,
+    @kotlinx.serialization.SerialName("cover_source") val coverSource: String? = null,
     val bio: String? = null,
+    @kotlinx.serialization.SerialName("bio_source") val bioSource: String? = null,
     @kotlinx.serialization.SerialName("preferred_locale") val preferredLocale: String? = null,
+    @kotlinx.serialization.SerialName("display_verified_nationality_badge") val displayVerifiedNationalityBadge: Boolean? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class XmtpInboxUpdateInput(
+    @kotlinx.serialization.SerialName("xmtp_inbox") val xmtpInbox: String,
+)
+
+@kotlinx.serialization.Serializable
+data class ProfileMediaUploadResponse(
+    val kind: String,
+    @kotlinx.serialization.SerialName("media_ref") val mediaRef: String,
+    @kotlinx.serialization.SerialName("ipfs_cid") val ipfsCid: String? = null,
+    @kotlinx.serialization.SerialName("mime_type") val mimeType: String,
+    @kotlinx.serialization.SerialName("size_bytes") val sizeBytes: Long,
+    @kotlinx.serialization.SerialName("storage_bucket") val storageBucket: String,
+    @kotlinx.serialization.SerialName("storage_object_key") val storageObjectKey: String,
 )

@@ -2,6 +2,7 @@ package sc.pirate.app.api.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 
@@ -41,8 +42,8 @@ data class SelfVerificationLaunch(
 @Serializable
 data class VeryWidgetLaunch(
     @SerialName("app_id") val appId: String,
-    val context: String,
-    @SerialName("type_id") val typeId: String,
+    val context: JsonElement? = null,
+    @SerialName("type_id") val typeId: JsonElement? = null,
     val query: JsonObject = JsonObject(emptyMap()),
     @SerialName("verify_url") val verifyUrl: String,
 )
@@ -56,28 +57,55 @@ data class VerificationSessionLaunch(
 
 @Serializable
 data class User(
-    @SerialName("user_id") val userId: String,
-    @SerialName("created_at") val createdAt: String,
-)
+    @SerialName("user_id") private val contractUserId: String? = null,
+    @SerialName("id") private val feedUserId: String? = null,
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
+) {
+    val userId: String get() = contractUserId ?: feedUserId.orEmpty()
+    val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
+}
 
 @Serializable
 data class GlobalHandle(
+    val id: String? = null,
     val label: String,
     val tier: String,
     val status: String,
 )
 
 @Serializable
+data class LinkedHandle(
+    @SerialName("linked_handle") val linkedHandle: String,
+    val label: String,
+    val kind: String,
+    @SerialName("verification_state") val verificationState: String,
+    val metadata: JsonObject? = null,
+)
+
+@Serializable
 data class Profile(
-    @SerialName("user_id") val userId: String,
+    @SerialName("user_id") private val contractUserId: String? = null,
+    @SerialName("id") private val feedUserId: String? = null,
     @SerialName("display_name") val displayName: String? = null,
     val bio: String? = null,
     @SerialName("avatar_ref") val avatarRef: String? = null,
+    @SerialName("cover_ref") val coverRef: String? = null,
     @SerialName("global_handle") val globalHandle: GlobalHandle? = null,
+    @SerialName("primary_public_handle") val primaryPublicHandle: LinkedHandle? = null,
+    @SerialName("linked_handles") val linkedHandles: List<LinkedHandle> = emptyList(),
     @SerialName("primary_wallet_address") val primaryWalletAddress: String? = null,
+    @SerialName("xmtp_inbox") val xmtpInbox: String? = null,
+    @SerialName("nationality_badge_country") val nationalityBadgeCountry: String? = null,
+    @SerialName("follower_count") val followerCount: Int? = null,
+    @SerialName("following_count") val followingCount: Int? = null,
     @SerialName("preferred_locale") val preferredLocale: String? = null,
-    @SerialName("created_at") val createdAt: String,
-)
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
+) {
+    val userId: String get() = contractUserId ?: feedUserId.orEmpty()
+    val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
+}
 
 @Serializable
 data class PublicProfileCommunitySummary(
@@ -137,42 +165,47 @@ data class CommunityCreateAcceptedResponse(
 
 @Serializable
 data class UserTask(
-    @SerialName("task_id") val taskId: String,
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    val user: String? = null,
     val type: String,
     @SerialName("subject_type") val subjectType: String,
-    @SerialName("subject_id") val subjectId: String,
+    val subject: String,
     val status: String,
-    val priority: Int? = null,
+    val priority: Int = 0,
     val payload: JsonObject? = null,
-    @SerialName("created_at") val createdAt: String,
-    @SerialName("updated_at") val updatedAt: String,
+    @SerialName("resolved_at") val resolvedAt: Long? = null,
+    @SerialName("dismissed_at") val dismissedAt: Long? = null,
+    val created: Long,
 )
 
 @Serializable
 data class NotificationTasksResponse(
     val items: List<UserTask> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
 )
 
 @Serializable
 data class NotificationEvent(
-    @SerialName("event_id") val eventId: String,
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
     val type: String,
-    @SerialName("actor_user_id") val actorUserId: String? = null,
+    @SerialName("actor_user") val actorUser: String? = null,
     @SerialName("subject_type") val subjectType: String,
-    @SerialName("subject_id") val subjectId: String,
+    val subject: String,
     @SerialName("object_type") val objectType: String? = null,
-    @SerialName("object_id") val objectId: String? = null,
     val payload: JsonObject? = null,
-    @SerialName("created_at") val createdAt: String,
+    val created: Long,
 )
 
 @Serializable
 data class NotificationReceipt(
-    @SerialName("event_id") val eventId: String,
-    @SerialName("recipient_user_id") val recipientUserId: String,
-    @SerialName("seen_at") val seenAt: String? = null,
-    @SerialName("read_at") val readAt: String? = null,
-    @SerialName("created_at") val createdAt: String,
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    @SerialName("recipient_user") val recipientUser: String,
+    @SerialName("seen_at") val seenAt: Long? = null,
+    @SerialName("read_at") val readAt: Long? = null,
+    val created: Long,
 )
 
 @Serializable
@@ -185,6 +218,13 @@ data class NotificationFeedItem(
 data class NotificationFeedResponse(
     val items: List<NotificationFeedItem> = emptyList(),
     @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class NotificationSummary(
+    @SerialName("open_task_count") val openTaskCount: Int = 0,
+    @SerialName("unread_activity_count") val unreadActivityCount: Int = 0,
+    @SerialName("has_unread") val hasUnread: Boolean = false,
 )
 
 @Serializable
@@ -227,6 +267,7 @@ data class CommunityReferenceLink(
 data class CommunityPreview(
     @SerialName("community_id") val communityId: String,
     @SerialName("display_name") val displayName: String,
+    @SerialName("route_slug") val routeSlug: String? = null,
     val description: String? = null,
     @SerialName("avatar_ref") val avatarRef: String? = null,
     @SerialName("banner_ref") val bannerRef: String? = null,
@@ -267,14 +308,22 @@ data class JoinEligibility(
 
 @Serializable
 data class ThreadSnapshot(
-    @SerialName("thread_root_post_id") val threadRootPostId: String,
+    @SerialName("thread_root_post_id") private val contractThreadRootPostId: String? = null,
+    @SerialName("thread_root_post") private val feedThreadRootPostId: String? = null,
     @SerialName("snapshot_seq") val snapshotSeq: Int? = null,
-    @SerialName("published_through_comment_created_at") val publishedThroughCommentCreatedAt: String? = null,
+    @SerialName("published_through_comment_created_at") private val contractPublishedThroughCommentCreatedAt: String? = null,
+    @SerialName("published_through_comment_created") private val feedPublishedThroughCommentCreatedAt: Long? = null,
     @SerialName("comment_count") val commentCount: Int = 0,
     @SerialName("swarm_manifest_ref") val swarmManifestRef: String? = null,
     @SerialName("swarm_feed_ref") val swarmFeedRef: String? = null,
-    @SerialName("created_at") val createdAt: String? = null,
-)
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
+) {
+    val threadRootPostId: String get() = contractThreadRootPostId ?: feedThreadRootPostId.orEmpty()
+    val publishedThroughCommentCreatedAt: String? get() =
+        contractPublishedThroughCommentCreatedAt ?: feedPublishedThroughCommentCreatedAt?.let { Instant.ofEpochSecond(it).toString() }
+    val createdAt: String? get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }
+}
 
 @Serializable
 data class PostMediaRef(
@@ -291,6 +340,35 @@ data class PostMediaRef(
 )
 
 @Serializable
+data class PostEmbedPreview(
+    @SerialName("author_name") val authorName: String? = null,
+    @SerialName("author_url") val authorUrl: String? = null,
+    val text: String? = null,
+    @SerialName("has_media") val hasMedia: Boolean? = null,
+    @SerialName("media_url") val mediaUrl: String? = null,
+    val created: String? = null,
+    val title: String? = null,
+    @SerialName("thumbnail_url") val thumbnailUrl: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+)
+
+@Serializable
+data class PostEmbed(
+    val embed: String? = null,
+    @SerialName("embed_key") val embedKey: String? = null,
+    val provider: String,
+    @SerialName("provider_ref") val providerRef: String? = null,
+    @SerialName("canonical_url") val canonicalUrl: String,
+    @SerialName("original_url") val originalUrl: String? = null,
+    val state: String? = null,
+    val preview: PostEmbedPreview? = null,
+    @SerialName("oembed_html") val oembedHtml: String? = null,
+    @SerialName("oembed_cache_age") val oembedCacheAge: Long? = null,
+    @SerialName("unavailable_reason") val unavailableReason: String? = null,
+    @SerialName("last_checked_at") val lastCheckedAt: Long? = null,
+)
+
+@Serializable
 data class Post(
     @SerialName("post_id") private val contractPostId: String? = null,
     @SerialName("id") private val feedPostId: String? = null,
@@ -302,6 +380,7 @@ data class Post(
     @SerialName("link_url") val linkUrl: String? = null,
     @SerialName("link_og_image_url") val linkOgImageUrl: String? = null,
     @SerialName("link_og_title") val linkOgTitle: String? = null,
+    val embeds: List<PostEmbed> = emptyList(),
     @SerialName("media_refs") val mediaRefs: List<PostMediaRef> = emptyList(),
     @SerialName("post_type") val postType: String? = null,
     val status: String? = null,
@@ -361,6 +440,7 @@ data class HomeFeedCommunitySummary(
     @SerialName("avatar_ref") val avatarRef: String? = null,
     @SerialName("member_count") val memberCount: Int? = null,
     @SerialName("follower_count") val followerCount: Int? = null,
+    @SerialName("viewer_following") val viewerFollowing: Boolean? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
 ) {
     val communityId: String? get() = contractCommunityId ?: feedCommunityId
@@ -393,11 +473,16 @@ data class CommentVoteResponse(
 
 @Serializable
 data class Comment(
-    @SerialName("comment_id") val commentId: String,
-    @SerialName("community_id") val communityId: String,
-    @SerialName("thread_root_post_id") val threadRootPostId: String,
-    @SerialName("parent_comment_id") val parentCommentId: String? = null,
-    @SerialName("author_user_id") val authorUserId: String? = null,
+    @SerialName("comment_id") private val contractCommentId: String? = null,
+    @SerialName("id") private val feedCommentId: String? = null,
+    @SerialName("community_id") private val contractCommunityId: String? = null,
+    @SerialName("community") private val feedCommunityId: String? = null,
+    @SerialName("thread_root_post_id") private val contractThreadRootPostId: String? = null,
+    @SerialName("thread_root_post") private val feedThreadRootPostId: String? = null,
+    @SerialName("parent_comment_id") private val contractParentCommentId: String? = null,
+    @SerialName("parent_comment") private val feedParentCommentId: String? = null,
+    @SerialName("author_user_id") private val contractAuthorUserId: String? = null,
+    @SerialName("author_user") private val feedAuthorUserId: String? = null,
     @SerialName("identity_mode") val identityMode: String? = null,
     @SerialName("anonymous_scope") val anonymousScope: String? = null,
     @SerialName("anonymous_label") val anonymousLabel: String? = null,
@@ -409,10 +494,20 @@ data class Comment(
     @SerialName("upvote_count") val upvoteCount: Int = 0,
     @SerialName("downvote_count") val downvoteCount: Int = 0,
     val score: Int = 0,
-    @SerialName("last_reply_at") val lastReplyAt: String? = null,
-    @SerialName("created_at") val createdAt: String,
+    @SerialName("last_reply_at") private val contractLastReplyAt: String? = null,
+    @SerialName("last_reply") private val feedLastReplyAt: Long? = null,
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
-)
+) {
+    val commentId: String get() = contractCommentId ?: feedCommentId.orEmpty()
+    val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
+    val threadRootPostId: String get() = contractThreadRootPostId ?: feedThreadRootPostId.orEmpty()
+    val parentCommentId: String? get() = contractParentCommentId ?: feedParentCommentId
+    val authorUserId: String? get() = contractAuthorUserId ?: feedAuthorUserId
+    val lastReplyAt: String? get() = contractLastReplyAt ?: feedLastReplyAt?.let { Instant.ofEpochSecond(it).toString() }
+    val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
+}
 
 @Serializable
 data class CommentListItem(
@@ -491,25 +586,27 @@ data class RedditImportSummary(
 
 @Serializable
 data class VerificationSession(
-    @SerialName("verification_session_id") val verificationSessionId: String,
-    @SerialName("user_id") val userId: String? = null,
+    @SerialName("id") val verificationSessionId: String,
+    val user: String? = null,
     val status: String,
     val provider: String,
     @SerialName("provider_mode") val providerMode: String? = null,
     @SerialName("requested_capabilities") val requestedCapabilities: List<String> = emptyList(),
+    @SerialName("verification_requirements") val verificationRequirements: List<JsonElement> = emptyList(),
     @SerialName("verification_intent") val verificationIntent: String? = null,
-    @SerialName("policy_id") val policyId: String? = null,
+    val policy: String? = null,
+    @SerialName("wallet_attachment") val walletAttachment: String? = null,
     val launch: VerificationSessionLaunch? = null,
     @SerialName("callback_path") val callbackPath: String? = null,
     val nationality: String? = null,
     @SerialName("age_at_verification") val ageAtVerification: Int? = null,
-    @SerialName("attestation_id") val attestationId: String? = null,
+    val attestation: String? = null,
     @SerialName("proof_hash") val proofHash: String? = null,
     @SerialName("evidence_ref") val evidenceRef: String? = null,
-    @SerialName("verified_at") val verifiedAt: String? = null,
+    @SerialName("verified_at") val verifiedAt: Long? = null,
     @SerialName("failure_reason") val failureReason: String? = null,
-    @SerialName("created_at") val createdAt: String? = null,
-    @SerialName("expires_at") val expiresAt: String? = null,
+    val created: Long,
+    @SerialName("expires_at") val expiresAt: Long,
 )
 
 @Serializable

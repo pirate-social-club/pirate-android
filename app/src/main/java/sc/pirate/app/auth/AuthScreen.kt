@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,6 +32,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,11 +93,31 @@ fun SignInDrawer(
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val scope = rememberCoroutineScope()
+    var attemptedConnectedWalletLogin by remember { mutableStateOf(false) }
 
     LaunchedEffect(state) {
         if (state is AuthUiState.Authenticated) {
             onDismiss()
         }
+    }
+
+    LaunchedEffect(walletConnectState.isConnected, state) {
+        if (
+            walletConnectState.isConnected &&
+            state is AuthUiState.Idle &&
+            !attemptedConnectedWalletLogin
+        ) {
+            attemptedConnectedWalletLogin = true
+            onLoginWallet()
+        }
+    }
+
+    if (
+        walletConnectState.isConnected &&
+        (state is AuthUiState.Idle || state is AuthUiState.Loading)
+    ) {
+        return
     }
 
     ModalBottomSheet(
@@ -106,7 +128,13 @@ fun SignInDrawer(
         SignInContent(
             state = state,
             walletConnectState = walletConnectState,
-            onOpenWalletConnect = onOpenWalletConnect,
+            onOpenWalletConnect = {
+                scope.launch {
+                    sheetState.hide()
+                    onDismiss()
+                    onOpenWalletConnect()
+                }
+            },
             onLoginWallet = onLoginWallet,
             onLoginGoogle = onLoginGoogle,
             onLoginTwitter = onLoginTwitter,
@@ -151,16 +179,6 @@ private fun SignInContent(
         verticalArrangement = if (centered) Arrangement.Center else Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = "Sign in to Pirate",
-            style = MaterialTheme.typography.headlineMedium,
-            color = PirateTokens.colors.textPrimary,
-        )
-
-        if (centered) Spacer(modifier = Modifier.height(8.dp))
-
-        Spacer(modifier = Modifier.height(if (centered) 28.dp else 8.dp))
-
         when (state) {
             is AuthUiState.Loading -> {
                 CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
@@ -278,7 +296,7 @@ private fun LoginButtons(
     Spacer(modifier = Modifier.height(10.dp))
 
     AuthProviderButton(
-        icon = PhosphorIcons.X,
+        icon = PhosphorIcons.TwitterLogo,
         text = "X",
         onClick = onLoginTwitter,
     )
@@ -304,8 +322,11 @@ private fun AuthProviderButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp),
         enabled = enabled,
+        contentPadding = PaddingValues(horizontal = 16.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (emphasized) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceInteractive,
             contentColor = PirateTokens.colors.textPrimary,
@@ -314,10 +335,8 @@ private fun AuthProviderButton(
         ),
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
@@ -403,8 +422,11 @@ private fun EmailLoginForm(
 
         Button(
             onClick = { onLogin(email, code) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
             enabled = code.isNotBlank(),
+            contentPadding = PaddingValues(horizontal = 16.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = PirateTokens.colors.accentBrand,
             ),
@@ -417,8 +439,11 @@ private fun EmailLoginForm(
                 onSendCode(email)
                 codeSent = true
             },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
             enabled = email.isNotBlank(),
+            contentPadding = PaddingValues(horizontal = 16.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = PirateTokens.colors.surfaceInteractive,
                 contentColor = PirateTokens.colors.textPrimary,

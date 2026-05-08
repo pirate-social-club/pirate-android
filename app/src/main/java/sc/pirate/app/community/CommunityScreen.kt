@@ -38,8 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.async
@@ -59,6 +61,8 @@ import sc.pirate.app.api.model.CommunityRule
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.MembershipGateSummary
+import sc.pirate.app.shared.formatCommunityRouteLabel
+import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.EmptyFeedState
@@ -393,6 +397,7 @@ fun CommunityScreen(
                     val routeLabel = communityRouteLabel(community?.routeSlug ?: preview?.communityId ?: communityId, communityId)
                     val memberCount = preview?.memberCount ?: community?.memberCount
                     val followerCount = preview?.followerCount ?: community?.followerCount
+                    val avatarSrc = community?.avatarRef ?: preview?.avatarRef
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
@@ -401,6 +406,7 @@ fun CommunityScreen(
                         item {
                             CommunityHero(
                                 displayName = displayName,
+                                avatarSrc = avatarSrc,
                                 routeLabel = routeLabel,
                                 description = description,
                                 memberCount = memberCount,
@@ -549,7 +555,7 @@ fun CommunityScreen(
 
 private fun communityRouteLabel(routeSlugOrId: String, communityId: String): String {
     val route = routeSlugOrId.ifBlank { communityId }
-    return "c/$route"
+    return formatCommunityRouteLabel(communityId = communityId, routeSlug = route)
 }
 
 private fun communityStatusText(eligibility: JoinEligibility): String =
@@ -679,6 +685,7 @@ private fun MetadataSection(
 @Composable
 private fun CommunityHero(
     displayName: String,
+    avatarSrc: String?,
     routeLabel: String,
     description: String?,
     memberCount: Int?,
@@ -718,6 +725,7 @@ private fun CommunityHero(
         ) {
             CommunityAvatar(
                 label = displayName,
+                avatarSrc = avatarSrc,
                 modifier = Modifier.padding(top = 0.dp),
             )
             Spacer(modifier = Modifier.height(12.dp))
@@ -978,8 +986,9 @@ private fun CommunityPostRow(
 }
 
 @Composable
-private fun CommunityAvatar(label: String, modifier: Modifier = Modifier) {
+private fun CommunityAvatar(label: String, avatarSrc: String?, modifier: Modifier = Modifier) {
     val colors = communityPlaceholderColors(label)
+    val resolvedAvatar = resolvePublicMediaSrc(avatarSrc)
     Box(
         modifier = modifier
             .size(72.dp)
@@ -987,11 +996,20 @@ private fun CommunityAvatar(label: String, modifier: Modifier = Modifier) {
             .background(colors.first),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            text = initials(label),
-            style = MaterialTheme.typography.headlineSmall,
-            color = colors.second,
-        )
+        if (resolvedAvatar != null) {
+            AsyncImage(
+                model = resolvedAvatar,
+                contentDescription = label,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Text(
+                text = initials(label),
+                style = MaterialTheme.typography.headlineSmall,
+                color = colors.second,
+            )
+        }
     }
 }
 

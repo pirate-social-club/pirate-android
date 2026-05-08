@@ -3,7 +3,7 @@ package sc.pirate.app.navigation
 import android.net.Uri
 
 object PirateRouteSections {
-    val settings = setOf("profile", "preferences", "agents")
+    val settings = setOf("profile", "domains", "preferences", "agents")
     val verificationIntents = setOf(
         "profile_verification",
         "community_creation",
@@ -57,9 +57,11 @@ sealed class PirateRoute(val route: String) {
         const val ARG_COMMUNITY_ID = "communityId"
         fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/compose"
     }
+    data object Notifications : PirateRoute("notifications")
     data object Inbox : PirateRoute("inbox")
     data object Wallet : PirateRoute("wallet")
     data object Me : PirateRoute("me")
+    data object SettingsIndex : PirateRoute("settings")
     data object Settings : PirateRoute("settings/{section}") {
         const val ARG_SECTION = "section"
         const val DEFAULT_SECTION = "profile"
@@ -89,5 +91,9 @@ sealed class PirateRoute(val route: String) {
     data object PublicProfile : PirateRoute("public-profile/{handleLabel}") {
         const val ARG_HANDLE_LABEL = "handleLabel"
         fun buildRoute(handleLabel: String): String = "public-profile/${Uri.encode(handleLabel)}"
+    }
+    data object PublicProfileByWallet : PirateRoute("public-profile/wallet/{walletAddress}") {
+        const val ARG_WALLET_ADDRESS = "walletAddress"
+        fun buildRoute(walletAddress: String): String = "public-profile/wallet/${Uri.encode(walletAddress)}"
     }
 }

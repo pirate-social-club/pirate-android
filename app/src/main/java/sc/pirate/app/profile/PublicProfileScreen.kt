@@ -9,13 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -36,7 +33,6 @@ import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
-import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 
@@ -77,6 +73,31 @@ class PublicProfileViewModel(application: Application) : AndroidViewModel(applic
             }
         }
     }
+
+    fun loadByWallet(walletAddress: String) {
+        if (walletAddress.isBlank()) {
+            _state.value = PublicProfileUiState(
+                loading = false,
+                error = "Profile wallet is unavailable.",
+            )
+            return
+        }
+
+        viewModelScope.launch {
+            _state.value = PublicProfileUiState(loading = true)
+            try {
+                _state.value = PublicProfileUiState(
+                    loading = false,
+                    profile = profileRepository.getPublicByWallet(walletAddress),
+                )
+            } catch (e: Exception) {
+                _state.value = PublicProfileUiState(
+                    loading = false,
+                    error = e.message ?: "Could not load public profile",
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -85,13 +106,17 @@ fun PublicProfileScreen(
     handleLabel: String,
     onNavigateToCommunity: (String) -> Unit,
     onBack: () -> Unit,
+    onMessage: ((String) -> Unit)? = null,
+    walletAddress: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: PublicProfileViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
 
-    LaunchedEffect(handleLabel) {
-        viewModel.load(handleLabel)
+    LaunchedEffect(handleLabel, walletAddress) {
+        val wallet = walletAddress?.trim().orEmpty()
+        if (wallet.isNotBlank()) viewModel.loadByWallet(wallet)
+        else viewModel.load(handleLabel)
     }
 
     androidx.compose.material3.Scaffold(
@@ -154,87 +179,24 @@ fun PublicProfileScreen(
                 state.profile != null -> {
                     val resolution = state.profile!!
                     val profile = resolution.profile
-                    val createdCommunities = resolution.createdCommunities.sortedByDescending { it.createdAt }
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        item {
-                            PirateCard(modifier = Modifier.fillMaxWidth()) {
-                                Text(
-                                    text = profile.displayName ?: resolution.resolvedHandleLabel,
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = PirateTokens.colors.textPrimary,
-                                )
-                                Text(
-                                    text = "@${resolution.resolvedHandleLabel}",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = PirateTokens.colors.textSecondary,
-                                )
-                                if (!profile.bio.isNullOrBlank()) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    Text(
-                                        text = profile.bio,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = PirateTokens.colors.textPrimary,
-                                    )
-                                }
-                            }
-                        }
-
-                        if (!resolution.isCanonical) {
-                            item {
-                                StatusCard(
-                                    title = "Canonical profile",
-                                    description = "@${resolution.requestedHandleLabel} resolved to @${resolution.resolvedHandleLabel}.",
-                                    tone = StatusTone.Default,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
-
-                        if (createdCommunities.isEmpty()) {
-                            item {
-                                StatusCard(
-                                    title = "No public communities",
-                                    description = "Communities this profile creates will appear here.",
-                                    tone = StatusTone.Default,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        } else {
-                            item {
-                                Text(
-                                    text = "Created communities",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = PirateTokens.colors.textPrimary,
-                                )
-                            }
-                            items(createdCommunities, key = { it.communityId }) { community ->
-                                PirateCard(modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = community.displayName,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        color = PirateTokens.colors.textPrimary,
-                                    )
-                                    Text(
-                                        text = community.routeSlug ?: community.communityId,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = PirateTokens.colors.textSecondary,
-                                    )
-                                    PirateButton(
-                                        text = "Open",
-                                        onClick = { onNavigateToCommunity(community.communityId) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    PirateProfilePage(
+                        data = ProfilePageData(
+                            profile = profile,
+                            viewerContext = ViewerContext.Public,
+                            stats = profile.followStats(),
+                            walletAddress = profile.primaryWalletAddress,
+                        ),
+                        onMessage = onMessage,
+                        modifier = Modifier.fillMaxSize(),
+                    )
                 }
             }
         }
     }
 }
+
+private fun sc.pirate.app.api.model.Profile.followStats(): List<ProfileStat> =
+    listOf(
+        ProfileStat(label = "Followers", value = (followerCount ?: 0).toString()),
+        ProfileStat(label = "Following", value = (followingCount ?: 0).toString()),
+    )

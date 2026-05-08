@@ -15,12 +15,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.theme.PirateTokens
 
@@ -102,6 +105,8 @@ fun EmptyFeedState(message: String, modifier: Modifier = Modifier) {
 
 enum class FormTone { Warning, Error }
 
+enum class ButtonVariant { Default, Outline }
+
 data class ChipOption(
     val value: String,
     val label: String,
@@ -128,17 +133,43 @@ fun PirateButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     loading: Boolean = false,
+    variant: ButtonVariant = ButtonVariant.Default,
+    leadingIcon: ImageVector? = null,
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled && !loading,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = PirateTokens.colors.accentBrand,
-            disabledContainerColor = PirateTokens.colors.surfaceDisabled,
-        ),
-    ) {
+    val content: @Composable () -> Unit = {
+        if (leadingIcon != null) {
+            Icon(
+                imageVector = leadingIcon,
+                contentDescription = null,
+                modifier = Modifier.padding(end = 8.dp),
+            )
+        }
         Text(text = text)
+    }
+    if (variant == ButtonVariant.Outline) {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled && !loading,
+            border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = PirateTokens.colors.bgElevated,
+                contentColor = PirateTokens.colors.textPrimary,
+                disabledContainerColor = PirateTokens.colors.surfaceDisabled,
+            ),
+            content = { content() },
+        )
+    } else {
+        Button(
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled && !loading,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PirateTokens.colors.accentBrand,
+                disabledContainerColor = PirateTokens.colors.surfaceDisabled,
+            ),
+            content = { content() },
+        )
     }
 }
 

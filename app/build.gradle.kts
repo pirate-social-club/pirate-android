@@ -32,17 +32,44 @@ android {
   namespace = "sc.pirate.app"
   compileSdk = 36
 
+  val signingProps = Properties().apply {
+    val propsFile = rootProject.file("signing.properties")
+    if (propsFile.exists()) {
+      propsFile.inputStream().use(::load)
+    }
+  }
+
+  fun signingProp(name: String): String? =
+    signingProps.getProperty(name)
+      ?.trim()
+      ?.takeIf { it.isNotBlank() }
+
+  signingConfigs {
+    val storeFilePath = signingProp("storeFile")
+    if (storeFilePath != null) {
+      create("release") {
+        storeFile = file(storeFilePath)
+        storePassword = signingProp("storePassword")
+        keyAlias = signingProp("keyAlias")
+        keyPassword = signingProp("keyPassword")
+      }
+    }
+  }
+
   defaultConfig {
     applicationId = "sc.pirate.app"
     minSdk = 28
     targetSdk = 36
-    versionCode = 1
-    versionName = "0.1.0-alpha.1"
+    versionCode = 7
+    versionName = "0.1.0-alpha.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
     val apiBaseUrl = runtimeProp("API_BASE_URL") ?: "https://api.pirate.sc"
     buildConfigField("String", "API_BASE_URL", buildConfigString(apiBaseUrl))
+
+    val xmtpEnvironment = runtimeProp("XMTP_ENVIRONMENT") ?: "production"
+    buildConfigField("String", "XMTP_ENVIRONMENT", buildConfigString(xmtpEnvironment))
 
     val privyEnabled = runtimeProp("PRIVY_ENABLED")
       ?.lowercase()
@@ -76,6 +103,7 @@ android {
 
   buildTypes {
     release {
+      signingConfig = signingConfigs.findByName("release")
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(
@@ -105,6 +133,10 @@ android {
   packaging {
     resources {
       excludes += "/META-INF/{AL2.0,LGPL2.1}"
+      excludes += "/META-INF/DISCLAIMER"
+    }
+    jniLibs {
+      useLegacyPackaging = true
     }
   }
 }
@@ -132,9 +164,15 @@ dependencies {
   implementation("com.squareup.okhttp3:okhttp:4.12.0")
   implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
+  implementation("org.bouncycastle:bcprov-jdk18on:1.83")
+  implementation("org.web3j:abi:4.12.2")
+  implementation("org.web3j:crypto:4.12.2")
+  implementation("org.xmtp:android:4.9.0")
 
   implementation("io.coil-kt:coil-compose:2.6.0")
   implementation("io.coil-kt:coil-svg:2.6.0")
+  implementation("androidx.media3:media3-exoplayer:1.5.1")
+  implementation("androidx.media3:media3-ui:1.5.1")
 
   implementation("androidx.datastore:datastore-preferences:1.1.4")
 

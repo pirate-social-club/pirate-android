@@ -1,6 +1,7 @@
 package sc.pirate.app.profile
 
 import android.app.Application
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,12 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -26,10 +27,8 @@ import sc.pirate.app.api.model.Profile
 import sc.pirate.app.api.model.SessionExchangeResponse
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PirateButton
-import sc.pirate.app.ui.PirateCard
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
-import sc.pirate.app.ui.shortAddress
 
 data class ProfileUiState(
     val profile: Profile? = null,
@@ -107,10 +106,17 @@ class UserProfileViewModel(application: Application) : AndroidViewModel(applicat
 fun MeProfileScreen(
     viewModel: MeProfileViewModel,
     onSignIn: () -> Unit,
+    onEditProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
-    ProfileContent(state = state, onSignIn = onSignIn, modifier = modifier)
+    ProfileContent(
+        state = state,
+        viewerContext = ViewerContext.Self,
+        onSignIn = onSignIn,
+        onEditProfile = onEditProfile,
+        modifier = modifier,
+    )
 }
 
 @Composable
@@ -124,92 +130,71 @@ fun UserProfileScreen(
     }
 
     val state by viewModel.state.collectAsState()
-    ProfileContent(state = state, onSignIn = null, modifier = modifier)
+    ProfileContent(
+        state = state,
+        viewerContext = ViewerContext.Public,
+        onSignIn = null,
+        onEditProfile = null,
+        modifier = modifier,
+    )
 }
 
 @Composable
 private fun ProfileContent(
     state: ProfileUiState,
+    viewerContext: ViewerContext,
     onSignIn: (() -> Unit)?,
+    onEditProfile: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(16.dp),
-    ) {
+    Box(modifier = modifier.fillMaxSize()) {
         if (state.loading) {
-            CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
+            CircularProgressIndicator(
+                color = PirateTokens.colors.accentBrand,
+                modifier = Modifier.align(Alignment.Center),
+            )
         } else if (state.requiresAuth && onSignIn != null) {
-            StatusCard(
-                title = "Sign in to view profile",
-                description = "Your profile, handle, and connected wallets appear after sign-in.",
-                tone = StatusTone.Default,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            PirateButton(
-                text = "Sign in",
-                onClick = onSignIn,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(modifier = Modifier.padding(16.dp)) {
+                StatusCard(
+                    title = "Sign in to view profile",
+                    description = "Your profile, handle, and connected wallets appear after sign-in.",
+                    tone = StatusTone.Default,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                PirateButton(
+                    text = "Sign in",
+                    onClick = onSignIn,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         } else if (state.profile != null) {
             val profile = state.profile
-            val handle = profile.globalHandle?.let { "${it.label}.pirate" }.orEmpty()
-            val attachmentCount = state.session?.walletAttachments?.size ?: 0
             val primaryWalletAddress = profile.primaryWalletAddress
                 ?: state.session?.walletAttachments?.firstOrNull { it.isPrimary }?.walletAddress
                 ?: state.session?.walletAttachments?.firstOrNull()?.walletAddress
-
-            PirateCard {
-                Text(
-                    text = profile.displayName ?: handle.ifBlank { "Profile" },
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = PirateTokens.colors.textPrimary,
-                )
-                if (handle.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = handle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = PirateTokens.colors.textSecondary,
-                    )
-                }
-                if (!profile.bio.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = profile.bio,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = PirateTokens.colors.textPrimary,
-                    )
-                }
-                if (!primaryWalletAddress.isNullOrBlank()) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Primary wallet",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textSecondary,
-                    )
-                    Text(
-                        text = shortAddress(primaryWalletAddress),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = PirateTokens.colors.textPrimary,
-                    )
-                }
-                if (attachmentCount > 0) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "$attachmentCount attached wallet${if (attachmentCount == 1) "" else "s"}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = PirateTokens.colors.textSecondary,
-                    )
-                }
-            }
+            PirateProfilePage(
+                data = ProfilePageData(
+                    profile = profile,
+                    viewerContext = viewerContext,
+                    stats = profile.followStats(),
+                    walletAddress = primaryWalletAddress,
+                ),
+                onEditProfile = onEditProfile,
+                modifier = Modifier.fillMaxSize(),
+            )
         } else if (state.error != null) {
             Text(
                 text = state.error,
                 color = PirateTokens.colors.accentDanger,
+                modifier = Modifier.padding(16.dp),
             )
         }
     }
 }
+
+private fun Profile.followStats(): List<ProfileStat> =
+    listOf(
+        ProfileStat(label = "Followers", value = (followerCount ?: 0).toString()),
+        ProfileStat(label = "Following", value = (followingCount ?: 0).toString()),
+    )

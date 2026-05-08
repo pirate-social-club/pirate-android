@@ -2,6 +2,7 @@ package sc.pirate.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -12,10 +13,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -37,12 +42,17 @@ data class BottomNavItem(
     val icon: ImageVector,
     val activeIcon: ImageVector = icon,
     val activeRoutes: Set<String> = setOf(route),
+    val requiresAuth: Boolean = false,
+    val unreadCount: Int = 0,
 )
 
 @Composable
 @OptIn(ExperimentalMaterialNavigationApi::class)
 fun PirateScaffold(
     bottomItems: List<BottomNavItem>,
+    hasSession: Boolean,
+    hideChatBottomBar: Boolean = false,
+    onRequireAuth: () -> Unit,
     content: @Composable (NavHostController, Modifier) -> Unit,
 ) {
     val bottomSheetNavigator = rememberBottomSheetNavigator()
@@ -50,14 +60,16 @@ fun PirateScaffold(
     val navBackStackEntry = navController.currentBackStackEntryAsState().value
     val currentRoute = navBackStackEntry?.destination?.route
 
-    val showBottomBar = currentRoute in listOf(
-        PirateRoute.Home.route,
-        PirateRoute.Chat.route,
-        PirateRoute.Community.route,
-        PirateRoute.Wallet.route,
-        PirateRoute.Inbox.route,
-        PirateRoute.Me.route,
-    )
+    val showBottomBar =
+        currentRoute in listOf(
+            PirateRoute.Home.route,
+            PirateRoute.Chat.route,
+            PirateRoute.Community.route,
+            PirateRoute.Wallet.route,
+            PirateRoute.Notifications.route,
+            PirateRoute.Inbox.route,
+            PirateRoute.Me.route,
+        ) && !(currentRoute == PirateRoute.Chat.route && hideChatBottomBar)
 
     ModalBottomSheetLayout(bottomSheetNavigator = bottomSheetNavigator) {
         Scaffold(
@@ -84,6 +96,10 @@ fun PirateScaffold(
                                     selected = selected,
                                     onClick = {
                                         if (!selected) {
+                                            if (item.requiresAuth && !hasSession) {
+                                                onRequireAuth()
+                                                return@BottomNavIcon
+                                            }
                                             navController.navigate(item.route) {
                                                 popUpTo(navController.graph.findStartDestination().id) {
                                                     saveState = true
@@ -128,17 +144,31 @@ private fun BottomNavIcon(
         modifier = Modifier
             .size(48.dp)
             .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
                 role = Role.Button,
                 onClickLabel = item.label,
                 onClick = onClick,
             ),
         contentAlignment = androidx.compose.ui.Alignment.Center,
     ) {
-        Icon(
-            imageVector = if (selected) item.activeIcon else item.icon,
-            contentDescription = item.label,
-            tint = iconColor,
-            modifier = Modifier.size(26.dp),
-        )
+        BadgedBox(
+            badge = {
+                if (item.unreadCount > 0) {
+                    Badge(containerColor = PirateTokens.colors.accentBrand) {
+                        Text(text = formatUnreadCount(item.unreadCount))
+                    }
+                }
+            },
+        ) {
+            Icon(
+                imageVector = if (selected) item.activeIcon else item.icon,
+                contentDescription = item.label,
+                tint = iconColor,
+                modifier = Modifier.size(26.dp),
+            )
+        }
     }
 }
+
+private fun formatUnreadCount(count: Int): String = if (count > 99) "99+" else count.toString()

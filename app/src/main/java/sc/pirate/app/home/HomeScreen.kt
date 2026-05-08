@@ -1,15 +1,20 @@
 package sc.pirate.app.home
 
 import android.app.Application
+import android.net.Uri
+import android.view.LayoutInflater
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
@@ -24,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
@@ -34,6 +40,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,9 +53,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -62,8 +77,12 @@ import java.time.format.DateTimeParseException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import sc.pirate.app.PirateApp
+import sc.pirate.app.R
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
+import sc.pirate.app.api.model.PostEmbed
+import sc.pirate.app.shared.formatCommunityRouteLabel
+import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
@@ -78,14 +97,17 @@ data class HomeUiState(
     val topTimeRange: String = "day",
     val error: String? = null,
     val paginationError: String? = null,
+    val followError: String? = null,
     val voteError: String? = null,
     val votingPostIds: Set<String> = emptySet(),
+    val followingCommunityIds: Set<String> = emptySet(),
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<PirateApp>()
     private val feedRepository get() = app.repositories.feedRepository
     private val postRepository get() = app.repositories.postRepository
+    private val communityRepository get() = app.repositories.communityRepository
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
@@ -106,6 +128,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun setTopTimeRange(timeRange: String) {
         if (timeRange == _state.value.topTimeRange) return
         load(sort = _state.value.activeSort, timeRange = timeRange)
+    }
+
+    fun toggleFollowCommunity(communityId: String) {
+        val current = _state.value
+        if (communityId in current.followingCommunityIds) return
+        val feed = current.feed ?: return
+        val item = feed.items.firstOrNull { it.homeCommunityId() == communityId } ?: return
+        val currentlyFollowing = item.community.viewerFollowing == true
+
+        _state.value = current.copy(
+            feed = feed.withCommunityFollow(communityId, !currentlyFollowing),
+            followingCommunityIds = current.followingCommunityIds + communityId,
+            followError = null,
+        )
+
+        viewModelScope.launch {
+            try {
+                val response = if (currentlyFollowing) {
+                    communityRepository.unfollowCommunity(communityId)
+                } else {
+                    communityRepository.followCommunity(communityId)
+                }
+                _state.value = _state.value.copy(
+                    feed = _state.value.feed?.withCommunityFollow(communityId, response.following),
+                    followingCommunityIds = _state.value.followingCommunityIds - communityId,
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    feed = _state.value.feed?.withCommunityFollow(communityId, currentlyFollowing),
+                    followingCommunityIds = _state.value.followingCommunityIds - communityId,
+                    followError = e.message ?: "Could not update follow state",
+                )
+            }
+        }
     }
 
     private fun load(sort: String, timeRange: String) {
@@ -233,6 +289,17 @@ private fun HomeFeedResponse.replacePostItem(previousItem: HomeFeedItem): HomeFe
         },
     )
 
+private fun HomeFeedResponse.withCommunityFollow(communityId: String, following: Boolean): HomeFeedResponse =
+    copy(
+        items = items.map { item ->
+            if (item.homeCommunityId() == communityId) {
+                item.copy(community = item.community.copy(viewerFollowing = following))
+            } else {
+                item
+            }
+        },
+    )
+
 private fun scoreText(item: HomeFeedItem): String {
     val score = item.post.upvoteCount - item.post.downvoteCount
     val comments = item.post.commentCount ?: item.post.threadSnapshot?.commentCount ?: 0
@@ -243,6 +310,14 @@ private data class MediaPreview(
     val url: String,
     val title: String,
     val mimeType: String? = null,
+    val videoUrl: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+)
+
+private data class ActiveMediaPreview(
+    val item: HomeFeedItem,
+    val preview: MediaPreview,
 )
 
 @Composable
@@ -267,16 +342,51 @@ fun HomeScreen(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
-    var mediaPreview by remember { mutableStateOf<MediaPreview?>(null) }
+    var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
+    var actionItem by remember { mutableStateOf<HomeFeedItem?>(null) }
 
     authPromptAction?.let {
         signInDrawer { authPromptAction = null }
     }
 
-    mediaPreview?.let { preview ->
+    mediaPreview?.let { activePreview ->
+        val item = activePreview.item
+        val post = item.post.post
         MediaPreviewDialog(
-            preview = preview,
+            item = item,
+            preview = activePreview.preview,
             onDismiss = { mediaPreview = null },
+            onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
+            onVote = { value ->
+                if (hasSession) {
+                    viewModel.votePost(post.postId, value)
+                } else {
+                    mediaPreview = null
+                    authPromptAction = "Voting"
+                }
+            },
+            onComment = {
+                mediaPreview = null
+                if (hasSession) {
+                    onNavigateToPost(post.postId)
+                } else {
+                    authPromptAction = "Commenting"
+                }
+            },
+        )
+    }
+
+    actionItem?.let { item ->
+        PostActionSheet(
+            onDismiss = { actionItem = null },
+            onOpenPost = {
+                actionItem = null
+                onNavigateToPost(item.post.post.postId)
+            },
+            onOpenCommunity = {
+                actionItem = null
+                onNavigateToCommunity(item.homeCommunityId())
+            },
         )
     }
 
@@ -289,7 +399,7 @@ fun HomeScreen(
                 onPopular = {
                     scope.launch {
                         drawerState.close()
-                        viewModel.setSort("top")
+                        viewModel.setSort("best")
                     }
                 },
                 onYourCommunities = {
@@ -377,12 +487,15 @@ fun HomeScreen(
                 when {
                     state.loading -> {
                         item {
-                            HomeCenteredState(
-                                title = "Loading feed",
-                                description = "Fetching the latest posts.",
-                                loading = true,
+                            Box(
                                 modifier = Modifier.fillParentMaxSize(),
-                            )
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                CircularProgressIndicator(
+                                    color = PirateTokens.colors.accentBrand,
+                                    modifier = Modifier.size(28.dp),
+                                )
+                            }
                         }
                     }
 
@@ -409,6 +522,16 @@ fun HomeScreen(
                     }
 
                     else -> {
+                        if (state.followError != null) {
+                            item {
+                                HomeInlineMessage(
+                                    title = "Follow failed",
+                                    description = state.followError.orEmpty(),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                )
+                            }
+                        }
+
                         if (state.paginationError != null) {
                             item {
                                 HomeInlineMessage(
@@ -425,9 +548,19 @@ fun HomeScreen(
                             HomePostCard(
                                 item = item,
                                 isVoting = isVoting,
+                                isFollowing = item.community.viewerFollowing == true,
+                                followLoading = item.homeCommunityId() in state.followingCommunityIds,
                                 onOpenPost = { onNavigateToPost(post.postId) },
                                 onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
-                                onOpenMedia = { mediaPreview = it },
+                                onOpenMedia = { mediaPreview = ActiveMediaPreview(item, it) },
+                                onOpenActions = { actionItem = item },
+                                onToggleFollow = {
+                                    if (hasSession) {
+                                        viewModel.toggleFollowCommunity(item.homeCommunityId())
+                                    } else {
+                                        authPromptAction = "Following communities"
+                                    }
+                                },
                                 onVote = { value ->
                                     if (hasSession) {
                                         viewModel.votePost(post.postId, value)
@@ -466,6 +599,12 @@ fun HomeScreen(
 private fun HomeFeedItem.homeCommunityId(): String =
     community.communityId?.takeIf { it.isNotBlank() } ?: post.post.communityId
 
+private fun HomeFeedItem.communityRouteLabel(): String =
+    formatCommunityRouteLabel(
+        communityId = homeCommunityId(),
+        routeSlug = community.routeSlug ?: community.displayName,
+    )
+
 private fun userFacingFeedError(error: String?): String {
     val message = error?.takeIf { it.isNotBlank() } ?: return "Could not load the home feed."
     return if (message.contains("serial name") || message.contains("Fields [")) {
@@ -477,32 +616,50 @@ private fun userFacingFeedError(error: String?): String {
 
 @Composable
 private fun MediaPreviewDialog(
+    item: HomeFeedItem,
     preview: MediaPreview,
     onDismiss: () -> Unit,
+    onOpenCommunity: () -> Unit,
+    onVote: (Int) -> Unit,
+    onComment: () -> Unit,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
+    val postResponse = item.post
+    val post = postResponse.post
+    val routeLabel = item.communityRouteLabel()
+    val authorLabel = post.anonymousLabel
+        ?: post.authorUserId?.take(8)?.let { "u/$it" }
+        ?: "anonymous"
+    val caption = postResponse.translatedCaption
+        ?: post.caption
+        ?: postResponse.translatedBody
+        ?: post.body
+        ?: preview.title
+    val comments = postResponse.commentCount ?: postResponse.threadSnapshot?.commentCount ?: 0
+    val score = postResponse.upvoteCount - postResponse.downvoteCount
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Black, RoundedCornerShape(8.dp))
-                .padding(12.dp),
+                .fillMaxSize()
+                .background(Color.Black),
         ) {
             Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    AsyncImage(
-                        model = preview.url,
-                        contentDescription = preview.title,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(6.dp)),
-                        contentScale = ContentScale.Fit,
-                    )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                ) {
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.align(Alignment.TopEnd),
+                        modifier = Modifier.align(Alignment.CenterStart),
                     ) {
                         Icon(
                             imageVector = PhosphorIcons.X,
@@ -510,16 +667,170 @@ private fun MediaPreviewDialog(
                             tint = Color.White,
                         )
                     }
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .clickable(onClick = onOpenCommunity),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FeedAvatar(
+                            label = item.community.displayName,
+                            avatarSrc = resolveCommunityAvatarSrc(
+                                avatarSrc = item.community.avatarRef,
+                                communityId = item.homeCommunityId(),
+                                displayName = item.community.displayName,
+                            ),
+                            size = 24,
+                        )
+                        Text(
+                            text = routeLabel,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
-                Text(
-                    text = preview.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (preview.isVideo) {
+                        VideoPlayer(
+                            url = preview.videoUrl ?: preview.url,
+                            autoplay = true,
+                            muted = false,
+                            showControls = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 620.dp)
+                                .aspectRatio(preview.displayAspectRatio()),
+                        )
+                    } else {
+                        var detectedAspectRatio by remember(preview.url) { mutableStateOf<Float?>(null) }
+                        val imageAspectRatio = detectedAspectRatio ?: preview.displayAspectRatio()
+                        AsyncImage(
+                            model = preview.url,
+                            contentDescription = preview.title,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 620.dp)
+                                .aspectRatio(imageAspectRatio),
+                            contentScale = ContentScale.Fit,
+                            onSuccess = { state ->
+                                detectedAspectRatio = state.result.drawable.detectedAspectRatio()
+                                    ?: detectedAspectRatio
+                            },
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FeedAvatar(
+                        label = item.community.displayName,
+                        avatarSrc = resolveCommunityAvatarSrc(
+                            avatarSrc = item.community.avatarRef,
+                            communityId = item.homeCommunityId(),
+                            displayName = item.community.displayName,
+                        ),
+                        size = 36,
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = authorLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = caption,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.78f),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    VoteControl(
+                        score = score,
+                        viewerVote = postResponse.viewerVote,
+                        enabled = true,
+                        onVote = onVote,
+                    )
+                    CommentPill(count = comments, onClick = onComment)
+                    Spacer(modifier = Modifier.weight(1f))
+                }
             }
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun PostActionSheet(
+    onDismiss: () -> Unit,
+    onOpenPost: () -> Unit,
+    onOpenCommunity: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            SheetActionRow("Open post", PhosphorIcons.ChatCircle, onOpenPost)
+            SheetActionRow("Open community", PhosphorIcons.Flag, onOpenCommunity)
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun SheetActionRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = PirateTokens.colors.textSecondary,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = PirateTokens.colors.textPrimary,
+        )
     }
 }
 
@@ -650,7 +961,7 @@ private fun HomeNavigationDrawer(
             DrawerRow("Create Community", PhosphorIcons.Plus, onCreateCommunity)
             DrawerSectionLabel("Account")
             DrawerRow("Wallet", PhosphorIcons.Wallet, onWallet)
-            DrawerRow("Inbox", PhosphorIcons.Bell, onInbox)
+            DrawerRow("Notifications", PhosphorIcons.Bell, onInbox)
             DrawerRow("Profile", PhosphorIcons.UserCircle, onProfile)
         }
     }
@@ -697,9 +1008,13 @@ private fun DrawerRow(
 private fun HomePostCard(
     item: HomeFeedItem,
     isVoting: Boolean,
+    isFollowing: Boolean,
+    followLoading: Boolean,
     onOpenPost: () -> Unit,
     onOpenCommunity: () -> Unit,
     onOpenMedia: (MediaPreview) -> Unit,
+    onOpenActions: () -> Unit,
+    onToggleFollow: () -> Unit,
     onVote: (Int) -> Unit,
     onComment: () -> Unit,
     modifier: Modifier = Modifier,
@@ -716,12 +1031,9 @@ private fun HomePostCard(
         ?: post.caption
     val comments = postResponse.commentCount ?: postResponse.threadSnapshot?.commentCount ?: 0
     val score = postResponse.upvoteCount - postResponse.downvoteCount
-    val routeLabel = item.community.routeSlug?.let { "c/$it" } ?: "c/${item.homeCommunityId()}"
-    val authorLabel = post.anonymousLabel
-        ?: post.authorUserId?.take(8)?.let { "u/$it" }
-        ?: "anonymous"
-    val authorSeed = post.anonymousLabel ?: post.authorUserId ?: post.postId
+    val routeLabel = item.communityRouteLabel()
     val mediaPreview = item.primaryMediaPreview(title)
+    val xEmbed = post.primaryXEmbed()
 
     Surface(
         modifier = modifier.clickable(onClick = onOpenPost),
@@ -769,25 +1081,18 @@ private fun HomePostCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    if (authorLabel.isNotBlank()) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            FeedAvatar(
-                                label = authorLabel,
-                                avatarSrc = buildDefaultUserAvatarSrc(authorSeed),
-                                size = 18,
-                            )
-                            Text(
-                                text = authorLabel,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = PirateTokens.colors.textSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+                }
+                FollowPill(
+                    following = isFollowing,
+                    loading = followLoading,
+                    onClick = onToggleFollow,
+                )
+                IconButton(onClick = onOpenActions) {
+                    Icon(
+                        imageVector = PhosphorIcons.DotsThree,
+                        contentDescription = "Post options",
+                        tint = PirateTokens.colors.textSecondary,
+                    )
                 }
             }
 
@@ -811,7 +1116,11 @@ private fun HomePostCard(
                     )
                 }
 
-            post.linkUrl?.takeIf { it.isNotBlank() }?.let { linkUrl ->
+            if (xEmbed != null) {
+                XEmbedPreviewCard(embed = xEmbed)
+            }
+
+            post.linkUrl?.takeIf { xEmbed == null && it.isNotBlank() }?.let { linkUrl ->
                 Text(
                     text = linkUrl,
                     style = MaterialTheme.typography.bodyMedium,
@@ -839,14 +1148,121 @@ private fun HomePostCard(
                     enabled = !isVoting,
                     onVote = onVote,
                 )
-                Text(
-                    text = "$comments comments",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = PirateTokens.colors.textSecondary,
-                    modifier = Modifier.clickable(onClick = onComment),
-                )
+                CommentPill(count = comments, onClick = onComment)
                 Spacer(modifier = Modifier.weight(1f))
             }
+        }
+    }
+}
+
+@Composable
+private fun XEmbedPreviewCard(embed: PostEmbed) {
+    val preview = embed.preview
+    val text = preview?.text?.trim()
+        ?: preview?.title?.trim()
+        ?: "X post"
+    val source = formatXSource(embed)
+    val imageSrc = preview?.mediaUrl?.takeIf { it.isNotBlank() }
+        ?: preview?.thumbnailUrl?.takeIf { it.isNotBlank() }
+        ?: preview?.imageUrl?.takeIf { it.isNotBlank() }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textPrimary,
+                    maxLines = 4,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = source,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            imageSrc?.let {
+                AsyncImage(
+                    model = it,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(92.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(PirateTokens.colors.bgElevated),
+                    contentScale = ContentScale.Crop,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun FollowPill(
+    following: Boolean,
+    loading: Boolean,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.clickable(enabled = !loading, onClick = onClick),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = if (following) PirateTokens.colors.surfaceSubtle else PirateTokens.colors.accentBrand,
+        border = BorderStroke(1.dp, if (following) PirateTokens.colors.borderSoft else PirateTokens.colors.accentBrand),
+    ) {
+        Text(
+            text = if (following) "Following" else "Follow",
+            style = MaterialTheme.typography.labelLarge,
+            color = if (following) PirateTokens.colors.textPrimary else Color.White,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+        )
+    }
+}
+
+@Composable
+private fun CommentPill(
+    count: Int,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .height(38.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier
+                .height(38.dp)
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.ChatCircle,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
         }
     }
 }
@@ -856,35 +1272,115 @@ private fun FeedMediaPreview(
     preview: MediaPreview,
     onClick: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(PirateTokens.colors.bgElevated)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            model = preview.url,
-            contentDescription = preview.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-        )
-        if (preview.mimeType?.startsWith("video/") == true) {
-            Surface(
-                color = Color.Black.copy(alpha = 0.54f),
-                shape = RoundedCornerShape(999.dp),
-            ) {
-                Text(
-                    text = "Video",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        var detectedAspectRatio by remember(preview.url) { mutableStateOf<Float?>(null) }
+        val aspectRatio = detectedAspectRatio ?: preview.displayAspectRatio()
+        val mediaHeight = (maxWidth / aspectRatio).coerceAtMost(620.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(mediaHeight)
+                .clip(RoundedCornerShape(8.dp))
+                .background(PirateTokens.colors.bgElevated)
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (preview.isVideo) {
+                VideoPlayer(
+                    url = preview.videoUrl ?: preview.url,
+                    autoplay = true,
+                    muted = true,
+                    showControls = false,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                AsyncImage(
+                    model = preview.url,
+                    contentDescription = preview.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                    onSuccess = { state ->
+                        detectedAspectRatio = state.result.drawable.detectedAspectRatio()
+                            ?: detectedAspectRatio
+                    },
                 )
             }
         }
     }
+}
+
+@Composable
+private fun VideoPlayer(
+    url: String,
+    autoplay: Boolean,
+    muted: Boolean,
+    showControls: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val player = remember(url) {
+        ExoPlayer.Builder(context).build().apply {
+            setMediaItem(MediaItem.fromUri(Uri.parse(url)))
+            repeatMode = if (showControls) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
+            volume = if (muted) 0f else 1f
+            playWhenReady = autoplay
+            prepare()
+        }
+    }
+    DisposableEffect(player) {
+        onDispose {
+            player.release()
+        }
+    }
+    AndroidView(
+        modifier = modifier.background(Color.Black),
+        factory = { context ->
+            if (showControls) {
+                PlayerView(context).apply {
+                    setBackgroundColor(android.graphics.Color.BLACK)
+                    useController = true
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    this.player = player
+                }
+            } else {
+                (LayoutInflater.from(context)
+                    .inflate(R.layout.pirate_player_view_texture, null, false) as PlayerView).apply {
+                    useController = false
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    this.player = player
+                }
+            }
+        },
+        update = { view ->
+            (view as PlayerView).apply {
+                useController = showControls
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                this.player = player
+            }
+            player.volume = if (muted) 0f else 1f
+            player.playWhenReady = autoplay
+        },
+    )
+}
+
+private val MediaPreview.isVideo: Boolean
+    get() = mimeType?.startsWith("video/") == true || videoUrl != null
+
+private fun MediaPreview.displayAspectRatio(): Float {
+    val rawRatio = if (width != null && height != null && width > 0 && height > 0) {
+        width.toFloat() / height.toFloat()
+    } else {
+        16f / 9f
+    }
+    return rawRatio.takeIf { it.isFinite() && it > 0f } ?: (16f / 9f)
+}
+
+private fun android.graphics.drawable.Drawable.detectedAspectRatio(): Float? {
+    val width = intrinsicWidth
+    val height = intrinsicHeight
+    if (width <= 0 || height <= 0) return null
+    val ratio = width.toFloat() / height.toFloat()
+    return ratio.takeIf { it.isFinite() && it > 0f }
 }
 
 private fun relativeTimeLabel(timestamp: String): String {
@@ -908,26 +1404,118 @@ private fun relativeTimeLabel(timestamp: String): String {
 }
 
 private fun HomeFeedItem.primaryMediaPreview(title: String): MediaPreview? {
+    if (post.post.primaryXEmbed() != null) return null
+
     val media = post.post.mediaRefs.firstOrNull()
     if (media != null) {
         val previewUrl = when {
             media.mimeType?.startsWith("image/") == true -> media.storageRef
             media.mimeType?.startsWith("video/") == true -> media.posterRef
             else -> media.posterRef ?: media.storageRef
-        }?.takeIf { it.isNotBlank() }
+        }?.let(::resolvePublicMediaSrc)
+        val videoUrl = if (media.mimeType?.startsWith("video/") == true) {
+            resolvePublicMediaSrc(media.storageRef)
+        } else {
+            null
+        }
+        val displayWidth = if (media.mimeType?.startsWith("video/") == true) {
+            media.posterWidth ?: media.width
+        } else {
+            media.width
+        }
+        val displayHeight = if (media.mimeType?.startsWith("video/") == true) {
+            media.posterHeight ?: media.height
+        } else {
+            media.height
+        }
 
-        if (previewUrl != null) {
+        if (previewUrl != null || videoUrl != null) {
             return MediaPreview(
-                url = previewUrl,
+                url = previewUrl ?: videoUrl.orEmpty(),
                 title = title,
                 mimeType = media.mimeType,
+                videoUrl = videoUrl,
+                width = displayWidth,
+                height = displayHeight,
             )
         }
     }
 
     return post.post.linkOgImageUrl
-        ?.takeIf { it.isNotBlank() }
+        ?.let(::resolvePublicMediaSrc)
         ?.let { MediaPreview(url = it, title = title, mimeType = "image/*") }
+}
+
+private fun sc.pirate.app.api.model.Post.primaryXEmbed(): PostEmbed? =
+    embeds.firstOrNull { it.provider == "x" }
+        ?: detectClientSideXEmbed(linkUrl)
+
+private fun detectClientSideXEmbed(linkUrl: String?): PostEmbed? {
+    val trimmed = linkUrl?.trim().orEmpty()
+    if (trimmed.isBlank()) return null
+
+    val uri = try {
+        java.net.URI(trimmed)
+    } catch (_: Exception) {
+        return null
+    }
+
+    val scheme = uri.scheme?.lowercase()
+    if (scheme != "https" && scheme != "http") return null
+
+    val host = uri.host?.trim()?.lowercase()?.trimEnd('.') ?: return null
+    if (host !in setOf("x.com", "www.x.com", "twitter.com", "www.twitter.com", "mobile.twitter.com")) {
+        return null
+    }
+
+    val segments = uri.path.orEmpty().split('/').filter { it.isNotBlank() }
+    val statusIndex = segments.indexOfFirst { it.equals("status", ignoreCase = true) }
+    val postId = when {
+        statusIndex > 0 -> segments.getOrNull(statusIndex + 1)
+        segments.size >= 4 && segments[0] == "i" && segments[1] == "web" && segments[2] == "status" -> segments[3]
+        else -> null
+    }?.trim()
+    if (postId.isNullOrBlank() || postId.any { !it.isDigit() }) return null
+
+    val handle = if (statusIndex > 0) segments.getOrNull(statusIndex - 1)?.trim() else null
+    val canonicalPath = if (!handle.isNullOrBlank()) {
+        "/${java.net.URLEncoder.encode(handle, StandardCharsets.UTF_8.toString())}/status/$postId"
+    } else {
+        "/i/web/status/$postId"
+    }
+
+    return PostEmbed(
+        provider = "x",
+        canonicalUrl = "https://x.com$canonicalPath",
+        originalUrl = trimmed,
+        state = "embed",
+    )
+}
+
+private fun formatXSource(embed: PostEmbed): String {
+    val author = embed.preview?.authorName?.trim()
+    if (!author.isNullOrBlank()) return "$author on X"
+
+    val authorUrl = embed.preview?.authorUrl?.trim()
+    val handleFromAuthor = authorUrl?.let(::extractXHandle)
+    if (!handleFromAuthor.isNullOrBlank()) return "@$handleFromAuthor on X"
+
+    val handleFromCanonical = extractXHandle(embed.canonicalUrl)
+    if (!handleFromCanonical.isNullOrBlank()) return "@$handleFromCanonical on X"
+
+    return "X"
+}
+
+private fun extractXHandle(url: String): String? {
+    val uri = try {
+        java.net.URI(url)
+    } catch (_: Exception) {
+        return null
+    }
+    val host = uri.host?.lowercase() ?: return null
+    if (host != "x.com" && host != "twitter.com" && host != "www.x.com" && host != "www.twitter.com") return null
+    val first = uri.path.orEmpty().split('/').firstOrNull { it.isNotBlank() } ?: return null
+    return first.takeUnless { it == "i" }
 }
 
 @Composable
@@ -957,44 +1545,8 @@ private fun resolveCommunityAvatarSrc(
     communityId: String,
     displayName: String,
 ): String = avatarSrc?.trim()?.takeIf { it.isNotBlank() }
+    ?.let(::resolvePublicMediaSrc)
     ?: buildDefaultCommunityAvatarSrc(communityId, displayName)
-
-private fun buildDefaultUserAvatarSrc(seedSource: String): String {
-    val seed = seedSource.trim()
-    if (seed.isBlank()) return ""
-    val background = userAvatarBackgroundColors[Math.floorMod(hashSeed(seed), userAvatarBackgroundColors.size)]
-    return "https://api.dicebear.com/9.x/thumbs/svg" +
-        "?seed=${encodeQuery(seed)}" +
-        "&size=128" +
-        "&radius=50" +
-        "&scale=92" +
-        "&backgroundColor=$background" +
-        "&eyesColor=111111" +
-        "&mouthColor=111111" +
-        "&shapeColor=f7f5f0,fffdf7,f6f3eb"
-}
-
-private val userAvatarBackgroundColors = listOf(
-    "d9a441",
-    "2f80ed",
-    "27ae60",
-    "eb5757",
-    "9b51e0",
-    "56ccf2",
-    "f2994a",
-    "219653",
-    "bb6bd9",
-    "f2c94c",
-)
-
-private fun hashSeed(seed: String): Int {
-    var hash = -2128831035
-    for (char in seed) {
-        hash = hash xor char.code
-        hash *= 16777619
-    }
-    return hash ushr 0
-}
 
 private fun buildDefaultCommunityAvatarSrc(communityId: String, displayName: String): String {
     val seed = "${communityId.trim()}:${displayName.trim().replace(Regex("\\s+"), " ")}"

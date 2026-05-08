@@ -1,13 +1,20 @@
 package sc.pirate.app.navigation
 
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
+import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -16,10 +23,10 @@ import com.reown.appkit.ui.appKitGraph
 import com.reown.appkit.ui.openAppKit
 import androidx.lifecycle.viewmodel.compose.viewModel
 import sc.pirate.app.PirateApp
-import sc.pirate.app.auth.AuthScreen
 import sc.pirate.app.auth.AuthViewModel
 import sc.pirate.app.auth.AuthUiState
 import sc.pirate.app.auth.SignInDrawer
+import sc.pirate.app.chat.ChatScreen
 import sc.pirate.app.communities.YourCommunitiesScreen
 import sc.pirate.app.community.CommunityScreen
 import sc.pirate.app.community.CommunityViewModel
@@ -43,7 +50,9 @@ import sc.pirate.app.verification.SelfVerificationScreen
 import sc.pirate.app.verification.VeryVerificationScreen
 import sc.pirate.app.wallet.WalletScreen
 import sc.pirate.app.wallet.WalletViewModel
-import sc.pirate.app.ui.FeatureStubScreen
+import kotlinx.coroutines.launch
+
+private const val TAG = "PirateNavHost"
 
 @Composable
 fun PirateNavHost(
@@ -52,8 +61,34 @@ fun PirateNavHost(
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as PirateApp
+    val scope = rememberCoroutineScope()
+    val showMessage: (String) -> Unit = { message ->
+        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
     val session by app.sessionStore.observe().collectAsState(initial = null)
     val hasSession = session != null
+    val activeAddress = session?.walletAttachments
+        ?.firstOrNull { it.isPrimary }
+        ?.walletAddress
+        ?: session?.walletAttachments?.firstOrNull()?.walletAddress
+
+    LaunchedEffect(hasSession, activeAddress) {
+        if (!hasSession) {
+            app.chatService.disconnect()
+            return@LaunchedEffect
+        }
+        val address = activeAddress
+        if (address.isNullOrBlank()) return@LaunchedEffect
+        runCatching { app.chatService.connect(address) }
+            .onFailure { Log.w(TAG, "XMTP bootstrap connect failed", it) }
+        runCatching {
+            app.chatService.currentInboxId()?.let { inboxId ->
+                app.repositories.profileRepository.publishXmtpInbox(inboxId)
+            }
+        }.onFailure {
+            Log.w(TAG, "XMTP inbox publish failed", it)
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -70,11 +105,14 @@ fun PirateNavHost(
             val walletConnectState by app.reownManager.state.collectAsState()
 
             if (state is AuthUiState.Authenticated) {
+                LaunchedEffect(Unit) {
                 navController.navigate(PirateRoute.Onboarding.route) {
                     popUpTo(PirateRoute.Auth.route) { inclusive = true }
                 }
+                }
             } else {
-                AuthScreen(
+                Box(modifier = Modifier.fillMaxSize())
+                SignInDrawer(
                     state = state,
                     walletConnectState = walletConnectState,
                     onOpenWalletConnect = {
@@ -93,6 +131,16 @@ fun PirateNavHost(
                     onSendEmailCode = vm::sendEmailCode,
                     onLoginEmail = vm::loginWithEmail,
                     onLogout = vm::logout,
+                    onDismiss = {
+                        if (!navController.popBackStack()) {
+                            navController.navigate(PirateRoute.Home.route) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    inclusive = false
+                                }
+                                launchSingleTop = true
+                            }
+                        }
+                    },
                 )
             }
         }
@@ -134,7 +182,7 @@ fun PirateNavHost(
                     navController.navigate(PirateRoute.Chat.route)
                 },
                 onNavigateToInbox = {
-                    navController.navigate(PirateRoute.Inbox.route)
+                    navController.navigate(PirateRoute.Notifications.route)
                 },
                 onNavigateToProfile = {
                     navController.navigate(PirateRoute.Me.route)
@@ -170,9 +218,20 @@ fun PirateNavHost(
 
         composable(PirateRoute.Chat.route) {
             AuthGate(hasSession, navController) {
-                FeatureStubScreen(
-                    title = "Chat",
-                    body = "Encrypted chat is moving into the Android app. This slot now matches the mobile web footer and will host chat once the native screen lands.",
+                ChatScreen(
+                    chatService = app.chatService,
+                    isAuthenticated = hasSession,
+                    userAddress = activeAddress,
+                    onShowMessage = showMessage,
+                    onConnected = { inboxId ->
+                        runCatching { app.repositories.profileRepository.publishXmtpInbox(inboxId) }
+                            .onFailure { Log.w(TAG, "XMTP inbox publish failed", it) }
+                    },
+                    onOpenPeerProfile = { walletAddress ->
+                        navController.navigate(PirateRoute.PublicProfileByWallet.buildRoute(walletAddress)) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
         }
@@ -274,7 +333,8 @@ fun PirateNavHost(
             )
         }
 
-        composable(PirateRoute.Inbox.route) {
+        fun androidx.navigation.NavGraphBuilder.notificationsDestination(route: String) {
+            composable(route) {
             AuthGate(hasSession, navController) {
                 InboxScreen(
                     onOpenPost = { postId ->
@@ -286,12 +346,22 @@ fun PirateNavHost(
                     onOpenCommunityNamespace = { communityId ->
                         navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
                     },
+                    onOpenProfileSettings = {
+                        navController.navigate(PirateRoute.SettingsIndex.route)
+                    },
+                    onVerifyHuman = {
+                        navController.navigate(PirateRoute.VerifyVery.route)
+                    },
                     onSignIn = {
                         navController.navigate(PirateRoute.Auth.route)
                     },
                 )
             }
+            }
         }
+
+        notificationsDestination(PirateRoute.Notifications.route)
+        notificationsDestination(PirateRoute.Inbox.route)
 
         composable(PirateRoute.Wallet.route) {
             AuthGate(hasSession, navController) {
@@ -329,6 +399,9 @@ fun PirateNavHost(
                     viewModel = vm,
                     onSignIn = {
                         navController.navigate(PirateRoute.Auth.route)
+                    },
+                    onEditProfile = {
+                        navController.navigate(PirateRoute.SettingsIndex.route)
                     },
                 )
             }
@@ -414,6 +487,23 @@ fun PirateNavHost(
             }
         }
 
+        composable(PirateRoute.SettingsIndex.route) {
+            AuthGate(hasSession, navController) {
+                SettingsScreen(
+                    section = null,
+                    onBack = { navController.popBackStack() },
+                    onClose = {
+                        navController.navigate(PirateRoute.Me.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onNavigateToSection = { section ->
+                        navController.navigate(PirateRoute.Settings.buildRoute(section))
+                    },
+                )
+            }
+        }
+
         composable(
             route = PirateRoute.Settings.route,
             arguments = listOf(navArgument(PirateRoute.Settings.ARG_SECTION) {
@@ -428,6 +518,14 @@ fun PirateNavHost(
                 SettingsScreen(
                     section = section,
                     onBack = { navController.popBackStack() },
+                    onClose = {
+                        navController.navigate(PirateRoute.Me.route) {
+                            launchSingleTop = true
+                        }
+                    },
+                    onNavigateToSection = { nextSection ->
+                        navController.navigate(PirateRoute.Settings.buildRoute(nextSection))
+                    },
                 )
             }
         }
@@ -489,6 +587,49 @@ fun PirateNavHost(
                 onNavigateToCommunity = {
                     navController.navigate(PirateRoute.Community.buildRoute(it))
                 },
+                onMessage = { address ->
+                    scope.launch {
+                        runCatching {
+                            val selfAddress = activeAddress ?: throw IllegalStateException("Missing chat auth context")
+                            if (!app.chatService.connected.value) app.chatService.connect(selfAddress)
+                            val dmId = app.chatService.newDm(address)
+                            app.chatService.openConversation(dmId)
+                            navController.navigate(PirateRoute.Chat.route) { launchSingleTop = true }
+                        }.onFailure {
+                            showMessage("Message failed: ${it.message ?: "unknown error"}")
+                        }
+                    }
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.PublicProfileByWallet.route,
+            arguments = listOf(navArgument(PirateRoute.PublicProfileByWallet.ARG_WALLET_ADDRESS) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val walletAddress = backStackEntry.arguments?.getString(PirateRoute.PublicProfileByWallet.ARG_WALLET_ADDRESS).orEmpty()
+            PublicProfileScreen(
+                handleLabel = walletAddress,
+                walletAddress = walletAddress,
+                onNavigateToCommunity = {
+                    navController.navigate(PirateRoute.Community.buildRoute(it))
+                },
+                onMessage = { address ->
+                    scope.launch {
+                        runCatching {
+                            val selfAddress = activeAddress ?: throw IllegalStateException("Missing chat auth context")
+                            if (!app.chatService.connected.value) app.chatService.connect(selfAddress)
+                            val dmId = app.chatService.newDm(address)
+                            app.chatService.openConversation(dmId)
+                            navController.navigate(PirateRoute.Chat.route) { launchSingleTop = true }
+                        }.onFailure {
+                            showMessage("Message failed: ${it.message ?: "unknown error"}")
+                        }
+                    }
+                },
                 onBack = { navController.popBackStack() },
             )
         }
@@ -506,9 +647,40 @@ private fun AuthGate(
     if (hasSession) {
         content()
     } else {
-        sc.pirate.app.ui.SignInRequiredScreen(
-            onSignIn = {
-                navController.navigate(PirateRoute.Auth.route)
+        val context = LocalContext.current
+        val app = context.applicationContext as PirateApp
+        val authVm: AuthViewModel = viewModel()
+        val authState by authVm.state.collectAsState()
+        val walletConnectState by app.reownManager.state.collectAsState()
+
+        Box(modifier = Modifier.fillMaxSize())
+        SignInDrawer(
+            state = authState,
+            walletConnectState = walletConnectState,
+            onOpenWalletConnect = {
+                navController.openAppKit(
+                    shouldOpenChooseNetwork = false,
+                    onError = { error ->
+                        app.reownManager.refreshState(
+                            error.message ?: "Could not open wallet chooser."
+                        )
+                    },
+                )
+            },
+            onLoginWallet = authVm::loginWithConnectedWallet,
+            onLoginGoogle = authVm::loginWithGoogle,
+            onLoginTwitter = authVm::loginWithTwitter,
+            onSendEmailCode = authVm::sendEmailCode,
+            onLoginEmail = authVm::loginWithEmail,
+            onLogout = authVm::logout,
+            onDismiss = {
+                navController.navigate(PirateRoute.Home.route) {
+                    popUpTo(navController.graph.findStartDestination().id) {
+                        inclusive = false
+                    }
+                    launchSingleTop = true
+                    restoreState = true
+                }
             },
         )
     }

@@ -20,6 +20,7 @@ import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.NotificationFeedResponse
+import sc.pirate.app.api.model.NotificationSummary
 import sc.pirate.app.api.model.NotificationTasksResponse
 import sc.pirate.app.api.model.OnboardingStatus
 import sc.pirate.app.api.model.PostListResponse
@@ -125,7 +126,10 @@ interface ProfileRepository {
     suspend fun getMe(): Profile
     suspend fun getByUserId(userId: String): Profile
     suspend fun getPublicByHandle(handleLabel: String): PublicProfileResolution
+    suspend fun getPublicByWallet(walletAddress: String): PublicProfileResolution
     suspend fun updateMe(input: ProfileUpdateInput): Profile
+    suspend fun publishXmtpInbox(inboxId: String): Profile
+    suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String
     suspend fun renameHandle(desiredLabel: String): RenameHandleResponse
 }
 
@@ -145,6 +149,7 @@ interface VerificationRepository {
 }
 
 interface NotificationRepository {
+    suspend fun getSummary(): NotificationSummary
     suspend fun getTasks(): NotificationTasksResponse
     suspend fun getFeed(limit: Int? = null, cursor: String? = null): NotificationFeedResponse
     suspend fun markRead(eventIds: List<String> = emptyList())
@@ -380,7 +385,19 @@ class ApiProfileRepository(
         return apiClient.profiles.getPublicByHandle(handleLabel)
     }
 
+    override suspend fun getPublicByWallet(walletAddress: String): PublicProfileResolution {
+        return apiClient.profiles.getPublicByWallet(walletAddress)
+    }
+
     override suspend fun updateMe(input: ProfileUpdateInput): Profile = apiClient.profiles.updateMe(input)
+
+    override suspend fun publishXmtpInbox(inboxId: String): Profile {
+        return apiClient.profiles.publishXmtpInbox(inboxId)
+    }
+
+    override suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String {
+        return apiClient.profiles.uploadMedia(kind, bytes, filename, mimeType).mediaRef
+    }
 
     override suspend fun renameHandle(desiredLabel: String): RenameHandleResponse {
         return apiClient.profiles.renameHandle(desiredLabel)
@@ -433,6 +450,8 @@ class ApiVerificationRepository(
 class ApiNotificationRepository(
     private val apiClient: ApiClient,
 ) : NotificationRepository {
+    override suspend fun getSummary(): NotificationSummary = apiClient.notifications.getSummary()
+
     override suspend fun getTasks(): NotificationTasksResponse = apiClient.notifications.getTasks()
 
     override suspend fun getFeed(limit: Int?, cursor: String?): NotificationFeedResponse {

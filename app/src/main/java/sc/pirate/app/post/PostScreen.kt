@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -37,8 +39,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,14 +54,18 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 import sc.pirate.app.api.CreateCommentRequest
 import sc.pirate.app.api.model.CommentListItem
+import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.LocalizedPostResponse
+import sc.pirate.app.api.model.Profile
+import sc.pirate.app.shared.buildDefaultUserAvatarSrc
+import sc.pirate.app.shared.formatCommunityRouteLabel
+import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
-import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
@@ -66,6 +74,8 @@ import sc.pirate.app.ui.adjustedVoteCount
 data class PostUiState(
     val post: LocalizedPostResponse? = null,
     val comments: List<CommentListItem> = emptyList(),
+    val communityPreview: CommunityPreview? = null,
+    val authorProfiles: Map<String, Profile> = emptyMap(),
     val nextCommentsCursor: String? = null,
     val commentSort: String = "best",
     val loading: Boolean = true,
@@ -93,6 +103,8 @@ data class PostUiState(
 class PostViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val postRepository get() = app.repositories.postRepository
+    private val communityRepository get() = app.repositories.communityRepository
+    private val profileRepository get() = app.repositories.profileRepository
     private val _state = MutableStateFlow(PostUiState())
     val state: StateFlow<PostUiState> = _state.asStateFlow()
     private var currentPostId: String? = null
@@ -116,6 +128,8 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 _state.value = PostUiState(
                     post = post,
+                    communityPreview = loadCommunityPreview(post.post.communityId, hasSession),
+                    authorProfiles = loadAuthorProfiles(listOfNotNull(post.post.authorUserId)),
                     commentSort = commentSort,
                     commentDraft = existingState.commentDraft,
                     loading = false,
@@ -235,6 +249,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 _state.value = _state.value.copy(
                     comments = (_state.value.comments + response.items).distinctBy { it.comment.commentId },
+                    authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
+                        response.items.mapNotNull { it.comment.authorUserId },
+                    ),
                     nextCommentsCursor = response.nextCursor,
                     commentsLoadingMore = false,
                 )
@@ -419,6 +436,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
             }
             _state.value = _state.value.copy(
                 comments = response.items,
+                authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
+                    response.items.mapNotNull { it.comment.authorUserId },
+                ),
                 nextCommentsCursor = response.nextCursor,
                 commentsLoading = false,
                 commentsError = null,
@@ -431,6 +451,33 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
             )
         }
     }
+
+    private suspend fun loadCommunityPreview(communityId: String, hasSession: Boolean): CommunityPreview? =
+        try {
+            if (hasSession) {
+                communityRepository.getPreview(communityId)
+            } else {
+                communityRepository.getPublicPreview(communityId)
+            }
+        } catch (_: Exception) {
+            null
+        }
+
+    private suspend fun loadAuthorProfiles(userIds: List<String>): Map<String, Profile> {
+        val missingUserIds = userIds.distinct().filter { it.isNotBlank() && it !in _state.value.authorProfiles }
+        if (missingUserIds.isEmpty()) return emptyMap()
+
+        val profiles = mutableMapOf<String, Profile>()
+        for (userId in missingUserIds) {
+            val profile = try {
+                profileRepository.getByUserId(userId)
+            } catch (_: Exception) {
+                null
+            }
+            if (profile != null) profiles[userId] = profile
+        }
+        return profiles
+    }
 }
 
 private val commentSortOptions = listOf(
@@ -438,6 +485,102 @@ private val commentSortOptions = listOf(
     ChipOption("new", "New"),
     ChipOption("top", "Top"),
 )
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun CommentSortSheet(
+    selectedSort: String,
+    onDismiss: () -> Unit,
+    onSelected: (String) -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            commentSortOptions.forEach { option ->
+                SortSheetRow(
+                    label = option.label,
+                    selected = option.value == selectedSort,
+                    onClick = { onSelected(option.value) },
+                )
+            }
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun SortSheetRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = PirateTokens.colors.textPrimary,
+        )
+        if (selected) {
+            Text(
+                text = "Selected",
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.accentBrand,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CommentSortPill(
+    selectedSort: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label = commentSortOptions.firstOrNull { it.value == selectedSort }?.label ?: "Best"
+    Surface(
+        modifier = modifier
+            .height(38.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier
+                .height(38.dp)
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+            Icon(
+                imageVector = PhosphorIcons.CaretDown,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -452,6 +595,7 @@ fun PostScreen(
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
+    var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(postId, hasSession) {
         viewModel.loadPost(postId, hasSession)
@@ -459,6 +603,17 @@ fun PostScreen(
 
     authPromptAction?.let {
         signInDrawer { authPromptAction = null }
+    }
+
+    if (commentSortSheetOpen) {
+        CommentSortSheet(
+            selectedSort = state.commentSort,
+            onDismiss = { commentSortSheetOpen = false },
+            onSelected = { sort ->
+                commentSortSheetOpen = false
+                viewModel.setCommentSort(sort)
+            },
+        )
     }
 
     androidx.compose.material3.Scaffold(
@@ -526,6 +681,8 @@ fun PostScreen(
                     item {
                         ThreadRootPost(
                             postResponse = postResponse,
+                            communityPreview = state.communityPreview,
+                            authorProfile = post.authorUserId?.let { state.authorProfiles[it] },
                             isVoting = state.postVoting,
                             onVote = { value ->
                                 if (hasSession) viewModel.votePost(value) else authPromptAction = "Voting"
@@ -556,12 +713,10 @@ fun PostScreen(
                     }
 
                     item {
-                        PirateChipRow(
-                            options = commentSortOptions,
-                            selectedValue = state.commentSort,
-                            onSelected = viewModel::setCommentSort,
+                        CommentSortPill(
+                            selectedSort = state.commentSort,
+                            onClick = { commentSortSheetOpen = true },
                             modifier = Modifier
-                                .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 14.dp),
                         )
                     }
@@ -597,7 +752,7 @@ fun PostScreen(
                             item {
                                 StatusCard(
                                     title = "Comments unavailable",
-                                    description = state.commentsError.orEmpty(),
+                                    description = userFacingCommentsError(state.commentsError),
                                     tone = StatusTone.Warning,
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -624,6 +779,7 @@ fun PostScreen(
                                 val commentId = comment.comment.commentId
                                 CommentRow(
                                     comment = comment,
+                                    authorProfile = comment.comment.authorUserId?.let { state.authorProfiles[it] },
                                     isVoting = commentId in state.votingCommentIds,
                                     onVote = { value ->
                                         if (hasSession) viewModel.voteComment(commentId, value) else authPromptAction = "Voting"
@@ -697,18 +853,26 @@ private fun voteScoreDelta(previousValue: Int?, nextValue: Int): Int =
 @Composable
 private fun ThreadRootPost(
     postResponse: LocalizedPostResponse,
+    communityPreview: CommunityPreview?,
+    authorProfile: Profile?,
     isVoting: Boolean,
     onVote: (Int) -> Unit,
 ) {
     val post = postResponse.post
     val title = postResponse.translatedTitle ?: post.title ?: post.linkOgTitle ?: "Untitled post"
     val body = postResponse.translatedBody ?: post.body ?: post.caption
-    val comments = postResponse.threadSnapshot?.commentCount ?: 0
+    val comments = postResponse.commentCount ?: postResponse.threadSnapshot?.commentCount ?: 0
     val score = postResponse.upvoteCount - postResponse.downvoteCount
-    val routeLabel = "c/${post.communityId}"
-    val authorLabel = post.anonymousLabel
-        ?: post.authorUserId?.take(16)?.let { "$it.pirate" }
-        ?: "anonymous"
+    val routeLabel = formatCommunityRouteLabel(
+        communityId = post.communityId,
+        routeSlug = communityPreview?.routeSlug ?: communityPreview?.displayName,
+    )
+    val authorLabel = resolveAuthorLabel(
+        identityMode = post.identityMode,
+        anonymousLabel = post.anonymousLabel,
+        authorUserId = post.authorUserId,
+        authorProfile = authorProfile,
+    )
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -724,7 +888,7 @@ private fun ThreadRootPost(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CommunityAvatar(label = post.communityId)
+                CommunityAvatar(label = communityPreview?.displayName ?: routeLabel)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = routeLabel,
@@ -764,28 +928,7 @@ private fun ThreadRootPost(
                     enabled = !isVoting,
                     onVote = onVote,
                 )
-                Surface(
-                    shape = RoundedCornerShape(PirateTokens.radius.full),
-                    color = PirateTokens.colors.surfaceSubtle,
-                    border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = PhosphorIcons.ChatCircle,
-                            contentDescription = null,
-                            tint = PirateTokens.colors.textSecondary,
-                        )
-                        Text(
-                            text = comments.toString(),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = PirateTokens.colors.textPrimary,
-                        )
-                    }
-                }
+                CommentCountPill(count = comments)
             }
         }
     }
@@ -831,17 +974,36 @@ private fun InlineReplyComposer(
     }
 }
 
+private fun userFacingCommentsError(error: String?): String {
+    val message = error?.takeIf { it.isNotBlank() } ?: return "Could not load comments."
+    return if (message.contains("serial name") || message.contains("Fields [") || message.contains("required")) {
+        "Could not load comments."
+    } else {
+        message
+    }
+}
+
 @Composable
 private fun CommentRow(
     comment: CommentListItem,
+    authorProfile: Profile?,
     isVoting: Boolean,
     onVote: (Int) -> Unit,
     onReply: () -> Unit,
 ) {
     val model = comment.comment
-    val authorLabel = model.anonymousLabel
-        ?: model.authorUserId?.take(16)?.let { "$it.pirate" }
-        ?: "anonymous"
+    val authorLabel = resolveAuthorLabel(
+        identityMode = model.identityMode,
+        anonymousLabel = model.anonymousLabel,
+        authorUserId = model.authorUserId,
+        authorProfile = authorProfile,
+    )
+    val avatarSrc = resolveCommentAvatarSrc(
+        identityMode = model.identityMode,
+        anonymousLabel = model.anonymousLabel,
+        authorUserId = model.authorUserId,
+        authorProfile = authorProfile,
+    )
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = PirateTokens.colors.bgPage,
@@ -851,7 +1013,10 @@ private fun CommentRow(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Spacer(modifier = Modifier.size(14.dp))
+            CommentAvatar(
+                label = authorLabel,
+                avatarSrc = avatarSrc,
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -889,27 +1054,139 @@ private fun CommentRow(
                         enabled = !isVoting,
                         onVote = onVote,
                     )
-                    Row(
-                        modifier = Modifier.clickable(onClick = onReply),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = PhosphorIcons.ChatCircle,
-                            contentDescription = null,
-                            tint = PirateTokens.colors.textSecondary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(
-                            text = "Reply",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = PirateTokens.colors.textPrimary,
-                        )
-                    }
+                    ReplyPill(onClick = onReply)
                 }
             }
         }
     }
+}
+
+@Composable
+private fun CommentAvatar(
+    label: String,
+    avatarSrc: String,
+) {
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(RoundedCornerShape(PirateTokens.radius.full))
+            .background(PirateTokens.colors.bgElevated),
+        contentAlignment = Alignment.Center,
+    ) {
+        AsyncImage(
+            model = avatarSrc,
+            contentDescription = label,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+    }
+}
+
+@Composable
+private fun CommentCountPill(
+    count: Int,
+) {
+    Surface(
+        modifier = Modifier.height(38.dp),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier
+                .height(38.dp)
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.ChatCircle,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplyPill(
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .height(38.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier
+                .height(38.dp)
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.ChatCircle,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(17.dp),
+            )
+            Text(
+                text = "Reply",
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+    }
+}
+
+private fun resolveAuthorLabel(
+    identityMode: String?,
+    anonymousLabel: String?,
+    authorUserId: String?,
+    authorProfile: Profile?,
+): String {
+    if (identityMode == "anonymous") {
+        return anonymousLabel ?: "anon"
+    }
+
+    return authorProfile?.globalHandle?.label?.let(::formatPirateHandle)
+        ?: authorUserId?.take(8)
+        ?: "Pirate user"
+}
+
+private fun resolveCommentAvatarSrc(
+    identityMode: String?,
+    anonymousLabel: String?,
+    authorUserId: String?,
+    authorProfile: Profile?,
+): String {
+    if (identityMode != "anonymous") {
+        val avatar = resolvePublicMediaSrc(authorProfile?.avatarRef)
+        if (avatar != null) return avatar
+    }
+
+    val seed = when {
+        identityMode == "anonymous" -> anonymousLabel
+        !authorProfile?.globalHandle?.label.isNullOrBlank() -> authorProfile?.globalHandle?.label
+        !authorUserId.isNullOrBlank() -> authorUserId
+        else -> anonymousLabel
+    } ?: "comment"
+    return buildDefaultUserAvatarSrc(seed)
+}
+
+private fun formatPirateHandle(label: String): String {
+    val trimmed = label.trim()
+    if (trimmed.isBlank()) return trimmed
+    return if (trimmed.endsWith(".pirate", ignoreCase = true)) trimmed else "$trimmed.pirate"
 }
 
 @Composable

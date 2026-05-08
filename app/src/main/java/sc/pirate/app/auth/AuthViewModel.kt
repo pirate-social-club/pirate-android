@@ -27,7 +27,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionStore get() = app.sessionStore
     private val privyConfig = PrivyRuntimeConfig.fromBuildConfig()
 
-    private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Idle)
+    private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Loading)
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
     init {
@@ -36,10 +36,29 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             if (existing != null) {
                 _state.value = AuthUiState.Authenticated(existing)
             } else {
-                privyConfig.disabledReason()?.let { reason ->
-                    _state.value = AuthUiState.Unavailable(reason)
+                val disabledReason = privyConfig.disabledReason()
+                if (disabledReason != null) {
+                    _state.value = AuthUiState.Unavailable(disabledReason)
+                } else {
+                    restorePrivySession()
                 }
             }
+        }
+    }
+
+    private suspend fun restorePrivySession() {
+        try {
+            val privy = PrivyClientStore.get(getApplication(), privyConfig)
+            privy.awaitReady()
+            val user = PrivyClientStore.lastAuthenticatedUser ?: privy.getUser()
+            if (user != null) {
+                PrivyClientStore.setUser(user)
+                exchangePrivyToken(user)
+            } else {
+                _state.value = AuthUiState.Idle
+            }
+        } catch (_: Exception) {
+            _state.value = privyConfig.disabledReason()?.let(AuthUiState::Unavailable) ?: AuthUiState.Idle
         }
     }
 
