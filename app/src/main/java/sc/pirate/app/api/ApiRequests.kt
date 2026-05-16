@@ -75,16 +75,6 @@ data class CreateCommentRequest(
 )
 
 @Serializable
-data class StartRedditVerificationRequest(
-    @kotlinx.serialization.SerialName("reddit_username") val redditUsername: String,
-)
-
-@Serializable
-data class StartRedditImportRequest(
-    @kotlinx.serialization.SerialName("reddit_username") val redditUsername: String,
-)
-
-@Serializable
 data class RenameHandleRequest(
     @kotlinx.serialization.SerialName("desired_label") val desiredLabel: String,
 )

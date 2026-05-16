@@ -27,8 +27,6 @@ import sc.pirate.app.api.model.PostListResponse
 import sc.pirate.app.api.model.PostVoteResponse
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.api.model.PublicProfileResolution
-import sc.pirate.app.api.model.RedditImportSummary
-import sc.pirate.app.api.model.RedditVerification
 import sc.pirate.app.api.model.SessionExchangeResponse
 import sc.pirate.app.api.model.UserTask
 import sc.pirate.app.api.model.VerificationSession
@@ -40,9 +38,6 @@ interface AuthRepository {
 interface OnboardingRepository {
     suspend fun getStatus(): OnboardingStatus
     suspend fun dismiss(): OnboardingStatus
-    suspend fun startRedditVerification(username: String): RedditVerification
-    suspend fun startRedditImport(username: String): String
-    suspend fun getLatestRedditImport(): RedditImportSummary
 }
 
 interface FeedRepository {
@@ -170,18 +165,6 @@ class ApiOnboardingRepository(
     override suspend fun getStatus(): OnboardingStatus = apiClient.onboarding.getStatus()
 
     override suspend fun dismiss(): OnboardingStatus = apiClient.onboarding.dismiss()
-
-    override suspend fun startRedditVerification(username: String): RedditVerification {
-        return apiClient.onboarding.startRedditVerification(username)
-    }
-
-    override suspend fun startRedditImport(username: String): String {
-        return apiClient.onboarding.startRedditImport(username)
-    }
-
-    override suspend fun getLatestRedditImport(): RedditImportSummary {
-        return apiClient.onboarding.getLatestRedditImport()
-    }
 }
 
 class ApiFeedRepository(

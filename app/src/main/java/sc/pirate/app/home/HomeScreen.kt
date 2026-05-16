@@ -24,20 +24,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -45,7 +41,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -333,14 +328,13 @@ fun HomeScreen(
     onNavigateToInbox: () -> Unit,
     onNavigateToProfile: () -> Unit,
     onNavigateToCreateCommunity: () -> Unit,
+    onOpenNavigation: () -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val feed = state.feed
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
     var actionItem by remember { mutableStateOf<HomeFeedItem?>(null) }
@@ -390,62 +384,11 @@ fun HomeScreen(
         )
     }
 
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            HomeNavigationDrawer(
-                onClose = { scope.launch { drawerState.close() } },
-                onHome = { scope.launch { drawerState.close() } },
-                onPopular = {
-                    scope.launch {
-                        drawerState.close()
-                        viewModel.setSort("best")
-                    }
-                },
-                onYourCommunities = {
-                    scope.launch {
-                        drawerState.close()
-                        onNavigateToYourCommunities()
-                    }
-                },
-                onWallet = {
-                    scope.launch {
-                        drawerState.close()
-                        onNavigateToWallet()
-                    }
-                },
-                onChat = {
-                    scope.launch {
-                        drawerState.close()
-                        onNavigateToChat()
-                    }
-                },
-                onInbox = {
-                    scope.launch {
-                        drawerState.close()
-                        onNavigateToInbox()
-                    }
-                },
-                onProfile = {
-                    scope.launch {
-                        drawerState.close()
-                        onNavigateToProfile()
-                    }
-                },
-                onCreateCommunity = {
-                    scope.launch {
-                        drawerState.close()
-                        if (hasSession) onNavigateToCreateCommunity() else authPromptAction = "Creating a community"
-                    }
-                },
-            )
-        },
-    ) {
-        Scaffold(
+    Scaffold(
             topBar = {
                 TopAppBar(
                     navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        IconButton(onClick = onOpenNavigation) {
                             Icon(
                                 imageVector = PhosphorIcons.List,
                                 contentDescription = "Open navigation",
@@ -593,7 +536,6 @@ fun HomeScreen(
                 }
             }
         }
-    }
 }
 
 private fun HomeFeedItem.homeCommunityId(): String =
@@ -905,101 +847,6 @@ private fun HomeInlineMessage(
             style = MaterialTheme.typography.bodyMedium,
             color = PirateTokens.colors.textSecondary,
             textAlign = TextAlign.Center,
-        )
-    }
-}
-
-@Composable
-private fun HomeNavigationDrawer(
-    onClose: () -> Unit,
-    onHome: () -> Unit,
-    onPopular: () -> Unit,
-    onYourCommunities: () -> Unit,
-    onWallet: () -> Unit,
-    onChat: () -> Unit,
-    onInbox: () -> Unit,
-    onProfile: () -> Unit,
-    onCreateCommunity: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    ModalDrawerSheet(
-        modifier = modifier,
-        drawerContainerColor = PirateTokens.colors.bgPage,
-        drawerContentColor = PirateTokens.colors.textPrimary,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Pirate",
-                    style = MaterialTheme.typography.headlineSmall,
-                    color = PirateTokens.colors.textPrimary,
-                )
-                IconButton(onClick = onClose) {
-                    Icon(
-                        imageVector = PhosphorIcons.CaretLeft,
-                        contentDescription = "Close navigation",
-                        tint = PirateTokens.colors.textPrimary,
-                    )
-                }
-            }
-            DrawerSectionLabel("Feed")
-            DrawerRow("Popular", PhosphorIcons.Fire, onPopular)
-            DrawerRow("Top", PhosphorIcons.TrendUp, onHome)
-            DrawerSectionLabel("Pirate")
-            DrawerRow("Home", PhosphorIcons.House, onHome)
-            DrawerRow("Your Communities", PhosphorIcons.Flag, onYourCommunities)
-            DrawerRow("Agents", PhosphorIcons.Robot, onChat)
-            DrawerRow("Create Community", PhosphorIcons.Plus, onCreateCommunity)
-            DrawerSectionLabel("Account")
-            DrawerRow("Wallet", PhosphorIcons.Wallet, onWallet)
-            DrawerRow("Notifications", PhosphorIcons.Bell, onInbox)
-            DrawerRow("Profile", PhosphorIcons.UserCircle, onProfile)
-        }
-    }
-}
-
-@Composable
-private fun DrawerSectionLabel(label: String) {
-    Text(
-        text = label.uppercase(),
-        style = MaterialTheme.typography.labelLarge,
-        color = PirateTokens.colors.textSecondary.copy(alpha = 0.55f),
-        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
-    )
-}
-
-@Composable
-private fun DrawerRow(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    onClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = PirateTokens.colors.textSecondary,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.titleMedium,
-            color = PirateTokens.colors.textPrimary,
         )
     }
 }

@@ -543,10 +543,11 @@ data class CreatePostRequest(
 
 @Serializable
 data class OnboardingStatus(
-    @SerialName("reddit_verification_status") val redditVerificationStatus: String,
-    @SerialName("reddit_import_status") val redditImportStatus: String,
-    @SerialName("cleanup_rename_available") val cleanupRenameAvailable: Boolean,
-    @SerialName("onboarding_dismissed_at") val onboardingDismissedAt: String? = null,
+    @SerialName("reddit_verification_status") val redditVerificationStatus: String = "not_started",
+    @SerialName("reddit_import_status") val redditImportStatus: String = "not_started",
+    @SerialName("cleanup_rename_available") val cleanupRenameAvailable: Boolean = false,
+    @SerialName("onboarding_dismissed_at") val onboardingDismissedAt: JsonElement? = null,
+    val dismissed: JsonElement? = null,
     @SerialName("unique_human_verification_status") val uniqueHumanVerificationStatus: String? = null,
 )
 

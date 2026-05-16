@@ -45,7 +45,6 @@ import sc.pirate.app.shared.buildDefaultProfileCoverSrc
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
-import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.shortAddress

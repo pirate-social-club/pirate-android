@@ -213,23 +213,6 @@ class ApiClient(private val sessionStore: SessionStore) {
             val response = api.postString("/onboarding/dismiss", "{}")
             return api.json.decodeFromString(OnboardingStatus.serializer(), response)
         }
-
-        suspend fun startRedditVerification(username: String): RedditVerification {
-            val body = api.json.encodeToString(StartRedditVerificationRequest.serializer(), StartRedditVerificationRequest(username))
-            val response = api.postString("/onboarding/reddit-verification", body)
-            return api.json.decodeFromString(RedditVerification.serializer(), response)
-        }
-
-        suspend fun startRedditImport(username: String): String {
-            val body = api.json.encodeToString(StartRedditImportRequest.serializer(), StartRedditImportRequest(username))
-            val response = api.postString("/onboarding/reddit-imports", body)
-            return response
-        }
-
-        suspend fun getLatestRedditImport(): RedditImportSummary {
-            val response = api.getString("/onboarding/reddit-imports/latest")
-            return api.json.decodeFromString(RedditImportSummary.serializer(), response)
-        }
     }
 
     class VerificationEndpoints internal constructor(private val api: ApiClient) {

@@ -15,12 +15,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -33,6 +37,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import com.google.accompanist.navigation.material.ExperimentalMaterialNavigationApi
 import com.google.accompanist.navigation.material.ModalBottomSheetLayout
 import com.google.accompanist.navigation.material.rememberBottomSheetNavigator
+import kotlinx.coroutines.launch
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTokens
 
@@ -53,12 +58,23 @@ fun PirateScaffold(
     hasSession: Boolean,
     hideChatBottomBar: Boolean = false,
     onRequireAuth: () -> Unit,
-    content: @Composable (NavHostController, Modifier) -> Unit,
+    drawerContent: @Composable (NavHostController, () -> Unit, (() -> Unit) -> Unit) -> Unit,
+    content: @Composable (NavHostController, Modifier, () -> Unit) -> Unit,
 ) {
     val bottomSheetNavigator = rememberBottomSheetNavigator()
     val navController = rememberNavController(bottomSheetNavigator)
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     val navBackStackEntry = navController.currentBackStackEntryAsState().value
     val currentRoute = navBackStackEntry?.destination?.route
+    val openDrawer = { scope.launch { drawerState.open() }; Unit }
+    val closeDrawer = { scope.launch { drawerState.close() }; Unit }
+    val runAfterDrawerClose: (() -> Unit) -> Unit = { action ->
+        scope.launch {
+            drawerState.close()
+            action()
+        }
+    }
 
     val showBottomBar =
         currentRoute in listOf(
@@ -71,60 +87,66 @@ fun PirateScaffold(
             PirateRoute.Me.route,
         ) && !(currentRoute == PirateRoute.Chat.route && hideChatBottomBar)
 
-    ModalBottomSheetLayout(bottomSheetNavigator = bottomSheetNavigator) {
-        Scaffold(
-            contentWindowInsets = WindowInsets(0),
-            bottomBar = {
-                if (showBottomBar) {
-                    Surface(
-                        color = PirateTokens.colors.bgPage.copy(alpha = 0.95f),
-                        tonalElevation = 0.dp,
-                        shadowElevation = 0.dp,
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(64.dp)
-                                .navigationBarsPadding()
-                                .padding(horizontal = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceAround,
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = { drawerContent(navController, closeDrawer, runAfterDrawerClose) },
+    ) {
+        ModalBottomSheetLayout(bottomSheetNavigator = bottomSheetNavigator) {
+            Scaffold(
+                contentWindowInsets = WindowInsets(0),
+                bottomBar = {
+                    if (showBottomBar) {
+                        Surface(
+                            color = PirateTokens.colors.bgPage.copy(alpha = 0.95f),
+                            tonalElevation = 0.dp,
+                            shadowElevation = 0.dp,
                         ) {
-                            bottomItems.forEach { item ->
-                                val selected = currentRoute in item.activeRoutes
-                                BottomNavIcon(
-                                    item = item,
-                                    selected = selected,
-                                    onClick = {
-                                        if (!selected) {
-                                            if (item.requiresAuth && !hasSession) {
-                                                onRequireAuth()
-                                                return@BottomNavIcon
-                                            }
-                                            navController.navigate(item.route) {
-                                                popUpTo(navController.graph.findStartDestination().id) {
-                                                    saveState = true
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(64.dp)
+                                    .navigationBarsPadding()
+                                    .padding(horizontal = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceAround,
+                            ) {
+                                bottomItems.forEach { item ->
+                                    val selected = currentRoute in item.activeRoutes
+                                    BottomNavIcon(
+                                        item = item,
+                                        selected = selected,
+                                        onClick = {
+                                            if (!selected) {
+                                                if (item.requiresAuth && !hasSession) {
+                                                    onRequireAuth()
+                                                    return@BottomNavIcon
                                                 }
-                                                launchSingleTop = true
-                                                restoreState = true
+                                                navController.navigate(item.route) {
+                                                    popUpTo(navController.graph.findStartDestination().id) {
+                                                        saveState = true
+                                                    }
+                                                    launchSingleTop = true
+                                                    restoreState = true
+                                                }
                                             }
-                                        }
-                                    },
-                                )
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
-                }
-            },
-        ) { innerPadding ->
-            content(
-                navController,
-                Modifier.padding(
-                    start = innerPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                    top = innerPadding.calculateTopPadding(),
-                    end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
-                    bottom = innerPadding.calculateBottomPadding(),
-                ).statusBarsPadding()
-            )
+                },
+            ) { innerPadding ->
+                content(
+                    navController,
+                    Modifier.padding(
+                        start = innerPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                        top = innerPadding.calculateTopPadding(),
+                        end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                        bottom = innerPadding.calculateBottomPadding(),
+                    ).statusBarsPadding(),
+                    openDrawer,
+                )
+            }
         }
     }
 }

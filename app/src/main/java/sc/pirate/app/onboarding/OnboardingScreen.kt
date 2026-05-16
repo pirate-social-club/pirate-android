@@ -12,12 +12,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -26,29 +22,24 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonElement
 import sc.pirate.app.api.model.OnboardingStatus
-import sc.pirate.app.api.model.RedditVerification
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
-import sc.pirate.app.ui.StatusCard
-import sc.pirate.app.ui.StatusTone
 
 enum class OnboardingPhase {
-    ImportKarma,
     ChooseName,
     SuggestedCommunities,
 }
 
 data class OnboardingUiState(
-    val phase: OnboardingPhase = OnboardingPhase.ImportKarma,
+    val phase: OnboardingPhase = OnboardingPhase.SuggestedCommunities,
     val loading: Boolean = true,
     val error: String? = null,
     val onboardingStatus: OnboardingStatus? = null,
-    val redditUsername: String = "",
-    val redditVerification: RedditVerification? = null,
-    val importJobStatus: String = "not_started",
     val generatedHandle: String = "",
     val actionLoading: Boolean = false,
 )
@@ -83,77 +74,8 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    fun updateRedditUsername(username: String) {
-        _state.value = _state.value.copy(redditUsername = username)
-    }
-
     fun updateGeneratedHandle(handle: String) {
         _state.value = _state.value.copy(generatedHandle = handle)
-    }
-
-    fun startRedditVerification() {
-        val username = _state.value.redditUsername.trim()
-        if (username.isBlank()) return
-
-        viewModelScope.launch {
-            _state.value = _state.value.copy(actionLoading = true, error = null)
-            try {
-                val result = onboardingRepository.startRedditVerification(username)
-                _state.value = _state.value.copy(
-                    redditVerification = result,
-                    actionLoading = false,
-                )
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(
-                    actionLoading = false,
-                    error = e.message ?: "Verification failed",
-                )
-            }
-        }
-    }
-
-    fun startRedditImport() {
-        val username = _state.value.redditVerification?.redditUsername
-            ?: _state.value.redditUsername.trim()
-        if (username.isBlank()) return
-
-        viewModelScope.launch {
-            _state.value = _state.value.copy(actionLoading = true, error = null)
-            try {
-                onboardingRepository.startRedditImport(username)
-                _state.value = _state.value.copy(
-                    importJobStatus = "queued",
-                    actionLoading = false,
-                )
-                pollImportStatus()
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(
-                    actionLoading = false,
-                    error = e.message ?: "Import failed",
-                )
-            }
-        }
-    }
-
-    private fun pollImportStatus() {
-        viewModelScope.launch {
-            while (_state.value.importJobStatus in listOf("queued", "running")) {
-                kotlinx.coroutines.delay(3000)
-                try {
-                    val status = onboardingRepository.getStatus()
-                    _state.value = _state.value.copy(onboardingStatus = status)
-                    val importStatus = status.redditImportStatus
-                    if (importStatus in listOf("succeeded", "failed")) {
-                        _state.value = _state.value.copy(
-                            importJobStatus = importStatus,
-                            phase = resolvePhase(status),
-                        )
-                        break
-                    }
-                    _state.value = _state.value.copy(importJobStatus = importStatus)
-                } catch (_: Exception) { }
-            }
-        }
     }
 
     fun renameHandle() {
@@ -198,12 +120,15 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun resolvePhase(status: OnboardingStatus): OnboardingPhase =
         when {
-            status.onboardingDismissedAt != null -> OnboardingPhase.SuggestedCommunities
-            status.redditVerificationStatus != "verified" ||
-                status.redditImportStatus != "succeeded" -> OnboardingPhase.ImportKarma
+            status.hasDismissedOnboarding() -> OnboardingPhase.SuggestedCommunities
             status.cleanupRenameAvailable -> OnboardingPhase.ChooseName
             else -> OnboardingPhase.SuggestedCommunities
         }
+
+    private fun OnboardingStatus.hasDismissedOnboarding(): Boolean =
+        onboardingDismissedAt.hasJsonValue() || dismissed.hasJsonValue()
+
+    private fun JsonElement?.hasJsonValue(): Boolean = this != null && this !is JsonNull
 }
 
 @Composable
@@ -241,13 +166,6 @@ fun OnboardingScreen(
         }
 
         when (state.phase) {
-            OnboardingPhase.ImportKarma -> ImportKarmaStep(
-                state = state,
-                onUsernameChange = viewModel::updateRedditUsername,
-                onVerify = viewModel::startRedditVerification,
-                onImport = viewModel::startRedditImport,
-                onSkip = { viewModel.dismissOnboarding(onComplete) },
-            )
             OnboardingPhase.ChooseName -> ChooseNameStep(
                 state = state,
                 onHandleChange = viewModel::updateGeneratedHandle,
@@ -268,89 +186,6 @@ fun OnboardingScreen(
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun ImportKarmaStep(
-    state: OnboardingUiState,
-    onUsernameChange: (String) -> Unit,
-    onVerify: () -> Unit,
-    onImport: () -> Unit,
-    onSkip: () -> Unit,
-) {
-    val verState = state.redditVerification
-    val isVerified = verState?.status == "verified"
-    val isCodeReady = verState?.status == "pending"
-    val isImportDone = state.importJobStatus == "succeeded"
-
-    PirateCard {
-        Text(
-            text = "Import your Reddit identity",
-            style = MaterialTheme.typography.titleLarge,
-            color = PirateTokens.colors.textPrimary,
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (isImportDone) {
-            StatusCard(
-                title = "Import complete",
-                description = "Your Reddit karma and identity have been imported.",
-                tone = StatusTone.Success,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            PirateButton(text = "Continue", onClick = onImport, modifier = Modifier.fillMaxWidth())
-        } else if (isVerified && !isImportDone) {
-            StatusCard(
-                title = "Reddit verified",
-                description = "Your Reddit account has been verified. Start the import.",
-                tone = StatusTone.Success,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            PirateButton(
-                text = "Import karma",
-                onClick = onImport,
-                loading = state.actionLoading,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        } else if (isCodeReady) {
-            StatusCard(
-                title = "Verification code ready",
-                description = verState?.verificationHint ?: "Place the verification code on your Reddit profile.",
-                tone = StatusTone.Warning,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            PirateButton(
-                text = "Check verification",
-                onClick = onVerify,
-                loading = state.actionLoading,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        } else {
-            OutlinedTextField(
-                value = state.redditUsername,
-                onValueChange = onUsernameChange,
-                label = { Text("Reddit username") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            PirateButton(
-                text = "Verify Reddit account",
-                onClick = onVerify,
-                enabled = state.redditUsername.isNotBlank(),
-                loading = state.actionLoading,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-        PirateButton(
-            text = "Skip",
-            onClick = onSkip,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }
 

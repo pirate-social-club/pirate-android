@@ -57,6 +57,7 @@ private const val TAG = "PirateNavHost"
 @Composable
 fun PirateNavHost(
     navController: NavHostController,
+    onOpenNavigation: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -190,6 +191,7 @@ fun PirateNavHost(
                 onNavigateToCreateCommunity = {
                     navController.navigate(PirateRoute.CreateCommunity.route)
                 },
+                onOpenNavigation = onOpenNavigation,
                 signInDrawer = { onDismiss ->
                     SignInDrawer(
                         state = authState,
