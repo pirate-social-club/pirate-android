@@ -62,6 +62,10 @@ class SessionRefresher(private val app: PirateApp) {
             Log.i(TAG, "Session refreshed successfully")
         } catch (e: Exception) {
             Log.w(TAG, "Session refresh failed (attempt ${retryCount + 1}): ${e.message}")
+            if (e is ApiError && e.code == "auth_error") {
+                app.sessionStore.clear()
+                return
+            }
             if (retryCount < MAX_RETRIES) {
                 delay(RETRY_DELAY_MS)
                 attemptRefresh(retryCount + 1)

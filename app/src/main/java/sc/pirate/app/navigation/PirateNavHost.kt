@@ -33,6 +33,7 @@ import sc.pirate.app.community.CommunityViewModel
 import sc.pirate.app.createcommunity.CreateCommunityScreen
 import sc.pirate.app.home.HomeScreen
 import sc.pirate.app.inbox.InboxScreen
+import sc.pirate.app.live.LiveRoomWebViewScreen
 import sc.pirate.app.moderation.CommunityModerationScreen
 import sc.pirate.app.onboarding.OnboardingScreen
 import sc.pirate.app.onboarding.OnboardingViewModel
@@ -279,6 +280,11 @@ fun PirateNavHost(
                 onNavigateToCompose = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
                 },
+                onWatchLiveRoom = {
+                    navController.navigate(PirateRoute.LiveRoomWeb.buildRoute(postId)) {
+                        launchSingleTop = true
+                    }
+                },
                 signInDrawer = { onDismiss ->
                     SignInDrawer(
                         state = authState,
@@ -302,6 +308,20 @@ fun PirateNavHost(
                         onDismiss = onDismiss,
                     )
                 },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.LiveRoomWeb.route,
+            arguments = listOf(navArgument(PirateRoute.LiveRoomWeb.ARG_POST_ID) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val postId = backStackEntry.arguments?.getString(PirateRoute.LiveRoomWeb.ARG_POST_ID).orEmpty()
+            LiveRoomWebViewScreen(
+                app = app,
+                postId = postId,
                 onBack = { navController.popBackStack() },
             )
         }

@@ -32,6 +32,7 @@ jobs:
       PRIVY_APP_CLIENT_ID: ${{ secrets.PRIVY_APP_CLIENT_ID }}
       REOWN_PROJECT_ID: 08db15bf8bdb09d1cbc714f4c39d11a8
       REOWN_REDIRECT_URI: pirate://wallet-connect
+      VERY_SDK_KEY: ${{ secrets.VERY_SDK_KEY }}
 
     steps:
       - name: Check out repository

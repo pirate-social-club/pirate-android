@@ -52,11 +52,19 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
+import java.util.Locale
 import sc.pirate.app.api.CreateCommentRequest
 import sc.pirate.app.api.model.CommentListItem
+import sc.pirate.app.api.model.CommunityListing
 import sc.pirate.app.api.model.CommunityPreview
+import sc.pirate.app.api.model.CommunityPurchase
+import sc.pirate.app.api.model.CommunityPurchaseSettlementFailureRequest
+import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
+import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.Profile
+import sc.pirate.app.commerce.buildStoryCheckoutQuoteRequest
+import sc.pirate.app.commerce.resolveStoryCheckoutTransferInput
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
@@ -90,6 +98,14 @@ data class PostUiState(
     val replyDraftsByParentId: Map<String, String> = emptyMap(),
     val submittingReplyParentIds: Set<String> = emptySet(),
     val votingCommentIds: Set<String> = emptySet(),
+    val liveRoomAccess: LiveRoomAccessResponse? = null,
+    val liveRoomListing: CommunityListing? = null,
+    val liveRoomPurchase: CommunityPurchase? = null,
+    val assetListing: CommunityListing? = null,
+    val assetPurchase: CommunityPurchase? = null,
+    val purchaseSubmitting: Boolean = false,
+    val purchaseError: String? = null,
+    val purchaseMessage: String? = null,
     val error: String? = null,
     val commentsError: String? = null,
     val commentsPaginationError: String? = null,
@@ -98,6 +114,14 @@ data class PostUiState(
     val repliesErrorByParentId: Map<String, String> = emptyMap(),
     val replySubmitErrorByParentId: Map<String, String> = emptyMap(),
     val commentVoteError: String? = null,
+)
+
+private data class PostCommerceEnrichment(
+    val liveRoomAccess: LiveRoomAccessResponse? = null,
+    val liveRoomListing: CommunityListing? = null,
+    val liveRoomPurchase: CommunityPurchase? = null,
+    val assetListing: CommunityListing? = null,
+    val assetPurchase: CommunityPurchase? = null,
 )
 
 class PostViewModel(application: Application) : AndroidViewModel(application) {
@@ -126,6 +150,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     postRepository.getPublicPost(postId)
                 }
+                val commerce = loadPostCommerce(post, hasSession)
                 _state.value = PostUiState(
                     post = post,
                     communityPreview = loadCommunityPreview(post.post.communityId, hasSession),
@@ -134,6 +159,11 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     commentDraft = existingState.commentDraft,
                     loading = false,
                     commentsLoading = true,
+                    liveRoomAccess = commerce.liveRoomAccess,
+                    liveRoomListing = commerce.liveRoomListing,
+                    liveRoomPurchase = commerce.liveRoomPurchase,
+                    assetListing = commerce.assetListing,
+                    assetPurchase = commerce.assetPurchase,
                 )
                 loadTopLevelComments(post, hasSession)
             } catch (e: Exception) {
@@ -418,6 +448,82 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun buyLiveRoomTicket() {
+        val current = _state.value
+        val postResponse = current.post ?: return
+        val listing = current.liveRoomListing ?: return
+        if (current.purchaseSubmitting) return
+
+        _state.value = current.copy(
+            purchaseSubmitting = true,
+            purchaseError = null,
+            purchaseMessage = null,
+        )
+
+        viewModelScope.launch {
+            var quoteId: String? = null
+            var fundingTxRef: String? = null
+            try {
+                val session = requireNotNull(app.sessionStore.get()) {
+                    "Sign in before buying a ticket."
+                }
+                val walletAttachmentId = session.walletAttachments
+                    .firstOrNull { it.isPrimary }
+                    ?.walletAttachmentId
+                    ?: session.walletAttachments.firstOrNull()?.walletAttachmentId
+                    ?: error("Link a wallet before buying a ticket.")
+                val quote = communityRepository.createPurchaseQuote(
+                    communityId = postResponse.post.communityId,
+                    request = buildStoryCheckoutQuoteRequest(
+                        listingId = listing.id,
+                        selectedWalletChainId = app.reownManager.state.value.selectedChain,
+                    ),
+                )
+                quoteId = quote.id
+                val transfer = resolveStoryCheckoutTransferInput(quote)
+                fundingTxRef = app.reownManager.sendErc20Transfer(
+                    tokenAddress = transfer.tokenAddress,
+                    recipientAddress = transfer.recipientAddress,
+                    amountAtomic = transfer.amountAtomic,
+                    chainId = transfer.walletChainId,
+                )
+                communityRepository.settlePurchase(
+                    communityId = postResponse.post.communityId,
+                    request = CommunityPurchaseSettlementRequest(
+                        quote = quote.id,
+                        settlementWalletAttachment = walletAttachmentId,
+                        fundingTxRef = fundingTxRef,
+                        settlementTxRef = fundingTxRef,
+                    ),
+                )
+                val commerce = loadPostCommerce(postResponse, hasSession = true)
+                _state.value = _state.value.copy(
+                    liveRoomAccess = commerce.liveRoomAccess,
+                    liveRoomListing = commerce.liveRoomListing,
+                    liveRoomPurchase = commerce.liveRoomPurchase,
+                    assetListing = commerce.assetListing,
+                    assetPurchase = commerce.assetPurchase,
+                    purchaseSubmitting = false,
+                    purchaseMessage = "Ticket purchase submitted.",
+                )
+            } catch (e: Exception) {
+                val failedQuoteId = quoteId
+                if (failedQuoteId != null && fundingTxRef == null) {
+                    runCatching {
+                        communityRepository.failPurchase(
+                            communityId = postResponse.post.communityId,
+                            request = CommunityPurchaseSettlementFailureRequest(quote = failedQuoteId),
+                        )
+                    }
+                }
+                _state.value = _state.value.copy(
+                    purchaseSubmitting = false,
+                    purchaseError = e.message ?: "Failed to buy ticket",
+                )
+            }
+        }
+    }
+
     private suspend fun loadTopLevelComments(post: LocalizedPostResponse, hasSession: Boolean) {
         try {
             val response = if (hasSession) {
@@ -462,6 +568,33 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {
             null
         }
+
+    private suspend fun loadPostCommerce(postResponse: LocalizedPostResponse, hasSession: Boolean): PostCommerceEnrichment {
+        val post = postResponse.post
+        val communityId = post.communityId.takeIf { it.isNotBlank() } ?: return PostCommerceEnrichment()
+        val anchorLiveRoom = post.anchorLiveRoom?.takeIf { it.isNotBlank() }
+        val assetId = post.assetId?.takeIf { it.isNotBlank() }
+        if (anchorLiveRoom == null && assetId == null) return PostCommerceEnrichment()
+        if (!hasSession) {
+            return PostCommerceEnrichment(
+                liveRoomAccess = anchorLiveRoom?.let {
+                    runCatching { communityRepository.getPublicLiveRoomAccess(communityId, it) }.getOrNull()
+                },
+            )
+        }
+
+        val listings = runCatching { communityRepository.listListings(communityId).items }.getOrDefault(emptyList())
+        val purchases = runCatching { communityRepository.listPurchases(communityId).items }.getOrDefault(emptyList())
+        return PostCommerceEnrichment(
+            liveRoomAccess = anchorLiveRoom?.let {
+                runCatching { communityRepository.getLiveRoomAccess(communityId, it) }.getOrNull()
+            },
+            liveRoomListing = anchorLiveRoom?.let { liveRoomId -> listings.firstOrNull { it.liveRoom == liveRoomId } },
+            liveRoomPurchase = anchorLiveRoom?.let { liveRoomId -> purchases.firstOrNull { it.liveRoom == liveRoomId } },
+            assetListing = assetId?.let { nextAssetId -> listings.firstOrNull { it.asset == nextAssetId } },
+            assetPurchase = assetId?.let { nextAssetId -> purchases.firstOrNull { it.asset == nextAssetId } },
+        )
+    }
 
     private suspend fun loadAuthorProfiles(userIds: List<String>): Map<String, Profile> {
         val missingUserIds = userIds.distinct().filter { it.isNotBlank() && it !in _state.value.authorProfiles }
@@ -588,6 +721,7 @@ fun PostScreen(
     postId: String,
     hasSession: Boolean,
     onNavigateToCompose: ((String) -> Unit)? = null,
+    onWatchLiveRoom: () -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -684,8 +818,22 @@ fun PostScreen(
                             communityPreview = state.communityPreview,
                             authorProfile = post.authorUserId?.let { state.authorProfiles[it] },
                             isVoting = state.postVoting,
+                            liveRoomAccess = state.liveRoomAccess,
+                            liveRoomListing = state.liveRoomListing,
+                            liveRoomPurchase = state.liveRoomPurchase,
+                            assetListing = state.assetListing,
+                            assetPurchase = state.assetPurchase,
+                            purchaseSubmitting = state.purchaseSubmitting,
+                            purchaseError = state.purchaseError,
+                            purchaseMessage = state.purchaseMessage,
                             onVote = { value ->
                                 if (hasSession) viewModel.votePost(value) else authPromptAction = "Voting"
+                            },
+                            onBuyLiveRoomTicket = {
+                                if (hasSession) viewModel.buyLiveRoomTicket() else authPromptAction = "Buying tickets"
+                            },
+                            onWatchLiveRoom = {
+                                onWatchLiveRoom()
                             },
                         )
                     }
@@ -856,7 +1004,17 @@ private fun ThreadRootPost(
     communityPreview: CommunityPreview?,
     authorProfile: Profile?,
     isVoting: Boolean,
+    liveRoomAccess: LiveRoomAccessResponse?,
+    liveRoomListing: CommunityListing?,
+    liveRoomPurchase: CommunityPurchase?,
+    assetListing: CommunityListing?,
+    assetPurchase: CommunityPurchase?,
+    purchaseSubmitting: Boolean,
+    purchaseError: String?,
+    purchaseMessage: String?,
     onVote: (Int) -> Unit,
+    onBuyLiveRoomTicket: () -> Unit,
+    onWatchLiveRoom: () -> Unit,
 ) {
     val post = postResponse.post
     val title = postResponse.translatedTitle ?: post.title ?: post.linkOgTitle ?: "Untitled post"
@@ -918,6 +1076,29 @@ private fun ThreadRootPost(
                     color = PirateTokens.colors.textPrimary,
                 )
             }
+            post.anchorLiveRoom?.let {
+                ThreadLiveRoomSummary(
+                    fallbackTitle = title,
+                    access = liveRoomAccess,
+                    listing = liveRoomListing,
+                    purchase = liveRoomPurchase,
+                    publicStatus = post.anchorLiveRoomStatus,
+                    publicAccessMode = post.accessMode,
+                    fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                    purchaseSubmitting = purchaseSubmitting,
+                    purchaseError = purchaseError,
+                    purchaseMessage = purchaseMessage,
+                    onBuyTicket = onBuyLiveRoomTicket,
+                    onWatch = onWatchLiveRoom,
+                )
+            }
+            if (post.anchorLiveRoom == null && post.assetId != null && assetListing != null) {
+                AssetCommerceSummary(
+                    postType = post.postType,
+                    listing = assetListing,
+                    purchase = assetPurchase,
+                )
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -933,6 +1114,205 @@ private fun ThreadRootPost(
         }
     }
 }
+
+@Composable
+private fun ThreadLiveRoomSummary(
+    fallbackTitle: String,
+    access: LiveRoomAccessResponse?,
+    listing: CommunityListing?,
+    purchase: CommunityPurchase?,
+    publicStatus: String?,
+    publicAccessMode: String?,
+    fallbackCoverRef: String?,
+    purchaseSubmitting: Boolean,
+    purchaseError: String?,
+    purchaseMessage: String?,
+    onBuyTicket: () -> Unit,
+    onWatch: () -> Unit,
+) {
+    val room = access?.room
+    val title = room?.title?.takeIf { it.isNotBlank() } ?: fallbackTitle
+    val status = room?.status ?: publicStatus ?: "scheduled"
+    val accessMode = access?.access?.accessMode ?: room?.accessMode ?: publicAccessMode ?: listing?.let { "paid" }
+    val allowed = access?.access?.allowed == true || purchase != null || accessMode == "free"
+    val decisionReason = access?.access?.decisionReason
+    val coverSrc = resolvePublicMediaSrc(room?.coverRef ?: fallbackCoverRef)
+    val priceLabel = listing?.priceCents?.takeIf { it > 0 }?.let(::formatUsdCents)
+    val listingActive = listing?.status == null || listing.status == "active"
+    val statusLabel = when (status) {
+        "live" -> if (decisionReason == "purchase_required" || accessMode == "paid") {
+            "Live now - ticket required"
+        } else {
+            "Live now"
+        }
+        "ended" -> "Ended"
+        "canceled" -> "Canceled"
+        else -> "Scheduled event"
+    }
+    val accessLabel = when {
+        status == "ended" || status == "canceled" -> null
+        purchase != null -> "Ticket purchased"
+        decisionReason == "purchase_required" || accessMode == "paid" -> when {
+            listing != null && listingActive -> priceLabel?.let { "Tickets $it" } ?: "Tickets available"
+            else -> "Ticket required"
+        }
+        accessMode == "gated" -> "Gated access"
+        accessMode == "free" -> "Free"
+        else -> "Live event"
+    }
+    val canBuyTicket = listing != null &&
+        listingActive &&
+        purchase == null &&
+        status != "ended" &&
+        status != "canceled" &&
+        (decisionReason == "purchase_required" || accessMode == "paid")
+    val canWatch = allowed && status == "live"
+    val buyTicketText = priceLabel?.let { "Buy ticket $it" } ?: "Buy ticket"
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(PirateTokens.colors.bgElevated),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (coverSrc != null) {
+                        AsyncImage(
+                            model = coverSrc,
+                            contentDescription = title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = PhosphorIcons.VideoCamera,
+                            contentDescription = null,
+                            tint = PirateTokens.colors.textSecondary,
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = statusLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (status == "live") {
+                            PirateTokens.colors.accentDanger
+                        } else {
+                            PirateTokens.colors.textSecondary
+                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    accessLabel?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PirateTokens.colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            purchaseError?.let {
+                FormNote(message = it, tone = FormTone.Error)
+            }
+            purchaseMessage?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textSecondary,
+                )
+            }
+            if (canBuyTicket) {
+                PirateButton(
+                    text = if (purchaseSubmitting) "Buying" else buyTicketText,
+                    onClick = onBuyTicket,
+                    loading = purchaseSubmitting,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            if (canWatch) {
+                PirateButton(
+                    text = "Watch",
+                    onClick = onWatch,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AssetCommerceSummary(
+    postType: String?,
+    listing: CommunityListing,
+    purchase: CommunityPurchase?,
+) {
+    val label = when (postType) {
+        "video" -> "Video"
+        "song" -> "Song"
+        else -> "Asset"
+    }
+    val priceLabel = listing.priceCents.takeIf { it > 0 }?.let(::formatUsdCents)
+    val accessLabel = if (purchase != null) {
+        "$label unlocked"
+    } else {
+        priceLabel?.let { "$label unlock $it" } ?: "$label available to unlock"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (postType == "video") PhosphorIcons.VideoCamera else PhosphorIcons.MusicNote,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+            )
+            Text(
+                text = accessLabel,
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private fun formatUsdCents(cents: Int): String = "$" + String.format(Locale.US, "%.2f", cents / 100.0)
 
 @Composable
 private fun InlineReplyComposer(

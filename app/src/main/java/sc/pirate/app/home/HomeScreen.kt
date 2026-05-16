@@ -71,10 +71,14 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import sc.pirate.app.PirateApp
 import sc.pirate.app.R
+import sc.pirate.app.api.model.CommunityListing
+import sc.pirate.app.api.model.CommunityPurchase
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
+import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.PostEmbed
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
@@ -96,6 +100,19 @@ data class HomeUiState(
     val voteError: String? = null,
     val votingPostIds: Set<String> = emptySet(),
     val followingCommunityIds: Set<String> = emptySet(),
+    val liveRoomAccessById: Map<String, LiveRoomAccessResponse> = emptyMap(),
+    val listingsByAssetId: Map<String, CommunityListing> = emptyMap(),
+    val listingsByLiveRoomId: Map<String, CommunityListing> = emptyMap(),
+    val purchasesByAssetId: Map<String, CommunityPurchase> = emptyMap(),
+    val purchasesByLiveRoomId: Map<String, CommunityPurchase> = emptyMap(),
+)
+
+private data class CommerceEnrichment(
+    val listingsByAssetId: Map<String, CommunityListing> = emptyMap(),
+    val listingsByLiveRoomId: Map<String, CommunityListing> = emptyMap(),
+    val purchasesByAssetId: Map<String, CommunityPurchase> = emptyMap(),
+    val purchasesByLiveRoomId: Map<String, CommunityPurchase> = emptyMap(),
+    val liveRoomAccessById: Map<String, LiveRoomAccessResponse> = emptyMap(),
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -169,14 +186,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 topTimeRange = timeRange,
             )
             try {
+                val feed = feedRepository.home(
+                    sort = sort,
+                    timeRange = if (sort == "top") timeRange else null,
+                )
+                val enrichment = loadCommerceEnrichment(feed.items)
                 _state.value = HomeUiState(
                     loading = false,
-                    feed = feedRepository.home(
-                        sort = sort,
-                        timeRange = if (sort == "top") timeRange else null,
-                    ),
+                    feed = feed,
                     activeSort = sort,
                     topTimeRange = timeRange,
+                    liveRoomAccessById = enrichment.liveRoomAccessById,
+                    listingsByAssetId = enrichment.listingsByAssetId,
+                    listingsByLiveRoomId = enrichment.listingsByLiveRoomId,
+                    purchasesByAssetId = enrichment.purchasesByAssetId,
+                    purchasesByLiveRoomId = enrichment.purchasesByLiveRoomId,
                 )
             } catch (e: Exception) {
                 _state.value = HomeUiState(
@@ -207,9 +231,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     sort = currentState.activeSort,
                     timeRange = if (currentState.activeSort == "top") currentState.topTimeRange else null,
                 )
+                val enrichment = loadCommerceEnrichment(nextPage.items)
                 _state.value = _state.value.copy(
                     loadingMore = false,
                     feed = _state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage),
+                    liveRoomAccessById = _state.value.liveRoomAccessById + enrichment.liveRoomAccessById,
+                    listingsByAssetId = _state.value.listingsByAssetId + enrichment.listingsByAssetId,
+                    listingsByLiveRoomId = _state.value.listingsByLiveRoomId + enrichment.listingsByLiveRoomId,
+                    purchasesByAssetId = _state.value.purchasesByAssetId + enrichment.purchasesByAssetId,
+                    purchasesByLiveRoomId = _state.value.purchasesByLiveRoomId + enrichment.purchasesByLiveRoomId,
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -250,6 +280,68 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    private suspend fun loadCommerceEnrichment(items: List<HomeFeedItem>): CommerceEnrichment {
+        if (items.isEmpty()) return CommerceEnrichment()
+
+        val hasSession = app.sessionStore.get() != null
+        val liveRoomRefs = items
+            .mapNotNull { item ->
+                item.post.post.anchorLiveRoom?.let { liveRoomId -> item.homeCommunityId() to liveRoomId }
+            }
+            .distinct()
+
+        val liveRoomAccessById = mutableMapOf<String, LiveRoomAccessResponse>()
+
+        if (!hasSession) {
+            liveRoomRefs.forEach { (communityId, liveRoomId) ->
+                runCatching { communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId) }
+                    .getOrNull()
+                    ?.let { liveRoomAccessById[liveRoomId] = it }
+            }
+            return CommerceEnrichment(liveRoomAccessById = liveRoomAccessById)
+        }
+
+        val communityIds = items
+            .mapNotNull { item ->
+                val post = item.post.post
+                if (post.assetId != null || post.anchorLiveRoom != null) item.homeCommunityId() else null
+            }
+            .distinct()
+        val listingsByAssetId = mutableMapOf<String, CommunityListing>()
+        val listingsByLiveRoomId = mutableMapOf<String, CommunityListing>()
+        val purchasesByAssetId = mutableMapOf<String, CommunityPurchase>()
+        val purchasesByLiveRoomId = mutableMapOf<String, CommunityPurchase>()
+
+        communityIds.forEach { communityId ->
+            runCatching { communityRepository.listListings(communityId).items }
+                .getOrDefault(emptyList())
+                .forEach { listing ->
+                    listing.asset?.takeIf { it.isNotBlank() }?.let { listingsByAssetId[it] = listing }
+                    listing.liveRoom?.takeIf { it.isNotBlank() }?.let { listingsByLiveRoomId[it] = listing }
+                }
+            runCatching { communityRepository.listPurchases(communityId).items }
+                .getOrDefault(emptyList())
+                .forEach { purchase ->
+                    purchase.asset?.takeIf { it.isNotBlank() }?.let { purchasesByAssetId[it] = purchase }
+                    purchase.liveRoom?.takeIf { it.isNotBlank() }?.let { purchasesByLiveRoomId[it] = purchase }
+                }
+        }
+
+        liveRoomRefs.forEach { (communityId, liveRoomId) ->
+            runCatching { communityRepository.getLiveRoomAccess(communityId, liveRoomId) }
+                .getOrNull()
+                ?.let { liveRoomAccessById[liveRoomId] = it }
+        }
+
+        return CommerceEnrichment(
+            listingsByAssetId = listingsByAssetId,
+            listingsByLiveRoomId = listingsByLiveRoomId,
+            purchasesByAssetId = purchasesByAssetId,
+            purchasesByLiveRoomId = purchasesByLiveRoomId,
+            liveRoomAccessById = liveRoomAccessById,
+        )
+    }
 }
 
 private fun HomeFeedResponse.appendPage(nextPage: HomeFeedResponse): HomeFeedResponse =
@@ -283,6 +375,8 @@ private fun HomeFeedResponse.replacePostItem(previousItem: HomeFeedItem): HomeFe
             if (item.post.post.postId == previousItem.post.post.postId) previousItem else item
         },
     )
+
+private fun formatUsdCents(cents: Int): String = "$" + String.format(Locale.US, "%.2f", cents / 100.0)
 
 private fun HomeFeedResponse.withCommunityFollow(communityId: String, following: Boolean): HomeFeedResponse =
     copy(
@@ -493,6 +587,9 @@ fun HomeScreen(
                                 isVoting = isVoting,
                                 isFollowing = item.community.viewerFollowing == true,
                                 followLoading = item.homeCommunityId() in state.followingCommunityIds,
+                                liveRoomAccess = post.anchorLiveRoom?.let { state.liveRoomAccessById[it] },
+                                liveRoomListing = post.anchorLiveRoom?.let { state.listingsByLiveRoomId[it] },
+                                liveRoomPurchase = post.anchorLiveRoom?.let { state.purchasesByLiveRoomId[it] },
                                 onOpenPost = { onNavigateToPost(post.postId) },
                                 onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
                                 onOpenMedia = { mediaPreview = ActiveMediaPreview(item, it) },
@@ -857,6 +954,9 @@ private fun HomePostCard(
     isVoting: Boolean,
     isFollowing: Boolean,
     followLoading: Boolean,
+    liveRoomAccess: LiveRoomAccessResponse?,
+    liveRoomListing: CommunityListing?,
+    liveRoomPurchase: CommunityPurchase?,
     onOpenPost: () -> Unit,
     onOpenCommunity: () -> Unit,
     onOpenMedia: (MediaPreview) -> Unit,
@@ -963,6 +1063,18 @@ private fun HomePostCard(
                     )
                 }
 
+            post.anchorLiveRoom?.let {
+                LiveRoomSummaryCard(
+                    fallbackTitle = title,
+                    access = liveRoomAccess,
+                    listing = liveRoomListing,
+                    purchase = liveRoomPurchase,
+                    publicStatus = post.anchorLiveRoomStatus,
+                    publicAccessMode = post.accessMode,
+                    fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                )
+            }
+
             if (xEmbed != null) {
                 XEmbedPreviewCard(embed = xEmbed)
             }
@@ -997,6 +1109,108 @@ private fun HomePostCard(
                 )
                 CommentPill(count = comments, onClick = onComment)
                 Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun LiveRoomSummaryCard(
+    fallbackTitle: String,
+    access: LiveRoomAccessResponse?,
+    listing: CommunityListing?,
+    purchase: CommunityPurchase?,
+    publicStatus: String?,
+    publicAccessMode: String?,
+    fallbackCoverRef: String?,
+) {
+    val room = access?.room
+    val title = room?.title?.takeIf { it.isNotBlank() } ?: fallbackTitle
+    val status = room?.status ?: publicStatus ?: "scheduled"
+    val accessMode = access?.access?.accessMode ?: room?.accessMode ?: publicAccessMode ?: listing?.let { "paid" }
+    val allowed = access?.access?.allowed == true || purchase != null || accessMode == "free"
+    val decisionReason = access?.access?.decisionReason
+    val coverSrc = resolvePublicMediaSrc(room?.coverRef ?: fallbackCoverRef)
+    val priceLabel = listing?.priceCents?.takeIf { it > 0 }?.let(::formatUsdCents)
+    val listingActive = listing != null && (listing.status == null || listing.status == "active")
+    val statusLabel = when (status) {
+        "live" -> if (allowed) "Live now" else "Live now - ticket required"
+        "ended" -> "Ended"
+        "canceled" -> "Canceled"
+        else -> "Scheduled event"
+    }
+    val accessLabel = when {
+        status == "ended" || status == "canceled" -> null
+        purchase != null -> "Ticket purchased"
+        decisionReason == "purchase_required" || accessMode == "paid" -> when {
+            listingActive -> priceLabel?.let { "Tickets $it" } ?: "Tickets available"
+            else -> "Ticket required"
+        }
+        accessMode == "gated" -> "Gated access"
+        accessMode == "free" -> "Free"
+        else -> "Live event"
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(76.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(PirateTokens.colors.bgElevated),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (coverSrc != null) {
+                    AsyncImage(
+                        model = coverSrc,
+                        contentDescription = title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                } else {
+                    Icon(
+                        imageVector = PhosphorIcons.VideoCamera,
+                        contentDescription = null,
+                        tint = PirateTokens.colors.textSecondary,
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = PirateTokens.colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = statusLabel,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (status == "live") PirateTokens.colors.accentDanger else PirateTokens.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                accessLabel?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

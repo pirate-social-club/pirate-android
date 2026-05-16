@@ -86,6 +86,7 @@ Very target before native API key:
 
 Very target after native API key:
 
+- detailed gated plan: [very-native-sdk-integration-plan.md](./very-native-sdk-integration-plan.md)
 - add the native SDK only when credentials and product flow are ready
 - move `minSdk` only if the selected SDK requires it
 - add camera permission only with the native scan flow

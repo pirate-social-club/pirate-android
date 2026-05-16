@@ -393,7 +393,17 @@ data class Post(
     @SerialName("source_language") val sourceLanguage: String? = null,
     @SerialName("translation_policy") val translationPolicy: String? = null,
     @SerialName("access_mode") val accessMode: String? = null,
-    @SerialName("asset_id") val assetId: String? = null,
+    @SerialName("asset_id") private val legacyAssetId: String? = null,
+    @SerialName("asset") private val canonicalAssetId: String? = null,
+    @SerialName("song_artifact_bundle") val songArtifactBundle: String? = null,
+    @SerialName("anchor_live_room") val anchorLiveRoom: String? = null,
+    @SerialName("anchor_live_room_status") val anchorLiveRoomStatus: String? = null,
+    @SerialName("song_title") val songTitle: String? = null,
+    @SerialName("song_mode") val songMode: String? = null,
+    @SerialName("rights_basis") val rightsBasis: String? = null,
+    @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String> = emptyList(),
+    @SerialName("analysis_state") val analysisState: String? = null,
+    @SerialName("content_safety_state") val contentSafetyState: String? = null,
     @SerialName("age_gate_policy") val ageGatePolicy: String? = null,
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
@@ -402,6 +412,7 @@ data class Post(
     val postId: String get() = contractPostId ?: feedPostId.orEmpty()
     val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
     val authorUserId: String? get() = contractAuthorUserId ?: feedAuthorUserId
+    val assetId: String? get() = canonicalAssetId ?: legacyAssetId
     val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
 }
 
@@ -539,6 +550,360 @@ data class CreatePostRequest(
     @SerialName("identity_mode") val identityMode: String? = null,
     @SerialName("translation_policy") val translationPolicy: String? = null,
     val visibility: String? = null,
+)
+
+@Serializable
+data class CommunityMoneyChainRef(
+    @SerialName("chain_namespace") val chainNamespace: String? = null,
+    @SerialName("chain_id") val chainId: Int? = null,
+    @SerialName("display_name") val displayName: String? = null,
+)
+
+@Serializable
+data class CommunityMoneyAssetRef(
+    @SerialName("asset_symbol") val assetSymbol: String? = null,
+    @SerialName("chain_namespace") val chainNamespace: String? = null,
+    @SerialName("chain_id") val chainId: Int? = null,
+    @SerialName("display_name") val displayName: String? = null,
+)
+
+@Serializable
+data class Asset(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    @SerialName("storage_ref") val storageRef: String? = null,
+    @SerialName("content_type") val contentType: String? = null,
+    @SerialName("access_mode") val accessMode: String? = null,
+)
+
+@Serializable
+data class AssetAccessResponse(
+    @SerialName("access_granted") val accessGranted: Boolean = false,
+    @SerialName("decision_reason") val decisionReason: String? = null,
+    @SerialName("delivery_kind") val deliveryKind: String? = null,
+    @SerialName("delivery_ref") val deliveryRef: String? = null,
+)
+
+@Serializable
+data class CreateCommunityListingRequest(
+    val asset: String? = null,
+    @SerialName("live_room") val liveRoom: String? = null,
+    @SerialName("price_cents") val priceCents: Int,
+    @SerialName("regional_pricing_enabled") val regionalPricingEnabled: Boolean? = null,
+    @SerialName("donation_partner") val donationPartner: String? = null,
+    @SerialName("donation_share_bps") val donationShareBps: Int? = null,
+    val status: String = "active",
+)
+
+@Serializable
+data class UpdateCommunityListingRequest(
+    @SerialName("price_cents") val priceCents: Int? = null,
+    @SerialName("regional_pricing_enabled") val regionalPricingEnabled: Boolean? = null,
+    @SerialName("donation_partner") val donationPartner: String? = null,
+    @SerialName("donation_share_bps") val donationShareBps: Int? = null,
+    val status: String? = null,
+)
+
+@Serializable
+data class CommunityListing(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    val asset: String? = null,
+    @SerialName("live_room") val liveRoom: String? = null,
+    @SerialName("listing_mode") val listingMode: String? = null,
+    val status: String? = null,
+    @SerialName("price_cents") val priceCents: Int = 0,
+    @SerialName("regional_pricing_enabled") val regionalPricingEnabled: Boolean? = null,
+    @SerialName("donation_partner") val donationPartner: String? = null,
+    @SerialName("donation_share_bps") val donationShareBps: Int? = null,
+    val created: Long? = null,
+)
+
+@Serializable
+data class CommunityListingListResponse(
+    val items: List<CommunityListing> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class CommunitySaleAllocationLeg(
+    val user: String? = null,
+    @SerialName("share_bps") val shareBps: Int? = null,
+    @SerialName("amount_cents") val amountCents: Int? = null,
+)
+
+@Serializable
+data class CommunityPurchase(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    val listing: String = "",
+    val asset: String? = null,
+    @SerialName("live_room") val liveRoom: String? = null,
+    @SerialName("buyer_user") val buyerUser: String? = null,
+    @SerialName("purchase_price_cents") val purchasePriceCents: Int = 0,
+    @SerialName("pricing_tier") val pricingTier: String? = null,
+    @SerialName("purchase_entitlement") val purchaseEntitlement: String? = null,
+    @SerialName("entitlement_kind") val entitlementKind: String? = null,
+    @SerialName("entitlement_target_ref") val entitlementTargetRef: String? = null,
+    val created: Long? = null,
+)
+
+@Serializable
+data class CommunityPurchaseListResponse(
+    val items: List<CommunityPurchase> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class CommunityPurchaseQuotePreflightRequest(
+    val listing: String? = null,
+    @SerialName("funding_asset") val fundingAsset: CommunityMoneyAssetRef? = null,
+    @SerialName("source_chain") val sourceChain: CommunityMoneyChainRef? = null,
+    @SerialName("route_provider") val routeProvider: String? = null,
+    @SerialName("client_estimated_slippage_bps") val clientEstimatedSlippageBps: Int = 0,
+    @SerialName("client_estimated_hop_count") val clientEstimatedHopCount: Int = 1,
+    @SerialName("client_route_valid_for_seconds") val clientRouteValidForSeconds: Int? = null,
+)
+
+@Serializable
+data class CommunityPurchaseQuotePreflight(
+    val community: String = "",
+    val eligible: Boolean = false,
+    @SerialName("base_price_cents") val basePriceCents: Int? = null,
+    @SerialName("viewer_price_cents") val viewerPriceCents: Int? = null,
+    @SerialName("best_verified_price_cents") val bestVerifiedPriceCents: Int? = null,
+    @SerialName("max_self_discount_bps") val maxSelfDiscountBps: Int? = null,
+    @SerialName("quoted_at") val quotedAt: Long? = null,
+    @SerialName("expires_at") val expiresAt: Long? = null,
+)
+
+@Serializable
+data class CommunityPurchaseQuoteRequest(
+    val listing: String,
+    @SerialName("funding_asset") val fundingAsset: CommunityMoneyAssetRef? = null,
+    @SerialName("source_chain") val sourceChain: CommunityMoneyChainRef? = null,
+    @SerialName("route_provider") val routeProvider: String? = null,
+    @SerialName("client_estimated_slippage_bps") val clientEstimatedSlippageBps: Int = 0,
+    @SerialName("client_estimated_hop_count") val clientEstimatedHopCount: Int = 1,
+    @SerialName("client_route_valid_for_seconds") val clientRouteValidForSeconds: Int? = null,
+)
+
+@Serializable
+data class CommunityPurchaseQuote(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    val listing: String = "",
+    @SerialName("buyer_user") val buyerUser: String? = null,
+    val asset: String? = null,
+    @SerialName("live_room") val liveRoom: String? = null,
+    @SerialName("base_price_cents") val basePriceCents: Int = 0,
+    @SerialName("final_price_cents") val finalPriceCents: Int = 0,
+    @SerialName("funding_asset") val fundingAsset: CommunityMoneyAssetRef? = null,
+    @SerialName("source_chain") val sourceChain: CommunityMoneyChainRef? = null,
+    @SerialName("route_provider") val routeProvider: String? = null,
+    @SerialName("funding_destination_address") val fundingDestinationAddress: String? = null,
+    @SerialName("quoted_at") val quotedAt: Long? = null,
+    @SerialName("expires_at") val expiresAt: Long? = null,
+)
+
+@Serializable
+data class CommunityPurchaseSettlementRequest(
+    val quote: String,
+    @SerialName("settlement_wallet_attachment") val settlementWalletAttachment: String,
+    @SerialName("funding_tx_ref") val fundingTxRef: String,
+    @SerialName("settlement_tx_ref") val settlementTxRef: String,
+)
+
+@Serializable
+data class CommunityPurchaseSettlement(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val quote: String = "",
+    val community: String = "",
+    val listing: String = "",
+    val asset: String? = null,
+    @SerialName("live_room") val liveRoom: String? = null,
+    @SerialName("purchase_price_cents") val purchasePriceCents: Int = 0,
+    @SerialName("purchase_entitlement") val purchaseEntitlement: String? = null,
+    @SerialName("entitlement_kind") val entitlementKind: String? = null,
+    @SerialName("entitlement_target_ref") val entitlementTargetRef: String? = null,
+    @SerialName("settled_at") val settledAt: Long? = null,
+)
+
+@Serializable
+data class CommunityPurchaseSettlementFailureRequest(
+    val quote: String,
+)
+
+@Serializable
+data class CommunityPurchaseSettlementFailure(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val quote: String = "",
+    val community: String = "",
+    val status: String? = null,
+    @SerialName("failed_at") val failedAt: Long? = null,
+    @SerialName("expires_at") val expiresAt: Long? = null,
+)
+
+@Serializable
+data class LiveRoomPerformerAllocationInput(
+    val user: String? = null,
+    val role: String? = null,
+    @SerialName("share_bps") val shareBps: Int? = null,
+)
+
+@Serializable
+data class LiveRoomSetlistItemInput(
+    @SerialName("song_artifact_bundle") val songArtifactBundle: String? = null,
+    @SerialName("source_asset_ref") val sourceAssetRef: String? = null,
+    val title: String? = null,
+    val artist: String? = null,
+    @SerialName("rights_basis") val rightsBasis: String? = null,
+    @SerialName("license_ref") val licenseRef: String? = null,
+    @SerialName("rights_status") val rightsStatus: String? = null,
+    @SerialName("blocking_rights_failure") val blockingRightsFailure: Boolean? = null,
+)
+
+@Serializable
+data class LiveRoomSetlistInput(
+    val status: String? = null,
+    val items: List<LiveRoomSetlistItemInput> = emptyList(),
+)
+
+@Serializable
+data class CreateLiveRoomRequest(
+    val title: String? = null,
+    val description: String? = null,
+    @SerialName("room_kind") val roomKind: String? = null,
+    @SerialName("access_mode") val accessMode: String? = null,
+    val visibility: String? = null,
+    @SerialName("guest_user") val guestUser: String? = null,
+    @SerialName("event_start_at") val eventStartAt: Long? = null,
+    @SerialName("cover_ref") val coverRef: String? = null,
+    @SerialName("performer_allocations") val performerAllocations: List<LiveRoomPerformerAllocationInput> = emptyList(),
+    val setlist: LiveRoomSetlistInput? = null,
+)
+
+@Serializable
+data class PublishLiveRoomRequest(
+    val room: CreateLiveRoomRequest,
+    val listing: CreateCommunityListingRequest,
+)
+
+@Serializable
+data class LiveRoomPerformerAllocation(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val user: String = "",
+    val role: String = "",
+    @SerialName("share_bps") val shareBps: Int = 0,
+)
+
+@Serializable
+data class LiveRoomSetlistItem(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val position: Int = 0,
+    @SerialName("song_artifact_bundle") val songArtifactBundle: String? = null,
+    @SerialName("source_asset_ref") val sourceAssetRef: String? = null,
+    val title: String = "",
+    val artist: String? = null,
+    @SerialName("rights_basis") val rightsBasis: String? = null,
+    @SerialName("license_ref") val licenseRef: String? = null,
+    @SerialName("rights_status") val rightsStatus: String? = null,
+    @SerialName("blocking_rights_failure") val blockingRightsFailure: Boolean = false,
+)
+
+@Serializable
+data class LiveRoomSetlist(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val status: String? = null,
+    val items: List<LiveRoomSetlistItem> = emptyList(),
+)
+
+@Serializable
+data class LiveRoom(
+    val id: String = "",
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    @SerialName("anchor_post") val anchorPost: String = "",
+    @SerialName("host_user") val hostUser: String = "",
+    @SerialName("guest_user") val guestUser: String? = null,
+    @SerialName("room_kind") val roomKind: String? = null,
+    val status: String = "scheduled",
+    @SerialName("access_mode") val accessMode: String = "free",
+    val visibility: String? = null,
+    val title: String = "",
+    val description: String? = null,
+    @SerialName("cover_ref") val coverRef: String? = null,
+    @SerialName("event_start_at") val eventStartAt: Long? = null,
+    @SerialName("live_started_at") val liveStartedAt: Long? = null,
+    @SerialName("ended_at") val endedAt: Long? = null,
+    @SerialName("canceled_at") val canceledAt: Long? = null,
+    @SerialName("broadcast_ref") val broadcastRef: String? = null,
+    @SerialName("replay_status") val replayStatus: String? = null,
+    @SerialName("performer_allocations") val performerAllocations: List<LiveRoomPerformerAllocation> = emptyList(),
+    val setlist: LiveRoomSetlist? = null,
+    val created: Long? = null,
+)
+
+@Serializable
+data class PublishLiveRoomResponse(
+    val room: LiveRoom,
+    val listing: CommunityListing,
+)
+
+@Serializable
+data class LiveRoomAccess(
+    val allowed: Boolean = false,
+    @SerialName("decision_reason") val decisionReason: String? = null,
+    @SerialName("access_mode") val accessMode: String = "free",
+    val visibility: String? = null,
+    val listing: String? = null,
+    @SerialName("purchase_entitlement") val purchaseEntitlement: String? = null,
+    @SerialName("guest_invite_status") val guestInviteStatus: String? = null,
+)
+
+@Serializable
+data class LiveRoomAccessResponse(
+    val room: LiveRoom,
+    val access: LiveRoomAccess,
+)
+
+@Serializable
+data class LiveRoomViewerRenewRequest(
+    val uid: Int,
+)
+
+@Serializable
+data class LiveRoomRuntimeBlock(
+    val status: String? = null,
+    val seat: String? = null,
+    @SerialName("room_runtime_id") val roomRuntimeId: String? = null,
+)
+
+@Serializable
+data class LiveRoomAgoraBlock(
+    @SerialName("app_id") val appId: String? = null,
+    val channel: String? = null,
+    val uid: Int? = null,
+    val token: String? = null,
+    @SerialName("token_expires_at") val tokenExpiresAt: Long? = null,
+    val configured: Boolean = false,
+)
+
+@Serializable
+data class LiveRoomViewerAttachResponse(
+    val room: LiveRoom,
+    val access: LiveRoomAccess,
+    val runtime: LiveRoomRuntimeBlock? = null,
+    val agora: LiveRoomAgoraBlock? = null,
 )
 
 @Serializable

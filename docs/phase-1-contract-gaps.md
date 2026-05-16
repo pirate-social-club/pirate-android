@@ -2,6 +2,9 @@
 
 Status: working checklist for implementing the logged-in read/create loop.
 
+Create-post parity execution plan:
+[create-post-mobile-web-parity-plan.md](./create-post-mobile-web-parity-plan.md)
+
 This file tracks the API surface Android needs before Phase 1 can be called product-real. The source of truth is `api/services/contracts/src/index.ts`; web usage in `web/src/lib/api` shows how those contracts are consumed today.
 
 ## Current Android Gap Summary

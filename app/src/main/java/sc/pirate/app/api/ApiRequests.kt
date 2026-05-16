@@ -1,5 +1,6 @@
 package sc.pirate.app.api
 
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.Serializable
 
 typealias VerificationProvider = String
@@ -34,7 +35,7 @@ data class CompleteVerificationSessionRequest(
     @kotlinx.serialization.SerialName("attestation_id") val attestationId: String? = null,
     val proof: String? = null,
     @kotlinx.serialization.SerialName("proof_hash") val proofHash: String? = null,
-    @kotlinx.serialization.SerialName("provider_payload_ref") val providerPayloadRef: String? = null,
+    @kotlinx.serialization.SerialName("provider_payload_ref") val providerPayloadRef: JsonElement? = null,
 )
 
 @Serializable

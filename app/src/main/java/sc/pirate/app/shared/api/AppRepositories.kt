@@ -11,13 +11,24 @@ import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.CommunityCreateAcceptedResponse
 import sc.pirate.app.api.model.CommunityFollowResponse
 import sc.pirate.app.api.model.CommunityJoinResponse
+import sc.pirate.app.api.model.CommunityListingListResponse
 import sc.pirate.app.api.model.CommunityPreview
+import sc.pirate.app.api.model.CommunityPurchaseListResponse
+import sc.pirate.app.api.model.CommunityPurchaseQuote
+import sc.pirate.app.api.model.CommunityPurchaseQuoteRequest
+import sc.pirate.app.api.model.CommunityPurchaseSettlement
+import sc.pirate.app.api.model.CommunityPurchaseSettlementFailure
+import sc.pirate.app.api.model.CommunityPurchaseSettlementFailureRequest
+import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
 import sc.pirate.app.api.model.CommentListResponse
 import sc.pirate.app.api.model.CommentVoteResponse
 import sc.pirate.app.api.model.CreateCommunityRequest
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.JoinEligibility
+import sc.pirate.app.api.model.LiveRoomAccessResponse
+import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
+import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.NotificationFeedResponse
 import sc.pirate.app.api.model.NotificationSummary
@@ -77,6 +88,28 @@ interface CommunityRepository {
         flairId: String? = null,
     ): PostListResponse
     suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse
+    suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
+    suspend fun getPublicLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
+    suspend fun viewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse
+    suspend fun viewerRenewLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomViewerRenewRequest,
+    ): LiveRoomViewerAttachResponse
+    suspend fun listListings(communityId: String): CommunityListingListResponse
+    suspend fun listPurchases(communityId: String): CommunityPurchaseListResponse
+    suspend fun createPurchaseQuote(
+        communityId: String,
+        request: CommunityPurchaseQuoteRequest,
+    ): CommunityPurchaseQuote
+    suspend fun settlePurchase(
+        communityId: String,
+        request: CommunityPurchaseSettlementRequest,
+    ): CommunityPurchaseSettlement
+    suspend fun failPurchase(
+        communityId: String,
+        request: CommunityPurchaseSettlementFailureRequest,
+    ): CommunityPurchaseSettlementFailure
 }
 
 interface PostRepository {
@@ -266,6 +299,58 @@ class ApiCommunityRepository(
 
     override suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse {
         return apiClient.communities.createPost(communityId, request)
+    }
+
+    override suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse {
+        return apiClient.communities.getLiveRoomAccess(communityId, liveRoomId)
+    }
+
+    override suspend fun getPublicLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse {
+        return apiClient.publicCommunities.getLiveRoomAccess(communityId, liveRoomId)
+    }
+
+    override suspend fun viewerAttachLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+    ): LiveRoomViewerAttachResponse {
+        return apiClient.communities.viewerAttachLiveRoom(communityId, liveRoomId)
+    }
+
+    override suspend fun viewerRenewLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomViewerRenewRequest,
+    ): LiveRoomViewerAttachResponse {
+        return apiClient.communities.viewerRenewLiveRoom(communityId, liveRoomId, request)
+    }
+
+    override suspend fun listListings(communityId: String): CommunityListingListResponse {
+        return apiClient.communities.listListings(communityId)
+    }
+
+    override suspend fun listPurchases(communityId: String): CommunityPurchaseListResponse {
+        return apiClient.communities.listPurchases(communityId)
+    }
+
+    override suspend fun createPurchaseQuote(
+        communityId: String,
+        request: CommunityPurchaseQuoteRequest,
+    ): CommunityPurchaseQuote {
+        return apiClient.communities.createPurchaseQuote(communityId, request)
+    }
+
+    override suspend fun settlePurchase(
+        communityId: String,
+        request: CommunityPurchaseSettlementRequest,
+    ): CommunityPurchaseSettlement {
+        return apiClient.communities.settlePurchase(communityId, request)
+    }
+
+    override suspend fun failPurchase(
+        communityId: String,
+        request: CommunityPurchaseSettlementFailureRequest,
+    ): CommunityPurchaseSettlementFailure {
+        return apiClient.communities.failPurchase(communityId, request)
     }
 }
 

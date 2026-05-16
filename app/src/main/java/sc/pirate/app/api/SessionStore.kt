@@ -54,15 +54,14 @@ class SessionStore(private val context: Context) {
     fun observe(): Flow<SessionExchangeResponse?> =
         context.sessionDataStore.data.map { prefs ->
             val raw = prefs[KEY_SESSION] ?: return@map null
-            try {
+            val session = try {
                 json.decodeFromString<SessionExchangeResponse>(raw)
             } catch (_: Exception) {
                 null
             }
+            session?.takeUnless { SessionExpiry.isExpired(it.accessToken) }
         }.onEach {
-            cachedSession = it?.takeUnless { session ->
-                SessionExpiry.isExpired(session.accessToken)
-            }
+            cachedSession = it
             cacheLoaded = true
         }
 

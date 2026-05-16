@@ -68,6 +68,9 @@ android {
     val apiBaseUrl = runtimeProp("API_BASE_URL") ?: "https://api.pirate.sc"
     buildConfigField("String", "API_BASE_URL", buildConfigString(apiBaseUrl))
 
+    val webBaseUrl = runtimeProp("WEB_BASE_URL") ?: "https://pirate.sc"
+    buildConfigField("String", "WEB_BASE_URL", buildConfigString(webBaseUrl))
+
     val xmtpEnvironment = runtimeProp("XMTP_ENVIRONMENT") ?: "production"
     buildConfigField("String", "XMTP_ENVIRONMENT", buildConfigString(xmtpEnvironment))
 
@@ -99,6 +102,9 @@ android {
     }
     manifestPlaceholders["reownRedirectScheme"] = parsedReownRedirectUri.scheme ?: "pirate"
     manifestPlaceholders["reownRedirectHost"] = parsedReownRedirectUri.host ?: "wallet-connect"
+
+    val verySdkKey = runtimeProp("VERY_SDK_KEY") ?: ""
+    buildConfigField("String", "VERY_SDK_KEY", buildConfigString(verySdkKey))
   }
 
   buildTypes {
@@ -168,6 +174,9 @@ dependencies {
   implementation("org.web3j:abi:4.12.2")
   implementation("org.web3j:crypto:4.12.2")
   implementation("org.xmtp:android:4.9.0")
+  implementation("org.very:sdk:1.0.29") {
+    exclude(group = "com.caverock", module = "androidsvg")
+  }
 
   implementation("io.coil-kt:coil-compose:2.6.0")
   implementation("io.coil-kt:coil-svg:2.6.0")

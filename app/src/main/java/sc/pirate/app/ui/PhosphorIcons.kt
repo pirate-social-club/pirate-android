@@ -40,6 +40,7 @@ object PhosphorIcons {
     val Link: ImageVector = AdamPhosphorIcons.Regular.Link
     val MusicNote: ImageVector = AdamPhosphorIcons.Regular.MusicNote
     val MusicNotes: ImageVector = AdamPhosphorIcons.Regular.MusicNotes
+    val VideoCamera: ImageVector = AdamPhosphorIcons.Regular.VideoCamera
     val Article: ImageVector = AdamPhosphorIcons.Regular.Article
     val SquaresFour: ImageVector = AdamPhosphorIcons.Regular.SquaresFour
     val Globe: ImageVector = AdamPhosphorIcons.Regular.Globe

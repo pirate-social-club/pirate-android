@@ -25,9 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,7 +47,6 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
-import sc.pirate.app.verification.VeryVerificationDrawer
 
 data class InboxUiState(
     val loading: Boolean = true,
@@ -167,7 +163,6 @@ fun InboxScreen(
 ) {
     val viewModel: InboxViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
-    var veryVerificationDrawerOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.load()
@@ -278,7 +273,7 @@ fun InboxScreen(
                                                 onOpenCommunity = onOpenCommunity,
                                                 onOpenCommunityNamespace = onOpenCommunityNamespace,
                                                 onOpenProfileSettings = onOpenProfileSettings,
-                                                onVerifyHuman = { veryVerificationDrawerOpen = true },
+                                                onVerifyHuman = onVerifyHuman,
                                             )
                                             if (canAutoClearTaskOnOpen(task)) {
                                                 viewModel.dismissTask(task.id)
@@ -317,10 +312,6 @@ fun InboxScreen(
                 }
             }
         }
-    }
-
-    if (veryVerificationDrawerOpen) {
-        VeryVerificationDrawer(onDismiss = { veryVerificationDrawerOpen = false })
     }
 }
 

@@ -2,9 +2,13 @@
 #
 # Defaults to https://api.pirate.sc when omitted.
 # API_BASE_URL=http://127.0.0.1:8787
+# Defaults to https://pirate.sc when omitted.
+# WEB_BASE_URL=http://10.0.2.2:5173
 # Defaults to the production Pirate Privy app when omitted.
 # PRIVY_APP_ID=cmnbdx9xk00ty0clapn2q8pdj
 # PRIVY_APP_CLIENT_ID=client-WY6Xkpp2wLef8Y9cWBrZ1GhnmqAtnVh9YisfZ2dA3c7DW
 # Defaults to the shared Pirate Reown project when omitted.
 # REOWN_PROJECT_ID=08db15bf8bdb09d1cbc714f4c39d11a8
 # REOWN_REDIRECT_URI=pirate://wallet-connect
+# Enables native Very palm scans when set. Omit to use the widget/deep-link fallback.
+# VERY_SDK_KEY=...

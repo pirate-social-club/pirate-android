@@ -3,6 +3,7 @@ package sc.pirate.app.api
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
@@ -232,7 +233,7 @@ class ApiClient(private val sessionStore: SessionStore) {
             attestationId: String? = null,
             proof: String? = null,
             proofHash: String? = null,
-            providerPayloadRef: String? = null,
+            providerPayloadRef: JsonElement? = null,
         ): VerificationSession {
             val body = api.json.encodeToString(
                 CompleteVerificationSessionRequest.serializer(),
@@ -374,6 +375,125 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
         }
 
+        suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom {
+            val body = api.json.encodeToString(CreateLiveRoomRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/live-rooms", body)
+            return api.json.decodeFromString(LiveRoom.serializer(), response)
+        }
+
+        suspend fun publishLiveRoom(communityId: String, request: PublishLiveRoomRequest): PublishLiveRoomResponse {
+            val body = api.json.encodeToString(PublishLiveRoomRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/live-rooms/publish", body)
+            return api.json.decodeFromString(PublishLiveRoomResponse.serializer(), response)
+        }
+
+        suspend fun getLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+            val response = api.getString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}")
+            return api.json.decodeFromString(LiveRoom.serializer(), response)
+        }
+
+        suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse {
+            val response = api.getString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/access")
+            return api.json.decodeFromString(LiveRoomAccessResponse.serializer(), response)
+        }
+
+        suspend fun viewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse {
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/viewer_attach")
+            return api.json.decodeFromString(LiveRoomViewerAttachResponse.serializer(), response)
+        }
+
+        suspend fun viewerRenewLiveRoom(
+            communityId: String,
+            liveRoomId: String,
+            request: LiveRoomViewerRenewRequest,
+        ): LiveRoomViewerAttachResponse {
+            val body = api.json.encodeToString(LiveRoomViewerRenewRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/viewer_renew", body)
+            return api.json.decodeFromString(LiveRoomViewerAttachResponse.serializer(), response)
+        }
+
+        suspend fun getAsset(communityId: String, assetId: String): Asset {
+            val response = api.getString("/communities/$communityId/assets/${api.encodePathSegment(assetId)}")
+            return api.json.decodeFromString(Asset.serializer(), response)
+        }
+
+        suspend fun resolveAssetAccess(communityId: String, assetId: String): AssetAccessResponse {
+            val response = api.getString("/communities/$communityId/assets/${api.encodePathSegment(assetId)}/access")
+            return api.json.decodeFromString(AssetAccessResponse.serializer(), response)
+        }
+
+        suspend fun listListings(communityId: String): CommunityListingListResponse {
+            val response = api.getString("/communities/$communityId/listings")
+            return api.json.decodeFromString(CommunityListingListResponse.serializer(), response)
+        }
+
+        suspend fun createListing(communityId: String, request: CreateCommunityListingRequest): CommunityListing {
+            val body = api.json.encodeToString(CreateCommunityListingRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/listings", body)
+            return api.json.decodeFromString(CommunityListing.serializer(), response)
+        }
+
+        suspend fun getListing(communityId: String, listingId: String): CommunityListing {
+            val response = api.getString("/communities/$communityId/listings/${api.encodePathSegment(listingId)}")
+            return api.json.decodeFromString(CommunityListing.serializer(), response)
+        }
+
+        suspend fun updateListing(
+            communityId: String,
+            listingId: String,
+            request: UpdateCommunityListingRequest,
+        ): CommunityListing {
+            val body = api.json.encodeToString(UpdateCommunityListingRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/listings/${api.encodePathSegment(listingId)}", body)
+            return api.json.decodeFromString(CommunityListing.serializer(), response)
+        }
+
+        suspend fun listPurchases(communityId: String): CommunityPurchaseListResponse {
+            val response = api.getString("/communities/$communityId/purchases")
+            return api.json.decodeFromString(CommunityPurchaseListResponse.serializer(), response)
+        }
+
+        suspend fun getPurchase(communityId: String, purchaseId: String): CommunityPurchase {
+            val response = api.getString("/communities/$communityId/purchases/${api.encodePathSegment(purchaseId)}")
+            return api.json.decodeFromString(CommunityPurchase.serializer(), response)
+        }
+
+        suspend fun preflightPurchaseQuote(
+            communityId: String,
+            request: CommunityPurchaseQuotePreflightRequest,
+        ): CommunityPurchaseQuotePreflight {
+            val body = api.json.encodeToString(CommunityPurchaseQuotePreflightRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/purchase-quote-preflight", body)
+            return api.json.decodeFromString(CommunityPurchaseQuotePreflight.serializer(), response)
+        }
+
+        suspend fun createPurchaseQuote(
+            communityId: String,
+            request: CommunityPurchaseQuoteRequest,
+        ): CommunityPurchaseQuote {
+            val body = api.json.encodeToString(CommunityPurchaseQuoteRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/purchase-quotes", body)
+            return api.json.decodeFromString(CommunityPurchaseQuote.serializer(), response)
+        }
+
+        suspend fun settlePurchase(
+            communityId: String,
+            request: CommunityPurchaseSettlementRequest,
+        ): CommunityPurchaseSettlement {
+            val body = api.json.encodeToString(CommunityPurchaseSettlementRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/purchase-settlements", body)
+            return api.json.decodeFromString(CommunityPurchaseSettlement.serializer(), response)
+        }
+
+        suspend fun failPurchase(
+            communityId: String,
+            request: CommunityPurchaseSettlementFailureRequest,
+        ): CommunityPurchaseSettlementFailure {
+            val body = api.json.encodeToString(CommunityPurchaseSettlementFailureRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/fail-purchase-settlement", body)
+            return api.json.decodeFromString(CommunityPurchaseSettlementFailure.serializer(), response)
+        }
+
         suspend fun listComments(
             communityId: String,
             postId: String,
@@ -435,6 +555,14 @@ class ApiClient(private val sessionStore: SessionStore) {
             )
             val response = api.getString(path, requireAuth = false)
             return api.json.decodeFromString(PostListResponse.serializer(), response)
+        }
+
+        suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse {
+            val response = api.getString(
+                "/public-communities/${api.encodePathSegment(communityId)}/live-rooms/${api.encodePathSegment(liveRoomId)}/access",
+                requireAuth = false,
+            )
+            return api.json.decodeFromString(LiveRoomAccessResponse.serializer(), response)
         }
     }
 

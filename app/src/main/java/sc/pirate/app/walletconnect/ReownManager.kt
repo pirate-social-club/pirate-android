@@ -18,6 +18,7 @@ import io.privy.auth.siwe.SiweMessageParams
 import io.privy.auth.siwe.WalletLoginMetadata
 import io.privy.sdk.Privy
 import io.privy.wallet.WalletClientType
+import java.math.BigInteger
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +32,14 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.web3j.abi.FunctionEncoder
+import org.web3j.abi.TypeReference
+import org.web3j.abi.datatypes.Address
+import org.web3j.abi.datatypes.Function
+import org.web3j.abi.datatypes.generated.Uint256
 
 data class ReownUiState(
     val available: Boolean,
@@ -45,6 +54,13 @@ data class ReownUiState(
 data class LinkedWalletResult(
     val user: PrivyUser,
     val walletAddress: String,
+)
+
+data class EvmTransactionRequest(
+    val from: String,
+    val to: String,
+    val value: String = "0x0",
+    val data: String? = null,
 )
 
 class ReownManager(
@@ -236,6 +252,59 @@ class ReownManager(
         return authenticateConnectedWallet(privy, linkMode = true)
     }
 
+    suspend fun sendEvmTransaction(
+        transaction: EvmTransactionRequest,
+        chainId: String? = null,
+    ): String {
+        require(initialized) { "WalletConnect is not initialized." }
+        val account = requireNotNull(runCatching { AppKit.getAccount() }.getOrNull()) {
+            "Connect a wallet before sending a transaction."
+        }
+        val resolvedChainId = chainId?.takeIf { it.isNotBlank() }
+            ?: runCatching { AppKit.getSelectedChain()?.id }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: account.chain.id
+
+        return requestStringResult(
+            method = "eth_sendTransaction",
+            params = Json.encodeToString(
+                buildJsonArray {
+                    add(
+                        buildJsonObject {
+                            put("from", transaction.from)
+                            put("to", transaction.to)
+                            put("value", transaction.value)
+                            transaction.data?.takeIf { it.isNotBlank() }?.let { put("data", it) }
+                        },
+                    )
+                },
+            ),
+            chainId = resolvedChainId,
+            coinbaseMissingMessage = "Coinbase did not return a transaction hash.",
+            walletConnectTypeMessage = "Wallet returned a non-string transaction hash.",
+        )
+    }
+
+    suspend fun sendErc20Transfer(
+        tokenAddress: String,
+        recipientAddress: String,
+        amountAtomic: BigInteger,
+        chainId: String? = null,
+    ): String {
+        require(amountAtomic > BigInteger.ZERO) { "Transfer amount must be positive." }
+        val account = requireNotNull(runCatching { AppKit.getAccount() }.getOrNull()) {
+            "Connect a wallet before sending a transaction."
+        }
+        return sendEvmTransaction(
+            transaction = EvmTransactionRequest(
+                from = account.address,
+                to = tokenAddress,
+                value = "0x0",
+                data = encodeErc20TransferData(recipientAddress, amountAtomic),
+            ),
+            chainId = chainId,
+        )
+    }
+
     private suspend fun authenticateConnectedWallet(
         privy: Privy,
         linkMode: Boolean,
@@ -316,15 +385,29 @@ class ReownManager(
             ListSerializer(String.serializer()),
             listOf(message, address),
         )
-        val request = Request(
+        return requestStringResult(
             method = "personal_sign",
+            params = params,
+            chainId = chainId,
+            coinbaseMissingMessage = "Coinbase did not return a signature.",
+            walletConnectTypeMessage = "Wallet returned a non-string signature.",
+        )
+    }
+
+    private suspend fun requestStringResult(
+        method: String,
+        params: String,
+        chainId: String,
+        coinbaseMissingMessage: String,
+        walletConnectTypeMessage: String,
+    ): String {
+        val request = Request(
+            method = method,
             params = params,
             chainId = chainId,
             expiry = null,
         )
-
         val requestOutcome = CompletableDeferred<Any>()
-
         AppKit.request(
             request = request,
             onSuccess = { result ->
@@ -334,17 +417,15 @@ class ReownManager(
                 requestOutcome.complete(error)
             },
         )
-
         val requestResult = when (val outcome = withTimeout(30_000) { requestOutcome.await() }) {
             is Throwable -> throw outcome
             is SentRequestResult -> outcome
-            else -> error("Wallet request failed before returning a signature request handle.")
+            else -> error("Wallet request failed before returning a request handle.")
         }
-
         return when (requestResult) {
             is SentRequestResult.Coinbase -> {
                 val first = requestResult.results.firstOrNull()
-                    ?: error("Coinbase did not return a signature.")
+                    ?: error(coinbaseMissingMessage)
                 when (first) {
                     is CoinbaseResult.Result -> first.value
                     is CoinbaseResult.Error -> error(first.message)
@@ -359,7 +440,7 @@ class ReownManager(
                         is Modal.Model.JsonRpcResponse.JsonRpcError -> error(jsonRpcResult.message)
                         is Modal.Model.JsonRpcResponse.JsonRpcResult ->
                             jsonRpcResult.result as? String
-                                ?: error("Wallet returned a non-string signature.")
+                                ?: error(walletConnectTypeMessage)
                     }
                 } finally {
                     pendingWalletConnectRequests.remove(requestResult.requestId)
@@ -379,6 +460,15 @@ class ReownManager(
             Modal.ConnectorType.COINBASE -> "coinbase_wallet"
             Modal.ConnectorType.WALLET_CONNECT, null -> "wallet_connect"
         }
+
+    private fun encodeErc20TransferData(recipientAddress: String, amountAtomic: BigInteger): String {
+        val function = Function(
+            "transfer",
+            listOf(Address(recipientAddress), Uint256(amountAtomic)),
+            emptyList<TypeReference<*>>(),
+        )
+        return FunctionEncoder.encode(function)
+    }
 
     private fun resolveSiweChainId(chain: Modal.Model.Chain): String {
         val fromReference = chain.chainReference.trim()
