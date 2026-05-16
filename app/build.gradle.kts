@@ -119,6 +119,8 @@ android {
     }
     debug {
       isMinifyEnabled = false
+      applicationIdSuffix = ".blacksmith"
+      versionNameSuffix = "-blacksmith"
     }
   }
 
