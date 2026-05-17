@@ -22,8 +22,11 @@ fun localProp(name: String): String? =
 fun envProp(name: String): String? =
   System.getenv(name)?.trim()?.takeIf { it.isNotBlank() }
 
+fun gradleProp(name: String): String? =
+  (findProperty(name) as? String)?.trim()?.takeIf { it.isNotBlank() }
+
 fun runtimeProp(name: String): String? =
-  localProp(name) ?: envProp(name)
+  gradleProp(name) ?: localProp(name) ?: envProp(name)
 
 fun buildConfigString(value: String): String =
   "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -119,7 +122,12 @@ android {
     }
     debug {
       isMinifyEnabled = false
-      applicationIdSuffix = ".blacksmith"
+      if (runtimeProp("DEBUG_USE_RELEASE_APPLICATION_ID")?.lowercase() != "true") {
+        applicationIdSuffix = ".blacksmith"
+      }
+      if (runtimeProp("DEBUG_SIGN_WITH_RELEASE")?.lowercase() == "true") {
+        signingConfig = signingConfigs.findByName("release")
+      }
       versionNameSuffix = "-blacksmith"
     }
   }
