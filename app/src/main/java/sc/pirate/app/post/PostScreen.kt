@@ -721,6 +721,7 @@ fun PostScreen(
     postId: String,
     hasSession: Boolean,
     onNavigateToCompose: ((String) -> Unit)? = null,
+    onNavigateToCommunity: (String) -> Unit,
     onWatchLiveRoom: () -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
@@ -826,6 +827,7 @@ fun PostScreen(
                             purchaseSubmitting = state.purchaseSubmitting,
                             purchaseError = state.purchaseError,
                             purchaseMessage = state.purchaseMessage,
+                            onOpenCommunity = onNavigateToCommunity,
                             onVote = { value ->
                                 if (hasSession) viewModel.votePost(value) else authPromptAction = "Voting"
                             },
@@ -1012,6 +1014,7 @@ private fun ThreadRootPost(
     purchaseSubmitting: Boolean,
     purchaseError: String?,
     purchaseMessage: String?,
+    onOpenCommunity: (String) -> Unit,
     onVote: (Int) -> Unit,
     onBuyLiveRoomTicket: () -> Unit,
     onWatchLiveRoom: () -> Unit,
@@ -1043,6 +1046,10 @@ private fun ThreadRootPost(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(PirateTokens.radius.sm))
+                    .clickable { onOpenCommunity(post.communityId) }
+                    .padding(vertical = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

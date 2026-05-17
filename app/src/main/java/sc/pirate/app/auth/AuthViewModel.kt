@@ -1,6 +1,7 @@
 package sc.pirate.app.auth
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import io.privy.auth.PrivyUser
@@ -9,12 +10,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import sc.pirate.app.api.ApiError
 import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.api.model.SessionExchangeResponse
 
 sealed class AuthUiState {
     data object Idle : AuthUiState()
     data object Loading : AuthUiState()
+    data class EmailSending(val email: String) : AuthUiState()
+    data class EmailCodeSent(val email: String) : AuthUiState()
+    data class EmailVerifying(val email: String) : AuthUiState()
     data class Authenticated(val session: SessionExchangeResponse) : AuthUiState()
     data class Unavailable(val message: String) : AuthUiState()
     data class Error(val message: String) : AuthUiState()
@@ -88,7 +93,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     walletAddress = linkedWallet.walletAddress,
                 )
             } catch (e: Exception) {
-                _state.value = AuthUiState.Error(e.message ?: "Wallet login failed")
+                Log.w(TAG, "Wallet login failed", e)
+                _state.value = AuthUiState.Error(e.authMessage("Wallet login failed."))
             }
         }
     }
@@ -110,7 +116,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 PrivyClientStore.setUser(user)
                 exchangePrivyToken(user)
             } catch (e: Exception) {
-                _state.value = AuthUiState.Error(e.message ?: "OAuth login failed")
+                Log.w(TAG, "${provider.name} login failed", e)
+                _state.value = AuthUiState.Error(e.authMessage("${provider.name} login failed."))
             }
         }
     }
@@ -122,17 +129,19 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
-            _state.value = AuthUiState.Loading
+            val trimmedEmail = email.trim()
+            _state.value = AuthUiState.EmailVerifying(trimmedEmail)
             try {
                 val privy = PrivyClientStore.get(getApplication(), privyConfig)
                 val user = privy.email.loginWithCode(
                     code = code.trim(),
-                    email = email.trim(),
+                    email = trimmedEmail,
                 ).getOrThrow()
                 PrivyClientStore.setUser(user)
                 exchangePrivyToken(user)
             } catch (e: Exception) {
-                _state.value = AuthUiState.Error(e.message ?: "Email login failed")
+                Log.w(TAG, "Email login failed", e)
+                _state.value = AuthUiState.Error(e.authMessage("Email sign-in failed."))
             }
         }
     }
@@ -144,11 +153,15 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
+            val trimmedEmail = email.trim()
+            _state.value = AuthUiState.EmailSending(trimmedEmail)
             try {
                 val privy = PrivyClientStore.get(getApplication(), privyConfig)
-                privy.email.sendCode(email.trim()).getOrThrow()
+                privy.email.sendCode(trimmedEmail).getOrThrow()
+                _state.value = AuthUiState.EmailCodeSent(trimmedEmail)
             } catch (e: Exception) {
-                _state.value = AuthUiState.Error(e.message ?: "Could not send email code")
+                Log.w(TAG, "Could not send email code", e)
+                _state.value = AuthUiState.Error(e.authMessage("Could not send email code."))
             }
         }
     }
@@ -181,5 +194,20 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             sessionStore.clear()
             _state.value = privyConfig.disabledReason()?.let(AuthUiState::Unavailable) ?: AuthUiState.Idle
         }
+    }
+
+    private fun Exception.authMessage(fallback: String): String {
+        if (this is ApiError) {
+            val retryHint = if (retryable) " Try again." else ""
+            return "${message ?: fallback} (HTTP $status, $code).$retryHint"
+        }
+        val detail = message?.trim()?.takeIf { it.isNotBlank() }
+        if (detail != null) return detail
+        val type = this::class.java.simpleName.takeIf { it.isNotBlank() } ?: "unknown error"
+        return "$fallback ($type)"
+    }
+
+    private companion object {
+        const val TAG = "PirateAuth"
     }
 }

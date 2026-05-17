@@ -280,6 +280,9 @@ fun PirateNavHost(
                 onNavigateToCompose = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
                 },
+                onNavigateToCommunity = { communityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
+                },
                 onWatchLiveRoom = {
                     navController.navigate(PirateRoute.LiveRoomWeb.buildRoute(postId)) {
                         launchSingleTop = true

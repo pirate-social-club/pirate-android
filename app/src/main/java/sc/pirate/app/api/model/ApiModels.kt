@@ -4,7 +4,16 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.longOrNull
 import java.time.Instant
+
+private fun flexibleApiTimestamp(value: JsonElement?): String? {
+    val primitive = value as? JsonPrimitive ?: return null
+    return primitive.longOrNull?.let { Instant.ofEpochSecond(it).toString() }
+        ?: primitive.contentOrNull
+}
 
 @Serializable
 data class SelfVerificationDisclosures(
@@ -528,7 +537,7 @@ data class Comment(
     @SerialName("upvote_count") val upvoteCount: Int = 0,
     @SerialName("downvote_count") val downvoteCount: Int = 0,
     val score: Int = 0,
-    @SerialName("last_reply_at") private val contractLastReplyAt: String? = null,
+    @SerialName("last_reply_at") private val contractLastReplyAt: JsonElement? = null,
     @SerialName("last_reply") private val feedLastReplyAt: Long? = null,
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
@@ -539,7 +548,8 @@ data class Comment(
     val threadRootPostId: String get() = contractThreadRootPostId ?: feedThreadRootPostId.orEmpty()
     val parentCommentId: String? get() = contractParentCommentId ?: feedParentCommentId
     val authorUserId: String? get() = contractAuthorUserId ?: feedAuthorUserId
-    val lastReplyAt: String? get() = contractLastReplyAt ?: feedLastReplyAt?.let { Instant.ofEpochSecond(it).toString() }
+    val lastReplyAt: String? get() = flexibleApiTimestamp(contractLastReplyAt)
+        ?: feedLastReplyAt?.let { Instant.ofEpochSecond(it).toString() }
     val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
 }
 
