@@ -564,6 +564,28 @@ class ApiClient(private val sessionStore: SessionStore) {
             )
             return api.json.decodeFromString(LiveRoomAccessResponse.serializer(), response)
         }
+
+        suspend fun viewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse {
+            val response = api.postString(
+                "/public-communities/${api.encodePathSegment(communityId)}/live-rooms/${api.encodePathSegment(liveRoomId)}/viewer_attach",
+                requireAuth = false,
+            )
+            return api.json.decodeFromString(LiveRoomViewerAttachResponse.serializer(), response)
+        }
+
+        suspend fun viewerRenewLiveRoom(
+            communityId: String,
+            liveRoomId: String,
+            request: LiveRoomViewerRenewRequest,
+        ): LiveRoomViewerAttachResponse {
+            val body = api.json.encodeToString(LiveRoomViewerRenewRequest.serializer(), request)
+            val response = api.postString(
+                "/public-communities/${api.encodePathSegment(communityId)}/live-rooms/${api.encodePathSegment(liveRoomId)}/viewer_renew",
+                body,
+                requireAuth = false,
+            )
+            return api.json.decodeFromString(LiveRoomViewerAttachResponse.serializer(), response)
+        }
     }
 
     class PostsEndpoints internal constructor(private val api: ApiClient) {

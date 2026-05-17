@@ -1136,15 +1136,12 @@ private fun ThreadLiveRoomSummary(
     val accessMode = access?.access?.accessMode ?: room?.accessMode ?: publicAccessMode ?: listing?.let { "paid" }
     val allowed = access?.access?.allowed == true || purchase != null || accessMode == "free"
     val decisionReason = access?.access?.decisionReason
+    val needsTicket = decisionReason == "purchase_required" || (accessMode == "paid" && !allowed)
     val coverSrc = resolvePublicMediaSrc(room?.coverRef ?: fallbackCoverRef)
     val priceLabel = listing?.priceCents?.takeIf { it > 0 }?.let(::formatUsdCents)
     val listingActive = listing?.status == null || listing.status == "active"
     val statusLabel = when (status) {
-        "live" -> if (decisionReason == "purchase_required" || accessMode == "paid") {
-            "Live now - ticket required"
-        } else {
-            "Live now"
-        }
+        "live" -> "Live now"
         "ended" -> "Ended"
         "canceled" -> "Canceled"
         else -> "Scheduled event"
@@ -1152,7 +1149,7 @@ private fun ThreadLiveRoomSummary(
     val accessLabel = when {
         status == "ended" || status == "canceled" -> null
         purchase != null -> "Ticket purchased"
-        decisionReason == "purchase_required" || accessMode == "paid" -> when {
+        needsTicket -> when {
             listing != null && listingActive -> priceLabel?.let { "Tickets $it" } ?: "Tickets available"
             else -> "Ticket required"
         }
@@ -1160,14 +1157,22 @@ private fun ThreadLiveRoomSummary(
         accessMode == "free" -> "Free"
         else -> "Live event"
     }
-    val canBuyTicket = listing != null &&
-        listingActive &&
+    val description = when {
+        status == "ended" -> "This room has ended."
+        status == "canceled" -> "This room was canceled."
+        needsTicket -> priceLabel?.let { "$it ticket required to watch." } ?: "Ticket required to watch."
+        accessMode == "gated" && !allowed -> "Community access is required before you can watch."
+        status == "live" && allowed -> "Watch the concert from this page."
+        else -> "Come back when the host goes live."
+    }
+    val canBuyTicket = listingActive &&
         purchase == null &&
         status != "ended" &&
         status != "canceled" &&
-        (decisionReason == "purchase_required" || accessMode == "paid")
+        needsTicket
     val canWatch = allowed && status == "live"
     val buyTicketText = priceLabel?.let { "Buy ticket $it" } ?: "Buy ticket"
+    val showTitle = title != fallbackTitle
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1209,13 +1214,15 @@ private fun ThreadLiveRoomSummary(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (showTitle) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = PirateTokens.colors.textPrimary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Text(
                         text = statusLabel,
                         style = MaterialTheme.typography.bodyMedium,
@@ -1236,6 +1243,13 @@ private fun ThreadLiveRoomSummary(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
             purchaseError?.let {

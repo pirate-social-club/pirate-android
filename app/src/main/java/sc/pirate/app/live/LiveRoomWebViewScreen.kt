@@ -1,43 +1,59 @@
 package sc.pirate.app.live
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
+import android.view.View
+import android.view.ViewGroup
+import android.view.Window
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.put
 import org.json.JSONObject
 import sc.pirate.app.BuildConfig
 import sc.pirate.app.PirateApp
-import sc.pirate.app.api.model.OnboardingStatus
-import sc.pirate.app.api.model.Profile
-import sc.pirate.app.api.model.SessionExchangeResponse
-import sc.pirate.app.api.model.WalletAttachmentSummary
-import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.ui.PhosphorIcons
 
-@OptIn(ExperimentalMaterial3Api::class)
+private sealed interface LiveRoomViewerState {
+    data object Loading : LiveRoomViewerState
+    data class Ready(val html: String) : LiveRoomViewerState
+    data class Blocked(val title: String, val message: String) : LiveRoomViewerState
+    data class Error(val message: String) : LiveRoomViewerState
+}
+
 @Composable
 fun LiveRoomWebViewScreen(
     app: PirateApp,
@@ -45,44 +61,112 @@ fun LiveRoomWebViewScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val session by app.sessionStore.observe().collectAsState(initial = null)
-    val targetUrl = remember(postId) { buildLiveRoomWebUrl(postId) }
+    var viewerState by remember(postId) { mutableStateOf<LiveRoomViewerState>(LiveRoomViewerState.Loading) }
 
-    androidx.compose.material3.Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Live room",
-                        color = PirateTokens.colors.textPrimary,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = PhosphorIcons.X,
-                            contentDescription = "Back",
-                            tint = PirateTokens.colors.textPrimary,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = PirateTokens.colors.bgPage,
-                ),
+    LaunchedEffect(postId, session?.accessToken) {
+        viewerState = LiveRoomViewerState.Loading
+        viewerState = try {
+            loadLiveRoomViewerState(
+                app = app,
+                postId = postId,
+                hasSession = session != null,
             )
-        },
-        modifier = modifier,
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize(),
-        ) {
-            val activeSession = session
-            LiveRoomWebView(
-                session = activeSession,
-                targetUrl = targetUrl,
+        } catch (error: Exception) {
+            LiveRoomViewerState.Error(error.message ?: "Could not open this live room.")
+        }
+    }
+
+    DisposableEffect(context) {
+        val window = context.findActivity()?.window
+        val previousChrome = window?.captureChromeState()
+        if (window != null) {
+            window.enterLiveRoomImmersiveMode()
+        }
+
+        onDispose {
+            if (window != null && previousChrome != null) {
+                window.restoreChromeState(previousChrome)
+            }
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
+    ) {
+        when (val state = viewerState) {
+            LiveRoomViewerState.Loading -> LiveRoomStatusMessage(
+                message = "Connecting to the live room.",
+                loading = true,
                 modifier = Modifier.fillMaxSize(),
+            )
+            is LiveRoomViewerState.Ready -> LiveRoomWebView(
+                html = state.html,
+                modifier = Modifier.fillMaxSize(),
+            )
+            is LiveRoomViewerState.Blocked -> LiveRoomStatusMessage(
+                title = state.title,
+                message = state.message,
+                modifier = Modifier.fillMaxSize(),
+            )
+            is LiveRoomViewerState.Error -> LiveRoomStatusMessage(
+                title = "Live room",
+                message = state.message,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp),
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.X,
+                contentDescription = "Back",
+                tint = Color.White,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LiveRoomStatusMessage(
+    message: String,
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    loading: Boolean = false,
+) {
+    Box(
+        modifier = modifier
+            .background(Color.Black)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            if (loading) {
+                CircularProgressIndicator(color = Color.White)
+            }
+            title?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                )
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White.copy(alpha = 0.76f),
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -91,25 +175,17 @@ fun LiveRoomWebViewScreen(
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun LiveRoomWebView(
-    session: SessionExchangeResponse?,
-    targetUrl: String,
+    html: String,
     modifier: Modifier = Modifier,
 ) {
-    val sessionJson = remember(session) { session?.let(::buildWebStoredSessionJson) }
-    val bootstrapHtml = remember(sessionJson, targetUrl) {
-        sessionJson?.let {
-            buildBootstrapHtml(
-                sessionJson = it,
-                targetUrl = targetUrl,
-            )
-        }
-    }
     val baseOrigin = remember { buildWebBaseOrigin() }
-    val loadKey = remember(sessionJson, targetUrl) {
-        if (sessionJson == null) {
-            "public:$targetUrl"
-        } else {
-            "session:${session?.accessToken.hashCode()}:$targetUrl"
+    val loadKey = remember(html) { "viewer:${html.hashCode()}" }
+    val context = LocalContext.current
+    val liveRoomWebChromeClient = remember(context) { LiveRoomWebChromeClient(context) }
+
+    DisposableEffect(liveRoomWebChromeClient) {
+        onDispose {
+            liveRoomWebChromeClient.hideCustomView()
         }
     }
 
@@ -122,92 +198,295 @@ private fun LiveRoomWebView(
                 settings.mediaPlaybackRequiresUserGesture = false
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 webViewClient = WebViewClient()
-                webChromeClient = WebChromeClient()
-                loadLiveRoomUrl(loadKey, bootstrapHtml, baseOrigin, targetUrl)
+                webChromeClient = liveRoomWebChromeClient
+                loadLiveRoomHtml(loadKey, html, baseOrigin)
             }
         },
         update = { webView ->
-            webView.loadLiveRoomUrl(loadKey, bootstrapHtml, baseOrigin, targetUrl)
+            webView.loadLiveRoomHtml(loadKey, html, baseOrigin)
         },
     )
 }
 
-private fun WebView.loadLiveRoomUrl(
+private fun WebView.loadLiveRoomHtml(
     loadKey: String,
-    bootstrapHtml: String?,
+    html: String,
     baseOrigin: String,
-    targetUrl: String,
 ) {
     if (tag == loadKey) return
     tag = loadKey
-    if (bootstrapHtml == null) {
-        loadUrl(targetUrl)
-    } else {
-        loadDataWithBaseURL(baseOrigin, bootstrapHtml, "text/html", "UTF-8", null)
+    loadDataWithBaseURL(baseOrigin, html, "text/html", "UTF-8", null)
+}
+
+private class LiveRoomWebChromeClient(
+    private val context: Context,
+) : WebChromeClient() {
+    private var customView: View? = null
+    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+    private var originalSystemUiVisibility: Int? = null
+
+    override fun onShowCustomView(view: View?, callback: WebChromeClient.CustomViewCallback?) {
+        val activity = context.findActivity()
+        val nextView = view
+        if (activity == null || nextView == null) {
+            callback?.onCustomViewHidden()
+            return
+        }
+        if (customView != null) {
+            callback?.onCustomViewHidden()
+            return
+        }
+
+        val decorView = activity.window.decorView as? ViewGroup
+        if (decorView == null) {
+            callback?.onCustomViewHidden()
+            return
+        }
+
+        originalSystemUiVisibility = activity.window.decorView.systemUiVisibility
+        customView = nextView
+        customViewCallback = callback
+        decorView.addView(
+            nextView,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        activity.window.enterLiveRoomImmersiveMode()
+    }
+
+    override fun onHideCustomView() {
+        hideCustomView()
+    }
+
+    fun hideCustomView() {
+        val view = customView ?: return
+        val activity = context.findActivity()
+        val decorView = activity?.window?.decorView as? ViewGroup
+        decorView?.removeView(view)
+        originalSystemUiVisibility?.let { activity?.window?.decorView?.systemUiVisibility = it }
+        customViewCallback?.onCustomViewHidden()
+        customView = null
+        customViewCallback = null
+        originalSystemUiVisibility = null
     }
 }
 
-private val webSessionJson = Json {
+private data class WindowChromeState(
+    val systemUiVisibility: Int,
+    val statusBarColor: Int,
+    val navigationBarColor: Int,
+)
+
+private const val LIVE_ROOM_IMMERSIVE_FLAGS =
+    View.SYSTEM_UI_FLAG_FULLSCREEN or
+        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+
+private fun Window.captureChromeState(): WindowChromeState =
+    WindowChromeState(
+        systemUiVisibility = decorView.systemUiVisibility,
+        statusBarColor = statusBarColor,
+        navigationBarColor = navigationBarColor,
+    )
+
+private fun Window.enterLiveRoomImmersiveMode() {
+    decorView.systemUiVisibility = LIVE_ROOM_IMMERSIVE_FLAGS
+    statusBarColor = android.graphics.Color.TRANSPARENT
+    navigationBarColor = android.graphics.Color.TRANSPARENT
+}
+
+private fun Window.restoreChromeState(state: WindowChromeState) {
+    decorView.systemUiVisibility = state.systemUiVisibility
+    statusBarColor = state.statusBarColor
+    navigationBarColor = state.navigationBarColor
+}
+
+private tailrec fun Context.findActivity(): Activity? =
+    when (this) {
+        is Activity -> this
+        is ContextWrapper -> baseContext.findActivity()
+        else -> null
+    }
+
+private val viewerJson = Json {
     encodeDefaults = false
     ignoreUnknownKeys = true
 }
 
-private fun buildWebStoredSessionJson(session: SessionExchangeResponse): String =
-    webSessionJson.encodeToString(
+private suspend fun loadLiveRoomViewerState(
+    app: PirateApp,
+    postId: String,
+    hasSession: Boolean,
+): LiveRoomViewerState {
+    val postResponse = if (hasSession) {
+        runCatching { app.repositories.postRepository.getPost(postId) }
+            .getOrElse { app.repositories.postRepository.getPublicPost(postId) }
+    } else {
+        app.repositories.postRepository.getPublicPost(postId)
+    }
+    val post = postResponse.post
+    val communityId = post.communityId.takeIf { it.isNotBlank() }
+        ?: return LiveRoomViewerState.Blocked(
+            title = post.title ?: "Live room",
+            message = "This post is missing its community.",
+        )
+    val liveRoomId = post.anchorLiveRoom?.takeIf { it.isNotBlank() }
+        ?: return LiveRoomViewerState.Blocked(
+            title = post.title ?: "Live room",
+            message = "This post is not attached to a live room.",
+        )
+    val access = if (hasSession) {
+        runCatching { app.repositories.communityRepository.getLiveRoomAccess(communityId, liveRoomId) }
+            .getOrElse { app.repositories.communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId) }
+    } else {
+        app.repositories.communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId)
+    }
+    val title = access.room.title.takeIf { it.isNotBlank() } ?: post.title ?: "Live room"
+    if (!access.access.allowed) {
+        val message = when (access.access.decisionReason) {
+            "purchase_required" -> "A ticket is required for this live room."
+            "membership_required" -> "Community access is required for this live room."
+            "not_live" -> "This live room is not live yet."
+            else -> "This live room is not available."
+        }
+        return LiveRoomViewerState.Blocked(title = title, message = message)
+    }
+    if (access.room.status != "live") {
+        return LiveRoomViewerState.Blocked(
+            title = title,
+            message = when (access.room.status) {
+                "ended" -> "This live room has ended."
+                "canceled" -> "This live room was canceled."
+                else -> "This live room is not live yet."
+            },
+        )
+    }
+
+    val attach = if (hasSession) {
+        runCatching { app.repositories.communityRepository.viewerAttachLiveRoom(communityId, liveRoomId) }
+            .getOrElse { app.repositories.communityRepository.publicViewerAttachLiveRoom(communityId, liveRoomId) }
+    } else {
+        app.repositories.communityRepository.publicViewerAttachLiveRoom(communityId, liveRoomId)
+    }
+    return LiveRoomViewerState.Ready(buildAgoraViewerHtml(attach, title))
+}
+
+private fun buildAgoraViewerHtml(attach: LiveRoomViewerAttachResponse, title: String): String {
+    val agora = attach.agora
+    val configJson = viewerJson.encodeToString(
         kotlinx.serialization.json.JsonObject.serializer(),
         buildJsonObject {
-            put("accessToken", session.accessToken)
-            put(
-                "user",
-                buildJsonObject {
-                    put("id", session.user.userId)
-                    put("user_id", session.user.userId)
-                    val primaryWalletAttachment = session.walletAttachments
-                        .firstOrNull { it.isPrimary }
-                        ?.walletAttachmentId
-                        ?: session.walletAttachments.firstOrNull()?.walletAttachmentId
-                    if (!primaryWalletAttachment.isNullOrBlank()) {
-                        put("primary_wallet_attachment", primaryWalletAttachment)
-                    }
-                },
-            )
-            put("profile", webSessionJson.encodeToJsonElement(Profile.serializer(), session.profile))
-            put("onboarding", webSessionJson.encodeToJsonElement(OnboardingStatus.serializer(), session.onboarding))
-            put(
-                "walletAttachments",
-                webSessionJson.encodeToJsonElement(
-                    ListSerializer(WalletAttachmentSummary.serializer()),
-                    session.walletAttachments,
-                ),
-            )
-            put("storedAt", java.time.Instant.now().toString())
+            put("title", title)
+            put("configured", agora?.configured == true)
+            put("appId", agora?.appId.orEmpty())
+            put("channel", agora?.channel.orEmpty())
+            put("token", agora?.token.orEmpty())
+            put("uid", agora?.uid ?: 0)
         },
     )
-
-private fun buildBootstrapHtml(sessionJson: String, targetUrl: String): String {
-    val sessionLiteral = JSONObject.quote(sessionJson)
-    val targetLiteral = JSONObject.quote(targetUrl)
+    val configLiteral = JSONObject.quote(configJson)
     return """
         <!doctype html>
         <html>
-          <head><meta name="viewport" content="width=device-width,initial-scale=1" /></head>
-          <body style="margin:0;background:#0f1115;color:#f8fafc;font-family:sans-serif;">
-            <script>
-              try {
-                localStorage.setItem("pirate_session", $sessionLiteral);
-                window.location.replace($targetLiteral);
-              } catch (error) {
-                document.body.textContent = "Could not open the live room.";
+          <head>
+            <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+            <style>
+              html, body, #video { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+              body { color: #fff; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+              #video { position: fixed; inset: 0; }
+              #status {
+                position: fixed;
+                inset: 0;
+                display: grid;
+                place-items: center;
+                padding: 28px;
+                text-align: center;
+                background: #000;
               }
+              .stack { display: grid; gap: 12px; max-width: 420px; }
+              .title { font-size: 18px; font-weight: 650; line-height: 1.25; }
+              .message { color: rgba(255,255,255,0.72); font-size: 16px; line-height: 1.45; }
+            </style>
+            <script src="https://download.agora.io/sdk/release/AgoraRTC_N-4.24.0.js"></script>
+          </head>
+          <body>
+            <div id="video"></div>
+            <div id="status">
+              <div class="stack">
+                <div id="title" class="title"></div>
+                <div id="message" class="message">Connecting to the live room.</div>
+              </div>
+            </div>
+            <script>
+              const config = JSON.parse($configLiteral);
+              const statusEl = document.getElementById("status");
+              const titleEl = document.getElementById("title");
+              const messageEl = document.getElementById("message");
+              const videoEl = document.getElementById("video");
+              titleEl.textContent = config.title || "Live room";
+
+              function setMessage(message) {
+                messageEl.textContent = message;
+              }
+
+              async function joinRoom() {
+                if (!config.configured || !config.appId || !config.channel) {
+                  setMessage("Browser playback is unavailable for this room.");
+                  return;
+                }
+                if (!window.AgoraRTC) {
+                  setMessage("Could not load the live video runtime.");
+                  return;
+                }
+
+                const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+                client.on("user-published", async (user, mediaType) => {
+                  try {
+                    await client.subscribe(user, mediaType);
+                    if (mediaType === "video" && user.videoTrack) {
+                      statusEl.style.display = "none";
+                      videoEl.innerHTML = "";
+                      user.videoTrack.play(videoEl);
+                    }
+                    if (mediaType === "audio" && user.audioTrack) {
+                      user.audioTrack.play();
+                    }
+                  } catch (error) {
+                    statusEl.style.display = "grid";
+                    setMessage(error && error.message ? error.message : String(error));
+                  }
+                });
+                client.on("user-unpublished", (_user, mediaType) => {
+                  if (mediaType === "video") {
+                    statusEl.style.display = "grid";
+                    setMessage("Connected. Waiting for the broadcaster.");
+                  }
+                });
+                client.on("user-left", () => {
+                  statusEl.style.display = "grid";
+                  setMessage("Connected. Waiting for the broadcaster.");
+                });
+
+                await client.setClientRole("audience");
+                await client.join(config.appId, config.channel, config.token || null, config.uid || null);
+                setMessage("Connected. Waiting for the broadcaster.");
+                window.addEventListener("pagehide", () => {
+                  client.leave().catch(() => {});
+                });
+              }
+
+              joinRoom().catch((error) => {
+                setMessage(error && error.message ? error.message : String(error));
+              });
             </script>
           </body>
         </html>
     """.trimIndent()
-}
-
-private fun buildLiveRoomWebUrl(postId: String): String {
-    val base = BuildConfig.WEB_BASE_URL.trim().trimEnd('/')
-    return "$base/p/${Uri.encode(postId)}/live?source=android"
 }
 
 private fun buildWebBaseOrigin(): String {

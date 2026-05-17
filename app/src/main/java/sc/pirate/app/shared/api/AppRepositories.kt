@@ -91,7 +91,13 @@ interface CommunityRepository {
     suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun getPublicLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun viewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse
+    suspend fun publicViewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse
     suspend fun viewerRenewLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomViewerRenewRequest,
+    ): LiveRoomViewerAttachResponse
+    suspend fun publicViewerRenewLiveRoom(
         communityId: String,
         liveRoomId: String,
         request: LiveRoomViewerRenewRequest,
@@ -316,12 +322,27 @@ class ApiCommunityRepository(
         return apiClient.communities.viewerAttachLiveRoom(communityId, liveRoomId)
     }
 
+    override suspend fun publicViewerAttachLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+    ): LiveRoomViewerAttachResponse {
+        return apiClient.publicCommunities.viewerAttachLiveRoom(communityId, liveRoomId)
+    }
+
     override suspend fun viewerRenewLiveRoom(
         communityId: String,
         liveRoomId: String,
         request: LiveRoomViewerRenewRequest,
     ): LiveRoomViewerAttachResponse {
         return apiClient.communities.viewerRenewLiveRoom(communityId, liveRoomId, request)
+    }
+
+    override suspend fun publicViewerRenewLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomViewerRenewRequest,
+    ): LiveRoomViewerAttachResponse {
+        return apiClient.publicCommunities.viewerRenewLiveRoom(communityId, liveRoomId, request)
     }
 
     override suspend fun listListings(communityId: String): CommunityListingListResponse {

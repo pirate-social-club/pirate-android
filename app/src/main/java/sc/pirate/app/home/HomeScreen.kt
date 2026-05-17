@@ -1130,11 +1130,12 @@ private fun LiveRoomSummaryCard(
     val accessMode = access?.access?.accessMode ?: room?.accessMode ?: publicAccessMode ?: listing?.let { "paid" }
     val allowed = access?.access?.allowed == true || purchase != null || accessMode == "free"
     val decisionReason = access?.access?.decisionReason
+    val needsTicket = decisionReason == "purchase_required" || (accessMode == "paid" && !allowed)
     val coverSrc = resolvePublicMediaSrc(room?.coverRef ?: fallbackCoverRef)
     val priceLabel = listing?.priceCents?.takeIf { it > 0 }?.let(::formatUsdCents)
     val listingActive = listing != null && (listing.status == null || listing.status == "active")
     val statusLabel = when (status) {
-        "live" -> if (allowed) "Live now" else "Live now - ticket required"
+        "live" -> "Live now"
         "ended" -> "Ended"
         "canceled" -> "Canceled"
         else -> "Scheduled event"
@@ -1142,7 +1143,7 @@ private fun LiveRoomSummaryCard(
     val accessLabel = when {
         status == "ended" || status == "canceled" -> null
         purchase != null -> "Ticket purchased"
-        decisionReason == "purchase_required" || accessMode == "paid" -> when {
+        needsTicket -> when {
             listingActive -> priceLabel?.let { "Tickets $it" } ?: "Tickets available"
             else -> "Ticket required"
         }
@@ -1150,6 +1151,7 @@ private fun LiveRoomSummaryCard(
         accessMode == "free" -> "Free"
         else -> "Live event"
     }
+    val showTitle = title != fallbackTitle
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1188,13 +1190,15 @@ private fun LiveRoomSummaryCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = PirateTokens.colors.textPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (showTitle) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Text(
                     text = statusLabel,
                     style = MaterialTheme.typography.bodyMedium,

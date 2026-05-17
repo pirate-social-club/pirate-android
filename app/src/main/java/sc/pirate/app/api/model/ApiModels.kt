@@ -109,11 +109,16 @@ data class Profile(
 
 @Serializable
 data class PublicProfileCommunitySummary(
-    @SerialName("community_id") val communityId: String,
+    @SerialName("community_id") private val contractCommunityId: String? = null,
+    @SerialName("community") private val feedCommunityId: String? = null,
     @SerialName("display_name") val displayName: String,
     @SerialName("route_slug") val routeSlug: String? = null,
-    @SerialName("created_at") val createdAt: String,
-)
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
+) {
+    val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
+    val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
+}
 
 @Serializable
 data class PublicProfileResolution(
@@ -126,19 +131,29 @@ data class PublicProfileResolution(
 
 @Serializable
 data class Community(
-    @SerialName("community_id") val communityId: String,
+    @SerialName("community_id") private val contractCommunityId: String? = null,
+    @SerialName("id") private val feedCommunityId: String? = null,
     @SerialName("display_name") val displayName: String,
     @SerialName("route_slug") val routeSlug: String? = null,
-    @SerialName("namespace_verification_id") val namespaceVerificationId: String? = null,
-    @SerialName("pending_namespace_verification_session_id") val pendingNamespaceVerificationSessionId: String? = null,
+    @SerialName("namespace_verification_id") private val contractNamespaceVerificationId: String? = null,
+    @SerialName("namespace_verification") private val feedNamespaceVerificationId: String? = null,
+    @SerialName("pending_namespace_verification_session_id") private val contractPendingNamespaceVerificationSessionId: String? = null,
+    @SerialName("pending_namespace_verification_session") private val feedPendingNamespaceVerificationSessionId: String? = null,
     val description: String? = null,
     @SerialName("membership_mode") val membershipMode: String,
     @SerialName("member_count") val memberCount: Int? = null,
     @SerialName("follower_count") val followerCount: Int? = null,
     @SerialName("avatar_ref") val avatarRef: String? = null,
     @SerialName("banner_ref") val bannerRef: String? = null,
-    @SerialName("created_at") val createdAt: String,
-)
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
+) {
+    val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
+    val namespaceVerificationId: String? get() = contractNamespaceVerificationId ?: feedNamespaceVerificationId
+    val pendingNamespaceVerificationSessionId: String? get() =
+        contractPendingNamespaceVerificationSessionId ?: feedPendingNamespaceVerificationSessionId
+    val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
+}
 
 @Serializable
 data class HandlePolicyInput(
@@ -265,7 +280,8 @@ data class CommunityReferenceLink(
 
 @Serializable
 data class CommunityPreview(
-    @SerialName("community_id") val communityId: String,
+    @SerialName("community_id") private val contractCommunityId: String? = null,
+    @SerialName("id") private val feedCommunityId: String? = null,
     @SerialName("display_name") val displayName: String,
     @SerialName("route_slug") val routeSlug: String? = null,
     val description: String? = null,
@@ -280,8 +296,12 @@ data class CommunityPreview(
     val rules: List<CommunityRule> = emptyList(),
     @SerialName("viewer_membership_status") val viewerMembershipStatus: String? = null,
     @SerialName("viewer_following") val viewerFollowing: Boolean? = null,
-    @SerialName("created_at") val createdAt: String,
-)
+    @SerialName("created_at") private val contractCreatedAt: String? = null,
+    @SerialName("created") private val feedCreatedAt: Long? = null,
+) {
+    val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
+    val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
+}
 
 @Serializable
 data class WalletScoreStatus(
@@ -293,7 +313,8 @@ data class WalletScoreStatus(
 
 @Serializable
 data class JoinEligibility(
-    @SerialName("community_id") val communityId: String,
+    @SerialName("community_id") private val contractCommunityId: String? = null,
+    @SerialName("community") private val feedCommunityId: String? = null,
     @SerialName("membership_mode") val membershipMode: String,
     @SerialName("human_verification_lane") val humanVerificationLane: String,
     @SerialName("joinable_now") val joinableNow: Boolean,
@@ -304,7 +325,9 @@ data class JoinEligibility(
     @SerialName("suggested_verification_intent") val suggestedVerificationIntent: String? = null,
     @SerialName("failure_reason") val failureReason: String? = null,
     @SerialName("wallet_score_status") val walletScoreStatus: WalletScoreStatus? = null,
-)
+) {
+    val communityId: String get() = contractCommunityId ?: feedCommunityId.orEmpty()
+}
 
 @Serializable
 data class ThreadSnapshot(
@@ -878,7 +901,7 @@ data class LiveRoomAccessResponse(
 
 @Serializable
 data class LiveRoomViewerRenewRequest(
-    val uid: Int,
+    val uid: Long,
 )
 
 @Serializable
@@ -892,7 +915,7 @@ data class LiveRoomRuntimeBlock(
 data class LiveRoomAgoraBlock(
     @SerialName("app_id") val appId: String? = null,
     val channel: String? = null,
-    val uid: Int? = null,
+    val uid: Long? = null,
     val token: String? = null,
     @SerialName("token_expires_at") val tokenExpiresAt: Long? = null,
     val configured: Boolean = false,
