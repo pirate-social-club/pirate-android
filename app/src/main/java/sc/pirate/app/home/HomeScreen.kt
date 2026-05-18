@@ -477,14 +477,16 @@ fun HomeScreen(
 
     actionItem?.let { item ->
         PostActionSheet(
+            isFollowing = item.community.viewerFollowing == true,
+            followLoading = item.homeCommunityId() in state.followingCommunityIds,
             onDismiss = { actionItem = null },
-            onOpenPost = {
+            onToggleFollow = {
                 actionItem = null
-                onNavigateToPost(item.post.post.postId)
-            },
-            onOpenCommunity = {
-                actionItem = null
-                onNavigateToCommunity(item.homeCommunityId())
+                if (hasSession) {
+                    viewModel.toggleFollowCommunity(item.homeCommunityId())
+                } else {
+                    authPromptAction = "Following communities"
+                }
             },
         )
     }
@@ -596,8 +598,6 @@ fun HomeScreen(
                             HomePostCard(
                                 item = item,
                                 isVoting = isVoting,
-                                isFollowing = item.community.viewerFollowing == true,
-                                followLoading = item.homeCommunityId() in state.followingCommunityIds,
                                 liveRoomAccess = post.anchorLiveRoom?.let { state.liveRoomAccessById[it] },
                                 liveRoomListing = post.anchorLiveRoom?.let { state.listingsByLiveRoomId[it] },
                                 liveRoomPurchase = post.anchorLiveRoom?.let { state.purchasesByLiveRoomId[it] },
@@ -606,13 +606,6 @@ fun HomeScreen(
                                 onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
                                 onOpenMedia = { mediaPreview = ActiveMediaPreview(item, it) },
                                 onOpenActions = { actionItem = item },
-                                onToggleFollow = {
-                                    if (hasSession) {
-                                        viewModel.toggleFollowCommunity(item.homeCommunityId())
-                                    } else {
-                                        authPromptAction = "Following communities"
-                                    }
-                                },
                                 onVote = { value ->
                                     if (hasSession) {
                                         viewModel.votePost(post.postId, value)
@@ -836,9 +829,10 @@ private fun MediaPreviewDialog(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PostActionSheet(
+    isFollowing: Boolean,
+    followLoading: Boolean,
     onDismiss: () -> Unit,
-    onOpenPost: () -> Unit,
-    onOpenCommunity: () -> Unit,
+    onToggleFollow: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -851,8 +845,24 @@ private fun PostActionSheet(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            SheetActionRow("Open post", PhosphorIcons.ChatCircle, onOpenPost)
-            SheetActionRow("Open community", PhosphorIcons.Flag, onOpenCommunity)
+            SheetActionRow(
+                label = if (isFollowing) "Unfollow" else "Follow",
+                icon = PhosphorIcons.Users,
+                enabled = !followLoading,
+                onClick = onToggleFollow,
+            )
+            SheetActionRow(
+                label = "Save post",
+                icon = PhosphorIcons.Article,
+                enabled = false,
+                onClick = {},
+            )
+            SheetActionRow(
+                label = "Report post",
+                icon = PhosphorIcons.Flag,
+                enabled = false,
+                onClick = {},
+            )
             Spacer(modifier = Modifier.size(16.dp))
         }
     }
@@ -862,25 +872,31 @@ private fun PostActionSheet(
 private fun SheetActionRow(
     label: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val contentColor = if (enabled) {
+            PirateTokens.colors.textPrimary
+        } else {
+            PirateTokens.colors.textSecondary.copy(alpha = 0.5f)
+        }
         Icon(
             imageVector = icon,
             contentDescription = null,
-            tint = PirateTokens.colors.textSecondary,
+            tint = if (enabled) PirateTokens.colors.textSecondary else contentColor,
         )
         Text(
             text = label,
             style = MaterialTheme.typography.titleMedium,
-            color = PirateTokens.colors.textPrimary,
+            color = contentColor,
         )
     }
 }
@@ -964,8 +980,6 @@ private fun HomeInlineMessage(
 private fun HomePostCard(
     item: HomeFeedItem,
     isVoting: Boolean,
-    isFollowing: Boolean,
-    followLoading: Boolean,
     liveRoomAccess: LiveRoomAccessResponse?,
     liveRoomListing: CommunityListing?,
     liveRoomPurchase: CommunityPurchase?,
@@ -974,7 +988,6 @@ private fun HomePostCard(
     onOpenCommunity: () -> Unit,
     onOpenMedia: (MediaPreview) -> Unit,
     onOpenActions: () -> Unit,
-    onToggleFollow: () -> Unit,
     onVote: (Int) -> Unit,
     onComment: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1042,11 +1055,6 @@ private fun HomePostCard(
                         )
                     }
                 }
-                FollowPill(
-                    following = isFollowing,
-                    loading = followLoading,
-                    onClick = onToggleFollow,
-                )
                 IconButton(onClick = onOpenActions) {
                     Icon(
                         imageVector = PhosphorIcons.DotsThree,
@@ -1304,27 +1312,6 @@ private fun XEmbedPreviewCard(embed: PostEmbed) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun FollowPill(
-    following: Boolean,
-    loading: Boolean,
-    onClick: () -> Unit,
-) {
-    Surface(
-        modifier = Modifier.clickable(enabled = !loading, onClick = onClick),
-        shape = RoundedCornerShape(PirateTokens.radius.full),
-        color = if (following) PirateTokens.colors.surfaceSubtle else PirateTokens.colors.accentBrand,
-        border = BorderStroke(1.dp, if (following) PirateTokens.colors.borderSoft else PirateTokens.colors.accentBrand),
-    ) {
-        Text(
-            text = if (following) "Following" else "Follow",
-            style = MaterialTheme.typography.labelLarge,
-            color = if (following) PirateTokens.colors.textPrimary else Color.White,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-        )
     }
 }
 
