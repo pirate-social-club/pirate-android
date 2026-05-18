@@ -13,7 +13,7 @@ import kotlin.coroutines.resume
 
 data class VeryNativeAuthenticationResult(
     val isSuccess: Boolean,
-    val code: String? = null,
+    val signedToken: String? = null,
     val userId: String? = null,
     val errorMessage: String? = null,
 )
@@ -72,7 +72,7 @@ object VeryNativeSdk {
                     continuation.resume(
                         VeryNativeAuthenticationResult(
                             isSuccess = true,
-                            code = result.code?.trim().orEmpty(),
+                            signedToken = result.signedToken?.trim(),
                             userId = result.userId?.trim(),
                         )
                     )

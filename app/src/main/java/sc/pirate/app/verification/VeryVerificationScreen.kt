@@ -140,12 +140,12 @@ class VeryVerificationViewModel(application: Application) : AndroidViewModel(app
         )
 
         val nativeResult = VeryNativeSdk.authenticate(context)
-        val code = nativeResult.code?.takeIf { it.isNotBlank() }
-        if (!nativeResult.isSuccess || code == null) {
+        val signedToken = nativeResult.signedToken?.takeIf { it.isNotBlank() }
+        if (!nativeResult.isSuccess || signedToken == null) {
             _state.value = _state.value.copy(
                 verificationState = VeryVerificationState.NotStarted,
                 loading = false,
-                error = nativeResult.errorMessage ?: "Very native verification did not return an authorization code.",
+                error = nativeResult.errorMessage ?: "Very native verification did not return a signed token.",
             )
             return
         }
@@ -156,7 +156,7 @@ class VeryVerificationViewModel(application: Application) : AndroidViewModel(app
                 providerPayloadRef = JsonObject(
                     mapOf(
                         "mode" to JsonPrimitive("native_sdk"),
-                        "code" to JsonPrimitive(code),
+                        "signed_token" to JsonPrimitive(signedToken),
                     )
                 ),
             ),
