@@ -48,7 +48,6 @@ import sc.pirate.app.profile.UserProfileViewModel
 import sc.pirate.app.settings.SettingsScreen
 import sc.pirate.app.submit.GlobalSubmitScreen
 import sc.pirate.app.verification.SelfVerificationScreen
-import sc.pirate.app.verification.VeryVerificationScreen
 import sc.pirate.app.wallet.WalletScreen
 import sc.pirate.app.wallet.WalletViewModel
 import kotlinx.coroutines.launch
@@ -375,9 +374,6 @@ fun PirateNavHost(
                     onOpenProfileSettings = {
                         navController.navigate(PirateRoute.SettingsIndex.route)
                     },
-                    onVerifyHuman = {
-                        navController.navigate(PirateRoute.VerifyVery.buildRoute(autoStart = true))
-                    },
                     onSignIn = {
                         navController.navigate(PirateRoute.Auth.route)
                     },
@@ -502,24 +498,6 @@ fun PirateNavHost(
             AuthGate(hasSession, navController) {
                 SelfVerificationScreen(
                     verificationIntent = intent,
-                    onBack = { navController.popBackStack() },
-                )
-            }
-        }
-
-        composable(
-            route = PirateRoute.VerifyVery.route,
-            arguments = listOf(navArgument(PirateRoute.VerifyVery.ARG_AUTO_START) {
-                type = NavType.BoolType
-                defaultValue = false
-            }),
-        ) { backStackEntry ->
-            val autoStart = backStackEntry.arguments
-                ?.getBoolean(PirateRoute.VerifyVery.ARG_AUTO_START)
-                ?: false
-            AuthGate(hasSession, navController) {
-                VeryVerificationScreen(
-                    autoStart = autoStart,
                     onBack = { navController.popBackStack() },
                 )
             }

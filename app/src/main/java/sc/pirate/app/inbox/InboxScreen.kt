@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -47,10 +48,12 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.verification.VeryVerificationLauncher
 
 data class InboxUiState(
     val loading: Boolean = true,
     val loadingMore: Boolean = false,
+    val verifyingHumanTaskId: String? = null,
     val requiresAuth: Boolean = false,
     val tasks: List<UserTask> = emptyList(),
     val activity: List<NotificationFeedItem> = emptyList(),
@@ -61,6 +64,7 @@ data class InboxUiState(
 class InboxViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val notificationRepository get() = app.repositories.notificationRepository
+    private val verificationRepository get() = app.repositories.verificationRepository
 
     private val _state = MutableStateFlow(InboxUiState())
     val state: StateFlow<InboxUiState> = _state.asStateFlow()
@@ -149,6 +153,42 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+
+    fun startVeryHumanVerification(context: android.content.Context, taskId: String) {
+        if (_state.value.verifyingHumanTaskId != null) return
+
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                verifyingHumanTaskId = taskId,
+                error = null,
+            )
+            try {
+                val result = VeryVerificationLauncher.launch(
+                    context = context,
+                    verificationRepository = verificationRepository,
+                    verificationIntent = "profile_verification",
+                )
+                if (result.verified) {
+                    runCatching { notificationRepository.dismissTask(taskId) }
+                    _state.value = _state.value.copy(
+                        verifyingHumanTaskId = null,
+                        tasks = _state.value.tasks.filterNot { it.id == taskId },
+                        error = null,
+                    )
+                } else {
+                    _state.value = _state.value.copy(
+                        verifyingHumanTaskId = null,
+                        error = result.failureReason ?: "Very verification was not completed.",
+                    )
+                }
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    verifyingHumanTaskId = null,
+                    error = e.message ?: "Could not start Very verification.",
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -157,12 +197,12 @@ fun InboxScreen(
     onOpenCommunity: (String) -> Unit,
     onOpenCommunityNamespace: (String) -> Unit,
     onOpenProfileSettings: () -> Unit,
-    onVerifyHuman: () -> Unit,
     onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: InboxViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.load()
@@ -267,13 +307,19 @@ fun InboxScreen(
                                     if (index > 0) NotificationSeparator()
                                     TaskRow(
                                         task = task,
+                                        loading = state.verifyingHumanTaskId == task.id,
                                         onOpen = {
                                             openTask(
                                                 task = task,
                                                 onOpenCommunity = onOpenCommunity,
                                                 onOpenCommunityNamespace = onOpenCommunityNamespace,
                                                 onOpenProfileSettings = onOpenProfileSettings,
-                                                onVerifyHuman = onVerifyHuman,
+                                                onVerifyHuman = {
+                                                    viewModel.startVeryHumanVerification(
+                                                        context = context,
+                                                        taskId = task.id,
+                                                    )
+                                                },
                                             )
                                             if (canAutoClearTaskOnOpen(task)) {
                                                 viewModel.dismissTask(task.id)
@@ -341,6 +387,7 @@ private fun NotificationSeparator() {
 @Composable
 private fun TaskRow(
     task: UserTask,
+    loading: Boolean,
     onOpen: () -> Unit,
 ) {
     NotificationRow(
@@ -348,7 +395,8 @@ private fun TaskRow(
         title = taskTitle(task),
         subtext = taskMeta(task),
         unread = true,
-        interactive = true,
+        interactive = !loading,
+        loading = loading,
         onClick = onOpen,
     )
 }
@@ -379,6 +427,7 @@ private fun NotificationRow(
     meta: String? = null,
     unread: Boolean = false,
     interactive: Boolean = false,
+    loading: Boolean = false,
     onClick: () -> Unit = {},
 ) {
     val rowModifier = if (interactive) {
@@ -399,12 +448,20 @@ private fun NotificationRow(
             border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = null,
-                    tint = if (unread) PirateTokens.colors.textPrimary else PirateTokens.colors.textSecondary,
-                    modifier = Modifier.size(22.dp),
-                )
+                if (loading) {
+                    CircularProgressIndicator(
+                        color = PirateTokens.colors.accentBrand,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(20.dp),
+                    )
+                } else {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (unread) PirateTokens.colors.textPrimary else PirateTokens.colors.textSecondary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
         Spacer(modifier = Modifier.width(12.dp))
