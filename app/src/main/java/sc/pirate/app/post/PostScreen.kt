@@ -61,10 +61,17 @@ import sc.pirate.app.api.model.CommunityPurchase
 import sc.pirate.app.api.model.CommunityPurchaseSettlementFailureRequest
 import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
 import sc.pirate.app.api.model.LiveRoomAccessResponse
+import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
+import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.commerce.buildStoryCheckoutQuoteRequest
 import sc.pirate.app.commerce.resolveStoryCheckoutTransferInput
+import sc.pirate.app.live.LiveRoomPresentation
+import sc.pirate.app.live.LiveRoomPresentationInput
+import sc.pirate.app.live.LiveRoomUiState
+import sc.pirate.app.live.LiveRoomViewerWebView
+import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
@@ -98,9 +105,12 @@ data class PostUiState(
     val replyDraftsByParentId: Map<String, String> = emptyMap(),
     val submittingReplyParentIds: Set<String> = emptySet(),
     val votingCommentIds: Set<String> = emptySet(),
+    val viewerUserId: String? = null,
     val liveRoomAccess: LiveRoomAccessResponse? = null,
     val liveRoomListing: CommunityListing? = null,
     val liveRoomPurchase: CommunityPurchase? = null,
+    val inlineLiveViewerAttach: LiveRoomViewerAttachResponse? = null,
+    val inlineLiveViewerAttemptKey: String? = null,
     val assetListing: CommunityListing? = null,
     val assetPurchase: CommunityPurchase? = null,
     val purchaseSubmitting: Boolean = false,
@@ -151,6 +161,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     postRepository.getPublicPost(postId)
                 }
                 val commerce = loadPostCommerce(post, hasSession)
+                val session = app.sessionStore.get()
                 _state.value = PostUiState(
                     post = post,
                     communityPreview = loadCommunityPreview(post.post.communityId, hasSession),
@@ -159,6 +170,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     commentDraft = existingState.commentDraft,
                     loading = false,
                     commentsLoading = true,
+                    viewerUserId = session?.user?.userId,
                     liveRoomAccess = commerce.liveRoomAccess,
                     liveRoomListing = commerce.liveRoomListing,
                     liveRoomPurchase = commerce.liveRoomPurchase,
@@ -524,6 +536,105 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun ensureInlineLiveRoomViewer(hasSession: Boolean) {
+        val current = _state.value
+        val postResponse = current.post ?: return
+        val post = postResponse.post
+        val liveRoomId = post.anchorLiveRoom?.takeIf { it.isNotBlank() } ?: return
+        val communityId = post.communityId.takeIf { it.isNotBlank() } ?: return
+        val presentation = buildLiveRoomPresentation(
+            LiveRoomPresentationInput(
+                fallbackTitle = postResponse.translatedTitle ?: post.title ?: post.linkOgTitle ?: "Live room",
+                access = current.liveRoomAccess,
+                listing = current.liveRoomListing,
+                purchase = current.liveRoomPurchase,
+                publicStatus = post.anchorLiveRoomStatus,
+                publicAccessMode = post.accessMode,
+                fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                viewerUserId = current.viewerUserId,
+                postAuthorUserId = post.authorUserId,
+                liveRoomId = liveRoomId,
+            ),
+        )
+        if (!presentation.canInlineAttachViewer) return
+        if (current.inlineLiveViewerAttach?.room?.id == liveRoomId) return
+        val attemptKey = "$communityId:$liveRoomId:${if (hasSession) "auth" else "public"}"
+        if (current.inlineLiveViewerAttemptKey == attemptKey) return
+        _state.value = current.copy(inlineLiveViewerAttemptKey = attemptKey)
+
+        viewModelScope.launch {
+            try {
+                val attach = attachLiveRoomViewer(
+                    communityId = communityId,
+                    liveRoomId = liveRoomId,
+                    hasSession = hasSession,
+                    access = current.liveRoomAccess,
+                )
+                _state.value = _state.value.copy(
+                    inlineLiveViewerAttach = attach,
+                    liveRoomAccess = LiveRoomAccessResponse(room = attach.room, access = attach.access),
+                )
+            } catch (_: Exception) {
+                // The explicit Watch flow remains available if inline attach fails.
+            }
+        }
+    }
+
+    suspend fun renewLiveRoomViewer(uid: Long, hasSession: Boolean): LiveRoomViewerAttachResponse? {
+        val post = _state.value.post?.post ?: return null
+        val communityId = post.communityId.takeIf { it.isNotBlank() } ?: return null
+        val liveRoomId = post.anchorLiveRoom?.takeIf { it.isNotBlank() } ?: return null
+        return try {
+            val renewed = if (hasSession) {
+                runCatching {
+                    communityRepository.viewerRenewLiveRoom(
+                        communityId,
+                        liveRoomId,
+                        LiveRoomViewerRenewRequest(uid = uid),
+                    )
+                }.getOrElse {
+                    communityRepository.publicViewerRenewLiveRoom(
+                        communityId,
+                        liveRoomId,
+                        LiveRoomViewerRenewRequest(uid = uid),
+                    )
+                }
+            } else {
+                communityRepository.publicViewerRenewLiveRoom(
+                    communityId,
+                    liveRoomId,
+                    LiveRoomViewerRenewRequest(uid = uid),
+                )
+            }
+            _state.value = _state.value.copy(
+                inlineLiveViewerAttach = renewed,
+                liveRoomAccess = LiveRoomAccessResponse(room = renewed.room, access = renewed.access),
+            )
+            renewed
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private suspend fun attachLiveRoomViewer(
+        communityId: String,
+        liveRoomId: String,
+        hasSession: Boolean,
+        access: LiveRoomAccessResponse?,
+    ): LiveRoomViewerAttachResponse =
+        if (hasSession) {
+            runCatching { communityRepository.viewerAttachLiveRoom(communityId, liveRoomId) }
+                .getOrElse { authenticatedAttachError ->
+                    if (access?.room?.accessMode == "free" && access.room.visibility == "public") {
+                        communityRepository.publicViewerAttachLiveRoom(communityId, liveRoomId)
+                    } else {
+                        throw authenticatedAttachError
+                    }
+                }
+        } else {
+            communityRepository.publicViewerAttachLiveRoom(communityId, liveRoomId)
+        }
+
     private suspend fun loadTopLevelComments(post: LocalizedPostResponse, hasSession: Boolean) {
         try {
             val response = if (hasSession) {
@@ -587,7 +698,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         val purchases = runCatching { communityRepository.listPurchases(communityId).items }.getOrDefault(emptyList())
         return PostCommerceEnrichment(
             liveRoomAccess = anchorLiveRoom?.let {
-                runCatching { communityRepository.getLiveRoomAccess(communityId, it) }.getOrNull()
+                loadLiveRoomAccessWithFallback(communityId, it)
             },
             liveRoomListing = anchorLiveRoom?.let { liveRoomId -> listings.firstOrNull { it.liveRoom == liveRoomId } },
             liveRoomPurchase = anchorLiveRoom?.let { liveRoomId -> purchases.firstOrNull { it.liveRoom == liveRoomId } },
@@ -595,6 +706,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
             assetPurchase = assetId?.let { nextAssetId -> purchases.firstOrNull { it.asset == nextAssetId } },
         )
     }
+
+    private suspend fun loadLiveRoomAccessWithFallback(
+        communityId: String,
+        liveRoomId: String,
+    ): LiveRoomAccessResponse? =
+        runCatching { communityRepository.getLiveRoomAccess(communityId, liveRoomId) }
+            .recoverCatching { communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId) }
+            .getOrNull()
 
     private suspend fun loadAuthorProfiles(userIds: List<String>): Map<String, Profile> {
         val missingUserIds = userIds.distinct().filter { it.isNotBlank() && it !in _state.value.authorProfiles }
@@ -736,6 +855,16 @@ fun PostScreen(
         viewModel.loadPost(postId, hasSession)
     }
 
+    LaunchedEffect(
+        state.post?.post?.postId,
+        state.liveRoomAccess,
+        state.inlineLiveViewerAttach?.room?.id,
+        state.viewerUserId,
+        hasSession,
+    ) {
+        viewModel.ensureInlineLiveRoomViewer(hasSession)
+    }
+
     authPromptAction?.let {
         signInDrawer { authPromptAction = null }
     }
@@ -822,6 +951,8 @@ fun PostScreen(
                             liveRoomAccess = state.liveRoomAccess,
                             liveRoomListing = state.liveRoomListing,
                             liveRoomPurchase = state.liveRoomPurchase,
+                            inlineLiveViewerAttach = state.inlineLiveViewerAttach,
+                            viewerUserId = state.viewerUserId,
                             assetListing = state.assetListing,
                             assetPurchase = state.assetPurchase,
                             purchaseSubmitting = state.purchaseSubmitting,
@@ -836,6 +967,9 @@ fun PostScreen(
                             },
                             onWatchLiveRoom = {
                                 onWatchLiveRoom()
+                            },
+                            onRenewLiveRoomViewer = { uid ->
+                                viewModel.renewLiveRoomViewer(uid, hasSession)
                             },
                         )
                     }
@@ -1009,6 +1143,8 @@ private fun ThreadRootPost(
     liveRoomAccess: LiveRoomAccessResponse?,
     liveRoomListing: CommunityListing?,
     liveRoomPurchase: CommunityPurchase?,
+    inlineLiveViewerAttach: LiveRoomViewerAttachResponse?,
+    viewerUserId: String?,
     assetListing: CommunityListing?,
     assetPurchase: CommunityPurchase?,
     purchaseSubmitting: Boolean,
@@ -1018,6 +1154,7 @@ private fun ThreadRootPost(
     onVote: (Int) -> Unit,
     onBuyLiveRoomTicket: () -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
     val post = postResponse.post
     val title = postResponse.translatedTitle ?: post.title ?: post.linkOgTitle ?: "Untitled post"
@@ -1083,20 +1220,29 @@ private fun ThreadRootPost(
                     color = PirateTokens.colors.textPrimary,
                 )
             }
-            post.anchorLiveRoom?.let {
+            post.anchorLiveRoom?.let { liveRoomId ->
                 ThreadLiveRoomSummary(
-                    fallbackTitle = title,
-                    access = liveRoomAccess,
-                    listing = liveRoomListing,
-                    purchase = liveRoomPurchase,
-                    publicStatus = post.anchorLiveRoomStatus,
-                    publicAccessMode = post.accessMode,
-                    fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                    presentation = buildLiveRoomPresentation(
+                        LiveRoomPresentationInput(
+                            fallbackTitle = title,
+                            access = liveRoomAccess,
+                            listing = liveRoomListing,
+                            purchase = liveRoomPurchase,
+                            publicStatus = post.anchorLiveRoomStatus,
+                            publicAccessMode = post.accessMode,
+                            fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                            viewerUserId = viewerUserId,
+                            postAuthorUserId = post.authorUserId,
+                            liveRoomId = liveRoomId,
+                        ),
+                    ),
+                    inlineViewerAttach = inlineLiveViewerAttach?.takeIf { it.room.id == liveRoomId },
                     purchaseSubmitting = purchaseSubmitting,
                     purchaseError = purchaseError,
                     purchaseMessage = purchaseMessage,
                     onBuyTicket = onBuyLiveRoomTicket,
                     onWatch = onWatchLiveRoom,
+                    onRenewViewer = onRenewLiveRoomViewer,
                 )
             }
             if (post.anchorLiveRoom == null && post.assetId != null && assetListing != null) {
@@ -1124,62 +1270,24 @@ private fun ThreadRootPost(
 
 @Composable
 private fun ThreadLiveRoomSummary(
-    fallbackTitle: String,
-    access: LiveRoomAccessResponse?,
-    listing: CommunityListing?,
-    purchase: CommunityPurchase?,
-    publicStatus: String?,
-    publicAccessMode: String?,
-    fallbackCoverRef: String?,
+    presentation: LiveRoomPresentation,
+    inlineViewerAttach: LiveRoomViewerAttachResponse?,
     purchaseSubmitting: Boolean,
     purchaseError: String?,
     purchaseMessage: String?,
     onBuyTicket: () -> Unit,
     onWatch: () -> Unit,
+    onRenewViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
-    val room = access?.room
-    val title = room?.title?.takeIf { it.isNotBlank() } ?: fallbackTitle
-    val status = room?.status ?: publicStatus ?: "scheduled"
-    val accessMode = access?.access?.accessMode ?: room?.accessMode ?: publicAccessMode ?: listing?.let { "paid" }
-    val allowed = access?.access?.allowed == true || purchase != null || accessMode == "free"
-    val decisionReason = access?.access?.decisionReason
-    val needsTicket = decisionReason == "purchase_required" || (accessMode == "paid" && !allowed)
-    val coverSrc = resolvePublicMediaSrc(room?.coverRef ?: fallbackCoverRef)
-    val priceLabel = listing?.priceCents?.takeIf { it > 0 }?.let(::formatUsdCents)
-    val listingActive = listing?.status == null || listing.status == "active"
-    val statusLabel = when (status) {
-        "live" -> "Live now"
-        "ended" -> "Ended"
-        "canceled" -> "Canceled"
-        else -> "Scheduled event"
-    }
-    val accessLabel = when {
-        status == "ended" || status == "canceled" -> null
-        purchase != null -> "Ticket purchased"
-        needsTicket -> when {
-            listing != null && listingActive -> priceLabel?.let { "Tickets $it" } ?: "Tickets available"
-            else -> "Ticket required"
-        }
-        accessMode == "gated" -> "Gated access"
-        accessMode == "free" -> "Free"
-        else -> "Live event"
-    }
-    val description = when {
-        status == "ended" -> "This room has ended."
-        status == "canceled" -> "This room was canceled."
-        needsTicket -> priceLabel?.let { "$it ticket required to watch." } ?: "Ticket required to watch."
-        accessMode == "gated" && !allowed -> "Community access is required before you can watch."
-        status == "live" && allowed -> "Watch the concert from this page."
-        else -> "Come back when the host goes live."
-    }
-    val canBuyTicket = listingActive &&
-        purchase == null &&
-        status != "ended" &&
-        status != "canceled" &&
-        needsTicket
-    val canWatch = allowed && status == "live"
-    val buyTicketText = priceLabel?.let { "Buy ticket $it" } ?: "Buy ticket"
-    val showTitle = title != fallbackTitle
+    val primaryActionLabel = when (val ui = presentation.uiState) {
+        is LiveRoomUiState.CanWatch -> ui.cta
+        is LiveRoomUiState.CanWatchReplay -> ui.cta
+        is LiveRoomUiState.NeedsAccess -> ui.cta
+        is LiveRoomUiState.NeedsTicket -> ui.cta
+        is LiveRoomUiState.NeedsVerification -> ui.cta
+        is LiveRoomUiState.CanRsvp -> ui.cta
+        else -> null
+    }.takeIf { presentation.producerRole == null && inlineViewerAttach == null }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1191,6 +1299,17 @@ private fun ThreadLiveRoomSummary(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            if (inlineViewerAttach != null) {
+                LiveRoomViewerWebView(
+                    attach = inlineViewerAttach,
+                    title = presentation.title,
+                    onRenew = onRenewViewer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                )
+            }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1202,10 +1321,10 @@ private fun ThreadLiveRoomSummary(
                         .background(PirateTokens.colors.bgElevated),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (coverSrc != null) {
+                    if (presentation.coverSrc != null) {
                         AsyncImage(
-                            model = coverSrc,
-                            contentDescription = title,
+                            model = presentation.coverSrc,
+                            contentDescription = presentation.title,
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
@@ -1221,27 +1340,27 @@ private fun ThreadLiveRoomSummary(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    if (showTitle) {
+                    Text(
+                        text = presentation.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    presentation.statusLabel?.let {
                         Text(
-                            text = title,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = PirateTokens.colors.textPrimary,
-                            maxLines = 2,
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (presentation.status == "live") {
+                                PirateTokens.colors.accentDanger
+                            } else {
+                                PirateTokens.colors.textSecondary
+                            },
+                            maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(
-                        text = statusLabel,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (status == "live") {
-                            PirateTokens.colors.accentDanger
-                        } else {
-                            PirateTokens.colors.textSecondary
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    accessLabel?.let {
+                    presentation.accessLabel?.let {
                         Text(
                             text = it,
                             style = MaterialTheme.typography.labelLarge,
@@ -1250,13 +1369,46 @@ private fun ThreadLiveRoomSummary(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    presentation.participantLabel?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    presentation.descriptionLabel?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            if (presentation.setlistPreview.isNotEmpty()) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = PirateTokens.colors.textSecondary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
+                        text = "Setlist",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textPrimary,
                     )
+                    presentation.setlistPreview.forEachIndexed { index, item ->
+                        val artist = item.artist?.takeIf { it.isNotBlank() }?.let { " - $it" }.orEmpty()
+                        Text(
+                            text = "${index + 1}. ${item.title}$artist",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             purchaseError?.let {
@@ -1269,19 +1421,24 @@ private fun ThreadLiveRoomSummary(
                     color = PirateTokens.colors.textSecondary,
                 )
             }
-            if (canBuyTicket) {
+            primaryActionLabel?.let { label ->
                 PirateButton(
-                    text = if (purchaseSubmitting) "Buying" else buyTicketText,
-                    onClick = onBuyTicket,
-                    loading = purchaseSubmitting,
+                    text = if (purchaseSubmitting && presentation.uiState is LiveRoomUiState.NeedsTicket) "Buying" else label,
+                    onClick = {
+                        when {
+                            presentation.uiState is LiveRoomUiState.NeedsTicket -> onBuyTicket()
+                            else -> onWatch()
+                        }
+                    },
+                    loading = purchaseSubmitting && presentation.uiState is LiveRoomUiState.NeedsTicket,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            if (canWatch) {
-                PirateButton(
-                    text = "Watch",
-                    onClick = onWatch,
-                    modifier = Modifier.fillMaxWidth(),
+            if (presentation.uiState is LiveRoomUiState.ReplayProcessing) {
+                Text(
+                    text = "Replay processing",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textSecondary,
                 )
             }
         }

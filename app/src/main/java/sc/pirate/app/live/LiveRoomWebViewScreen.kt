@@ -8,6 +8,7 @@ import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
+import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -30,6 +31,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,6 +40,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -49,7 +53,7 @@ import sc.pirate.app.ui.PhosphorIcons
 
 private sealed interface LiveRoomViewerState {
     data object Loading : LiveRoomViewerState
-    data class Ready(val html: String) : LiveRoomViewerState
+    data class Ready(val attach: LiveRoomViewerAttachResponse, val title: String) : LiveRoomViewerState
     data class Blocked(val title: String, val message: String) : LiveRoomViewerState
     data class Error(val message: String) : LiveRoomViewerState
 }
@@ -103,8 +107,17 @@ fun LiveRoomWebViewScreen(
                 loading = true,
                 modifier = Modifier.fillMaxSize(),
             )
-            is LiveRoomViewerState.Ready -> LiveRoomWebView(
-                html = state.html,
+            is LiveRoomViewerState.Ready -> LiveRoomViewerWebView(
+                attach = state.attach,
+                title = state.title,
+                onRenew = { uid ->
+                    renewLiveRoomViewerState(
+                        app = app,
+                        postId = postId,
+                        hasSession = session != null,
+                        uid = uid,
+                    )
+                },
                 modifier = Modifier.fillMaxSize(),
             )
             is LiveRoomViewerState.Blocked -> LiveRoomStatusMessage(
@@ -174,17 +187,25 @@ private fun LiveRoomStatusMessage(
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun LiveRoomWebView(
-    html: String,
+fun LiveRoomViewerWebView(
+    attach: LiveRoomViewerAttachResponse,
+    title: String,
+    onRenew: suspend (Long) -> LiveRoomViewerAttachResponse?,
     modifier: Modifier = Modifier,
 ) {
     val baseOrigin = remember { buildWebBaseOrigin() }
+    val html = remember(attach, title) { buildAgoraViewerHtml(attach, title) }
     val loadKey = remember(html) { "viewer:${html.hashCode()}" }
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val renewBridge = remember(onRenew, coroutineScope) {
+        LiveRoomRenewBridge(coroutineScope, onRenew)
+    }
     val liveRoomWebChromeClient = remember(context) { LiveRoomWebChromeClient(context) }
 
-    DisposableEffect(liveRoomWebChromeClient) {
+    DisposableEffect(liveRoomWebChromeClient, renewBridge) {
         onDispose {
+            renewBridge.webView = null
             liveRoomWebChromeClient.hideCustomView()
         }
     }
@@ -199,13 +220,41 @@ private fun LiveRoomWebView(
                 settings.mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                 webViewClient = WebViewClient()
                 webChromeClient = liveRoomWebChromeClient
+                addJavascriptInterface(renewBridge, "PirateLiveRoom")
+                renewBridge.webView = this
                 loadLiveRoomHtml(loadKey, html, baseOrigin)
             }
         },
         update = { webView ->
+            renewBridge.webView = webView
             webView.loadLiveRoomHtml(loadKey, html, baseOrigin)
         },
     )
+}
+
+private class LiveRoomRenewBridge(
+    private val scope: CoroutineScope,
+    private val onRenew: suspend (Long) -> LiveRoomViewerAttachResponse?,
+) {
+    @Volatile var webView: WebView? = null
+
+    @JavascriptInterface
+    fun renewToken(uidText: String) {
+        val uid = uidText.toLongOrNull() ?: return
+        scope.launch {
+            val renewed = onRenew(uid) ?: return@launch
+            val agora = renewed.agora ?: return@launch
+            val token = agora.token?.takeIf { it.isNotBlank() } ?: return@launch
+            val payload = JSONObject()
+                .put("token", token)
+                .put("tokenExpiresAt", agora.tokenExpiresAt ?: 0)
+                .toString()
+            val script = "window.__pirateApplyRenewedToken && window.__pirateApplyRenewedToken(${JSONObject.quote(payload)})"
+            webView?.post {
+                webView?.evaluateJavascript(script, null)
+            }
+        }
+    }
 }
 
 private fun WebView.loadLiveRoomHtml(
@@ -373,7 +422,31 @@ private suspend fun loadLiveRoomViewerState(
     } else {
         app.repositories.communityRepository.publicViewerAttachLiveRoom(communityId, liveRoomId)
     }
-    return LiveRoomViewerState.Ready(buildAgoraViewerHtml(attach, title))
+    return LiveRoomViewerState.Ready(attach = attach, title = title)
+}
+
+private suspend fun renewLiveRoomViewerState(
+    app: PirateApp,
+    postId: String,
+    hasSession: Boolean,
+    uid: Long,
+): LiveRoomViewerAttachResponse? {
+    val postResponse = if (hasSession) {
+        runCatching { app.repositories.postRepository.getPost(postId) }
+            .getOrElse { app.repositories.postRepository.getPublicPost(postId) }
+    } else {
+        app.repositories.postRepository.getPublicPost(postId)
+    }
+    val post = postResponse.post
+    val communityId = post.communityId.takeIf { it.isNotBlank() } ?: return null
+    val liveRoomId = post.anchorLiveRoom?.takeIf { it.isNotBlank() } ?: return null
+    val request = sc.pirate.app.api.model.LiveRoomViewerRenewRequest(uid = uid)
+    return if (hasSession) {
+        runCatching { app.repositories.communityRepository.viewerRenewLiveRoom(communityId, liveRoomId, request) }
+            .getOrElse { app.repositories.communityRepository.publicViewerRenewLiveRoom(communityId, liveRoomId, request) }
+    } else {
+        app.repositories.communityRepository.publicViewerRenewLiveRoom(communityId, liveRoomId, request)
+    }
 }
 
 private fun buildAgoraViewerHtml(attach: LiveRoomViewerAttachResponse, title: String): String {
@@ -386,6 +459,7 @@ private fun buildAgoraViewerHtml(attach: LiveRoomViewerAttachResponse, title: St
             put("appId", agora?.appId.orEmpty())
             put("channel", agora?.channel.orEmpty())
             put("token", agora?.token.orEmpty())
+            put("tokenExpiresAt", agora?.tokenExpiresAt ?: 0)
             put("uid", agora?.uid ?: 0)
         },
     )
@@ -428,11 +502,37 @@ private fun buildAgoraViewerHtml(attach: LiveRoomViewerAttachResponse, title: St
               const titleEl = document.getElementById("title");
               const messageEl = document.getElementById("message");
               const videoEl = document.getElementById("video");
+              let client = null;
+              let renewTimeout = null;
               titleEl.textContent = config.title || "Live room";
 
               function setMessage(message) {
                 messageEl.textContent = message;
               }
+
+              function scheduleRenew() {
+                if (!window.PirateLiveRoom || !config.uid || !config.tokenExpiresAt) return;
+                if (renewTimeout) window.clearTimeout(renewTimeout);
+                const delay = Math.max((config.tokenExpiresAt * 1000) - Date.now() - 60000, 30000);
+                renewTimeout = window.setTimeout(() => {
+                  try {
+                    window.PirateLiveRoom.renewToken(String(config.uid));
+                  } catch (_error) {}
+                }, delay);
+              }
+
+              window.__pirateApplyRenewedToken = async function(payloadJson) {
+                try {
+                  const payload = JSON.parse(payloadJson);
+                  if (!payload.token || !client) return;
+                  await client.renewToken(payload.token);
+                  config.token = payload.token;
+                  config.tokenExpiresAt = payload.tokenExpiresAt || 0;
+                  scheduleRenew();
+                } catch (error) {
+                  setMessage(error && error.message ? error.message : String(error));
+                }
+              };
 
               async function joinRoom() {
                 if (!config.configured || !config.appId || !config.channel) {
@@ -444,7 +544,7 @@ private fun buildAgoraViewerHtml(attach: LiveRoomViewerAttachResponse, title: St
                   return;
                 }
 
-                const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+                client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
                 client.on("user-published", async (user, mediaType) => {
                   try {
                     await client.subscribe(user, mediaType);
@@ -475,7 +575,9 @@ private fun buildAgoraViewerHtml(attach: LiveRoomViewerAttachResponse, title: St
                 await client.setClientRole("audience");
                 await client.join(config.appId, config.channel, config.token || null, config.uid || null);
                 setMessage("Connected. Waiting for the broadcaster.");
+                scheduleRenew();
                 window.addEventListener("pagehide", () => {
+                  if (renewTimeout) window.clearTimeout(renewTimeout);
                   client.leave().catch(() => {});
                 });
               }

@@ -71,7 +71,6 @@ import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 import sc.pirate.app.PirateApp
 import sc.pirate.app.R
 import sc.pirate.app.api.model.CommunityListing
@@ -80,6 +79,10 @@ import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.PostEmbed
+import sc.pirate.app.live.LiveRoomPresentation
+import sc.pirate.app.live.LiveRoomPresentationInput
+import sc.pirate.app.live.LiveRoomUiState
+import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
@@ -100,6 +103,7 @@ data class HomeUiState(
     val voteError: String? = null,
     val votingPostIds: Set<String> = emptySet(),
     val followingCommunityIds: Set<String> = emptySet(),
+    val viewerUserId: String? = null,
     val liveRoomAccessById: Map<String, LiveRoomAccessResponse> = emptyMap(),
     val listingsByAssetId: Map<String, CommunityListing> = emptyMap(),
     val listingsByLiveRoomId: Map<String, CommunityListing> = emptyMap(),
@@ -113,6 +117,7 @@ private data class CommerceEnrichment(
     val purchasesByAssetId: Map<String, CommunityPurchase> = emptyMap(),
     val purchasesByLiveRoomId: Map<String, CommunityPurchase> = emptyMap(),
     val liveRoomAccessById: Map<String, LiveRoomAccessResponse> = emptyMap(),
+    val viewerUserId: String? = null,
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -196,6 +201,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     feed = feed,
                     activeSort = sort,
                     topTimeRange = timeRange,
+                    viewerUserId = enrichment.viewerUserId,
                     liveRoomAccessById = enrichment.liveRoomAccessById,
                     listingsByAssetId = enrichment.listingsByAssetId,
                     listingsByLiveRoomId = enrichment.listingsByLiveRoomId,
@@ -235,6 +241,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _state.value = _state.value.copy(
                     loadingMore = false,
                     feed = _state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage),
+                    viewerUserId = enrichment.viewerUserId ?: _state.value.viewerUserId,
                     liveRoomAccessById = _state.value.liveRoomAccessById + enrichment.liveRoomAccessById,
                     listingsByAssetId = _state.value.listingsByAssetId + enrichment.listingsByAssetId,
                     listingsByLiveRoomId = _state.value.listingsByLiveRoomId + enrichment.listingsByLiveRoomId,
@@ -284,7 +291,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadCommerceEnrichment(items: List<HomeFeedItem>): CommerceEnrichment {
         if (items.isEmpty()) return CommerceEnrichment()
 
-        val hasSession = app.sessionStore.get() != null
+        val session = app.sessionStore.get()
+        val hasSession = session != null
         val liveRoomRefs = items
             .mapNotNull { item ->
                 item.post.post.anchorLiveRoom?.let { liveRoomId -> item.homeCommunityId() to liveRoomId }
@@ -299,7 +307,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     .getOrNull()
                     ?.let { liveRoomAccessById[liveRoomId] = it }
             }
-            return CommerceEnrichment(liveRoomAccessById = liveRoomAccessById)
+            return CommerceEnrichment(
+                liveRoomAccessById = liveRoomAccessById,
+                viewerUserId = session?.user?.userId,
+            )
         }
 
         val communityIds = items
@@ -330,6 +341,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
         liveRoomRefs.forEach { (communityId, liveRoomId) ->
             runCatching { communityRepository.getLiveRoomAccess(communityId, liveRoomId) }
+                .recoverCatching { communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId) }
                 .getOrNull()
                 ?.let { liveRoomAccessById[liveRoomId] = it }
         }
@@ -340,6 +352,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             purchasesByAssetId = purchasesByAssetId,
             purchasesByLiveRoomId = purchasesByLiveRoomId,
             liveRoomAccessById = liveRoomAccessById,
+            viewerUserId = session?.user?.userId,
         )
     }
 }
@@ -375,8 +388,6 @@ private fun HomeFeedResponse.replacePostItem(previousItem: HomeFeedItem): HomeFe
             if (item.post.post.postId == previousItem.post.post.postId) previousItem else item
         },
     )
-
-private fun formatUsdCents(cents: Int): String = "$" + String.format(Locale.US, "%.2f", cents / 100.0)
 
 private fun HomeFeedResponse.withCommunityFollow(communityId: String, following: Boolean): HomeFeedResponse =
     copy(
@@ -590,6 +601,7 @@ fun HomeScreen(
                                 liveRoomAccess = post.anchorLiveRoom?.let { state.liveRoomAccessById[it] },
                                 liveRoomListing = post.anchorLiveRoom?.let { state.listingsByLiveRoomId[it] },
                                 liveRoomPurchase = post.anchorLiveRoom?.let { state.purchasesByLiveRoomId[it] },
+                                viewerUserId = state.viewerUserId,
                                 onOpenPost = { onNavigateToPost(post.postId) },
                                 onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
                                 onOpenMedia = { mediaPreview = ActiveMediaPreview(item, it) },
@@ -957,6 +969,7 @@ private fun HomePostCard(
     liveRoomAccess: LiveRoomAccessResponse?,
     liveRoomListing: CommunityListing?,
     liveRoomPurchase: CommunityPurchase?,
+    viewerUserId: String?,
     onOpenPost: () -> Unit,
     onOpenCommunity: () -> Unit,
     onOpenMedia: (MediaPreview) -> Unit,
@@ -1063,15 +1076,23 @@ private fun HomePostCard(
                     )
                 }
 
-            post.anchorLiveRoom?.let {
+            post.anchorLiveRoom?.let { liveRoomId ->
                 LiveRoomSummaryCard(
-                    fallbackTitle = title,
-                    access = liveRoomAccess,
-                    listing = liveRoomListing,
-                    purchase = liveRoomPurchase,
-                    publicStatus = post.anchorLiveRoomStatus,
-                    publicAccessMode = post.accessMode,
-                    fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                    presentation = buildLiveRoomPresentation(
+                        LiveRoomPresentationInput(
+                            fallbackTitle = title,
+                            access = liveRoomAccess,
+                            listing = liveRoomListing,
+                            purchase = liveRoomPurchase,
+                            publicStatus = post.anchorLiveRoomStatus,
+                            publicAccessMode = post.accessMode,
+                            fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                            viewerUserId = viewerUserId,
+                            postAuthorUserId = post.authorUserId,
+                            liveRoomId = liveRoomId,
+                        ),
+                    ),
+                    onOpenPost = onOpenPost,
                 )
             }
 
@@ -1116,42 +1137,18 @@ private fun HomePostCard(
 
 @Composable
 private fun LiveRoomSummaryCard(
-    fallbackTitle: String,
-    access: LiveRoomAccessResponse?,
-    listing: CommunityListing?,
-    purchase: CommunityPurchase?,
-    publicStatus: String?,
-    publicAccessMode: String?,
-    fallbackCoverRef: String?,
+    presentation: LiveRoomPresentation,
+    onOpenPost: () -> Unit,
 ) {
-    val room = access?.room
-    val title = room?.title?.takeIf { it.isNotBlank() } ?: fallbackTitle
-    val status = room?.status ?: publicStatus ?: "scheduled"
-    val accessMode = access?.access?.accessMode ?: room?.accessMode ?: publicAccessMode ?: listing?.let { "paid" }
-    val allowed = access?.access?.allowed == true || purchase != null || accessMode == "free"
-    val decisionReason = access?.access?.decisionReason
-    val needsTicket = decisionReason == "purchase_required" || (accessMode == "paid" && !allowed)
-    val coverSrc = resolvePublicMediaSrc(room?.coverRef ?: fallbackCoverRef)
-    val priceLabel = listing?.priceCents?.takeIf { it > 0 }?.let(::formatUsdCents)
-    val listingActive = listing != null && (listing.status == null || listing.status == "active")
-    val statusLabel = when (status) {
-        "live" -> "Live now"
-        "ended" -> "Ended"
-        "canceled" -> "Canceled"
-        else -> "Scheduled event"
-    }
-    val accessLabel = when {
-        status == "ended" || status == "canceled" -> null
-        purchase != null -> "Ticket purchased"
-        needsTicket -> when {
-            listingActive -> priceLabel?.let { "Tickets $it" } ?: "Tickets available"
-            else -> "Ticket required"
-        }
-        accessMode == "gated" -> "Gated access"
-        accessMode == "free" -> "Free"
-        else -> "Live event"
-    }
-    val showTitle = title != fallbackTitle
+    val primaryActionLabel = when (val ui = presentation.uiState) {
+        is LiveRoomUiState.CanWatch -> ui.cta
+        is LiveRoomUiState.CanWatchReplay -> ui.cta
+        is LiveRoomUiState.NeedsAccess -> ui.cta
+        is LiveRoomUiState.NeedsTicket -> ui.cta
+        is LiveRoomUiState.NeedsVerification -> ui.cta
+        is LiveRoomUiState.CanRsvp -> ui.cta
+        else -> null
+    }.takeIf { presentation.producerRole == null }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1171,10 +1168,10 @@ private fun LiveRoomSummaryCard(
                     .background(PirateTokens.colors.bgElevated),
                 contentAlignment = Alignment.Center,
             ) {
-                if (coverSrc != null) {
+                if (presentation.coverSrc != null) {
                     AsyncImage(
-                        model = coverSrc,
-                        contentDescription = title,
+                        model = presentation.coverSrc,
+                        contentDescription = presentation.title,
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Crop,
                     )
@@ -1190,27 +1187,61 @@ private fun LiveRoomSummaryCard(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (showTitle) {
+                Text(
+                    text = presentation.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = PirateTokens.colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                presentation.statusLabel?.let {
                     Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 2,
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (presentation.status == "live") PirateTokens.colors.accentDanger else PirateTokens.colors.textSecondary,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    text = statusLabel,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (status == "live") PirateTokens.colors.accentDanger else PirateTokens.colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                accessLabel?.let {
+                presentation.accessLabel?.let {
                     Text(
                         text = it,
                         style = MaterialTheme.typography.labelLarge,
                         color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                presentation.participantLabel?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                presentation.descriptionLabel?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                primaryActionLabel?.let { label ->
+                    PirateButton(
+                        text = label,
+                        onClick = onOpenPost,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                if (presentation.uiState is LiveRoomUiState.ReplayProcessing) {
+                    Text(
+                        text = "Replay processing",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = PirateTokens.colors.textSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
