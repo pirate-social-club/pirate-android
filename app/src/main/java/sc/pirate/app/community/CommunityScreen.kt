@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -71,7 +73,6 @@ import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
-import sc.pirate.app.ui.PirateChipRow
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
@@ -306,6 +307,54 @@ private val communitySortOptions = listOf(
     ChipOption("top", "Top"),
 )
 
+@Composable
+private fun CommunitySortMenu(
+    selectedValue: String,
+    onSelected: (String) -> Unit,
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = PhosphorIcons.SlidersHorizontal,
+                contentDescription = "Sort feed",
+                tint = PirateTokens.colors.textPrimary,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            communitySortOptions.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = option.label,
+                            color = PirateTokens.colors.textPrimary,
+                        )
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelected(option.value)
+                    },
+                    trailingIcon = if (option.value == selectedValue) {
+                        {
+                            Text(
+                                text = "Selected",
+                                color = PirateTokens.colors.textSecondary,
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(
@@ -351,6 +400,12 @@ fun CommunityScreen(
                     }
                 },
                 actions = {
+                    if (activeTab == "feed") {
+                        CommunitySortMenu(
+                            selectedValue = state.activeSort,
+                            onSelected = viewModel::setSort,
+                        )
+                    }
                     if (canOpenComposer) {
                         IconButton(onClick = onNavigateToCompose) {
                             Icon(
@@ -439,21 +494,6 @@ fun CommunityScreen(
                         }
 
                         if (activeTab == "feed") {
-                            item {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.End,
-                                ) {
-                                    PirateChipRow(
-                                        options = communitySortOptions,
-                                        selectedValue = state.activeSort,
-                                        onSelected = viewModel::setSort,
-                                    )
-                                }
-                            }
-
                             if (state.postsPaginationError != null) {
                                 item {
                                     StatusCard(

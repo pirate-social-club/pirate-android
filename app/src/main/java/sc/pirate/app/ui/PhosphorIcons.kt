@@ -25,6 +25,7 @@ object PhosphorIcons {
     val UserCircleFill: ImageVector = AdamPhosphorIcons.Fill.UserCircle
     val List: ImageVector = AdamPhosphorIcons.Regular.List
     val Plus: ImageVector = AdamPhosphorIcons.Regular.Plus
+    val SlidersHorizontal: ImageVector = AdamPhosphorIcons.Regular.SlidersHorizontal
     val X: ImageVector = AdamPhosphorIcons.Regular.X
     val DotsThree: ImageVector = AdamPhosphorIcons.Regular.DotsThree
     val CaretLeft: ImageVector = AdamPhosphorIcons.Regular.CaretLeft
