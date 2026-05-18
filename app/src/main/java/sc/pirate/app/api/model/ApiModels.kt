@@ -144,6 +144,7 @@ data class Community(
     @SerialName("id") private val feedCommunityId: String? = null,
     @SerialName("display_name") val displayName: String,
     @SerialName("route_slug") val routeSlug: String? = null,
+    @SerialName("created_by_user") val createdByUser: String? = null,
     @SerialName("namespace_verification_id") private val contractNamespaceVerificationId: String? = null,
     @SerialName("namespace_verification") private val feedNamespaceVerificationId: String? = null,
     @SerialName("pending_namespace_verification_session_id") private val contractPendingNamespaceVerificationSessionId: String? = null,
@@ -288,6 +289,15 @@ data class CommunityReferenceLink(
 )
 
 @Serializable
+data class CommunityRoleSummary(
+    val user: String? = null,
+    @SerialName("display_name") val displayName: String? = null,
+    val handle: String? = null,
+    @SerialName("avatar_ref") val avatarRef: String? = null,
+    val role: String? = null,
+)
+
+@Serializable
 data class CommunityPreview(
     @SerialName("community_id") private val contractCommunityId: String? = null,
     @SerialName("id") private val feedCommunityId: String? = null,
@@ -300,10 +310,13 @@ data class CommunityPreview(
     @SerialName("human_verification_lane") val humanVerificationLane: String,
     @SerialName("member_count") val memberCount: Int? = null,
     @SerialName("follower_count") val followerCount: Int? = null,
+    val owner: CommunityRoleSummary? = null,
+    val moderators: List<CommunityRoleSummary> = emptyList(),
     @SerialName("reference_links") val referenceLinks: List<CommunityReferenceLink>? = null,
     @SerialName("membership_gate_summaries") val membershipGateSummaries: List<MembershipGateSummary> = emptyList(),
     val rules: List<CommunityRule> = emptyList(),
     @SerialName("viewer_membership_status") val viewerMembershipStatus: String? = null,
+    @SerialName("viewer_community_role") val viewerCommunityRole: String? = null,
     @SerialName("viewer_following") val viewerFollowing: Boolean? = null,
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,

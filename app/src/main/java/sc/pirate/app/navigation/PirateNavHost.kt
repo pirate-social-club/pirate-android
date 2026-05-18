@@ -251,6 +251,7 @@ fun PirateNavHost(
                 viewModel = vm,
                 communityId = communityId,
                 hasSession = hasSession,
+                viewerUserId = session?.user?.userId,
                 onNavigateToPost = { postId ->
                     navController.navigate(PirateRoute.Post.buildRoute(postId))
                 },

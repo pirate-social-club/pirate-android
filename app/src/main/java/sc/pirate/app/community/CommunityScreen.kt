@@ -361,6 +361,7 @@ fun CommunityScreen(
     viewModel: CommunityViewModel,
     communityId: String,
     hasSession: Boolean,
+    viewerUserId: String?,
     onNavigateToPost: (String) -> Unit,
     onNavigateToCompose: () -> Unit,
     onVerifyWithSelf: (String) -> Unit,
@@ -372,8 +373,12 @@ fun CommunityScreen(
     val preview = state.preview
     val community = state.community
     val eligibility = state.eligibility
-    val canCreatePost = hasSession && eligibility?.status == "already_joined"
-    val canOpenComposer = community != null || preview != null
+    val canCreatePost = hasSession && (
+        eligibility?.status == "already_joined" ||
+            preview?.viewerMembershipStatus == "member" ||
+            ownsCommunity(viewerUserId, community) ||
+            viewerCanModerateCommunity(viewerUserId, preview)
+        )
 
     LaunchedEffect(communityId, hasSession) {
         viewModel.loadCommunity(communityId, hasSession)
@@ -382,19 +387,12 @@ fun CommunityScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Text(
-                        text = community?.displayName ?: preview?.displayName ?: "Community",
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
+                title = {},
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            PhosphorIcons.List,
-                            contentDescription = "Navigation",
+                            PhosphorIcons.CaretLeft,
+                            contentDescription = "Back",
                             tint = PirateTokens.colors.textPrimary,
                         )
                     }
@@ -406,7 +404,7 @@ fun CommunityScreen(
                             onSelected = viewModel::setSort,
                         )
                     }
-                    if (canOpenComposer) {
+                    if (canCreatePost) {
                         IconButton(onClick = onNavigateToCompose) {
                             Icon(
                                 imageVector = PhosphorIcons.Plus,
@@ -596,6 +594,27 @@ fun CommunityScreen(
 private fun communityRouteLabel(routeSlugOrId: String, communityId: String): String {
     val route = routeSlugOrId.ifBlank { communityId }
     return formatCommunityRouteLabel(communityId = communityId, routeSlug = route)
+}
+
+private fun ownsCommunity(viewerUserId: String?, community: Community?): Boolean =
+    sameUserId(viewerUserId, community?.createdByUser)
+
+private fun viewerCanModerateCommunity(viewerUserId: String?, preview: CommunityPreview?): Boolean {
+    if (viewerUserId.isNullOrBlank() || preview == null) return false
+    if (preview.viewerCommunityRole.isCommunityModeratorRole()) return true
+    if (sameUserId(viewerUserId, preview.owner?.user)) return true
+    return preview.moderators.any { roleHolder ->
+        sameUserId(viewerUserId, roleHolder.user) && roleHolder.role.isCommunityModeratorRole()
+    }
+}
+
+private fun String?.isCommunityModeratorRole(): Boolean =
+    this == "owner" || this == "admin" || this == "moderator"
+
+private fun sameUserId(left: String?, right: String?): Boolean {
+    val normalizedLeft = left?.trim()?.takeIf { it.isNotBlank() } ?: return false
+    val normalizedRight = right?.trim()?.takeIf { it.isNotBlank() } ?: return false
+    return normalizedLeft == normalizedRight
 }
 
 private fun communityStatusText(eligibility: JoinEligibility): String =
