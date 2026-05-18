@@ -376,7 +376,7 @@ fun PirateNavHost(
                         navController.navigate(PirateRoute.SettingsIndex.route)
                     },
                     onVerifyHuman = {
-                        navController.navigate(PirateRoute.VerifyVery.route)
+                        navController.navigate(PirateRoute.VerifyVery.buildRoute(autoStart = true))
                     },
                     onSignIn = {
                         navController.navigate(PirateRoute.Auth.route)
@@ -507,9 +507,21 @@ fun PirateNavHost(
             }
         }
 
-        composable(PirateRoute.VerifyVery.route) {
+        composable(
+            route = PirateRoute.VerifyVery.route,
+            arguments = listOf(navArgument(PirateRoute.VerifyVery.ARG_AUTO_START) {
+                type = NavType.BoolType
+                defaultValue = false
+            }),
+        ) { backStackEntry ->
+            val autoStart = backStackEntry.arguments
+                ?.getBoolean(PirateRoute.VerifyVery.ARG_AUTO_START)
+                ?: false
             AuthGate(hasSession, navController) {
-                VeryVerificationScreen(onBack = { navController.popBackStack() })
+                VeryVerificationScreen(
+                    autoStart = autoStart,
+                    onBack = { navController.popBackStack() },
+                )
             }
         }
 

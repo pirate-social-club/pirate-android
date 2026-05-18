@@ -48,7 +48,10 @@ sealed class PirateRoute(val route: String) {
             return "verification/self/${Uri.encode(intent)}"
         }
     }
-    data object VerifyVery : PirateRoute("verification/very")
+    data object VerifyVery : PirateRoute("verification/very?autoStart={autoStart}") {
+        const val ARG_AUTO_START = "autoStart"
+        fun buildRoute(autoStart: Boolean = false): String = "verification/very?autoStart=$autoStart"
+    }
     data object Post : PirateRoute("post/{postId}") {
         const val ARG_POST_ID = "postId"
         fun buildRoute(postId: String): String = "post/${Uri.encode(postId)}"

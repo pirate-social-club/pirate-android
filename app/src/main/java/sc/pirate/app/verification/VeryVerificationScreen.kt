@@ -14,8 +14,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -211,12 +215,27 @@ class VeryVerificationViewModel(application: Application) : AndroidViewModel(app
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VeryVerificationScreen(
+    autoStart: Boolean = false,
     onBack: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val viewModel: VeryVerificationViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    var autoStartConsumed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(autoStart, state.verificationState, state.loading, state.error) {
+        if (
+            autoStart &&
+            !autoStartConsumed &&
+            !state.loading &&
+            state.error == null &&
+            state.verificationState == VeryVerificationState.NotStarted
+        ) {
+            autoStartConsumed = true
+            viewModel.startVerification(context)
+        }
+    }
 
     androidx.compose.material3.Scaffold(
         topBar = {
