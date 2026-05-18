@@ -213,9 +213,15 @@ Acceptance:
 
 ## Build And Test Policy
 
-This machine is slow. Keep checks narrow.
+This machine is slow. Keep checks narrow and prefer Blacksmith-backed CI for Android verification.
 
-Preferred local check when SDK is configured:
+Default compile check:
+
+```bash
+rtk gh workflow run android-compile.yml --ref main
+```
+
+Local fallback only when remote CI is not practical and swap pressure is low:
 
 ```bash
 rtk timeout 240 env \
@@ -225,7 +231,7 @@ rtk timeout 240 env \
   ./scripts/androidw.sh --no-daemon --console=plain --offline :app:compileDebugKotlin
 ```
 
-Do not use repeated full Gradle builds during spec or static review work. Batch edits before compiling, and prefer CI/Blacksmith for heavier validation.
+Do not use repeated full local Gradle builds during spec or static review work. Batch edits before compiling, and use CI/Blacksmith for heavier validation.
 
 Minimum future test targets:
 

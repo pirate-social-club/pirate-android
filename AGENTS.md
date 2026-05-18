@@ -2,7 +2,17 @@
 
 ## Build Path
 
-Use the repo wrapper for Gradle tasks:
+Use Blacksmith-backed GitHub Actions as the default Android verification path:
+
+```bash
+rtk gh workflow run android-compile.yml --ref main
+```
+
+The compile-only workflow is `.github/workflows/android-compile.yml`, runs on
+`blacksmith-4vcpu-ubuntu-2404`, and checks `:app:compileDebugKotlin`.
+
+Avoid local Gradle builds for routine verification on this workstation. If local
+Gradle is unavoidable because remote CI is not practical, use the repo wrapper:
 
 ```bash
 rtk timeout 240 env \
@@ -16,9 +26,10 @@ Avoid calling `./gradlew` directly in agent workflows.
 
 ## Slow Machine Policy
 
-- Prefer static review and narrow Kotlin compile checks.
-- Use the offline, no-daemon, low-priority, one-worker command above by default.
-- Do not run full builds repeatedly.
+- Prefer static review first, then Blacksmith compile verification.
+- Do not use the local offline Gradle command by default.
+- Use local Gradle only as a narrow fallback when remote CI is not practical and swap pressure is low.
+- Do not run repeated full local builds.
 - Batch code edits before compiling; do not compile after every small edit.
 - If the offline compile fails because dependencies are missing, ask before running an online Gradle command.
 - Only raise worker count or run larger tasks when the user explicitly accepts the load.

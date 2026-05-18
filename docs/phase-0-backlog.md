@@ -268,7 +268,13 @@ Previously observed failure:
 
 - Direct `./gradlew` compile failed because `sdk.dir` or `ANDROID_HOME` was not configured.
 
-Current local entry point:
+Default compile verification should use Blacksmith-backed CI:
+
+```bash
+rtk gh workflow run android-compile.yml --ref main
+```
+
+Local fallback only when remote CI is not practical:
 
 ```bash
 rtk timeout 240 env \
@@ -281,8 +287,8 @@ rtk timeout 240 env \
 Tasks:
 
 - add a short Android setup doc covering SDK requirements and `local.properties`
-- list the smallest recommended local verification command
-- document when to use remote CI instead of local builds
+- list the Blacksmith compile workflow as the default verification command
+- document the local fallback for cases where remote CI is not practical
 
 Acceptance:
 

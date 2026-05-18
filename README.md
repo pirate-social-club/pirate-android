@@ -4,7 +4,17 @@ Kotlin + Jetpack Compose Android client for Pirate.
 
 ## Build
 
-Use the repo wrapper from this directory:
+Use the Blacksmith-backed compile workflow by default:
+
+```bash
+rtk gh workflow run android-compile.yml --ref main
+```
+
+The workflow runs `.github/workflows/android-compile.yml` on `blacksmith-4vcpu-ubuntu-2404`
+and checks `:app:compileDebugKotlin`.
+
+Use the repo wrapper from this directory only when remote CI is not practical and a
+local fallback is unavoidable:
 
 ```bash
 rtk timeout 240 env \

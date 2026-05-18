@@ -101,7 +101,13 @@ If `PRIVY_APP_ID` or `PRIVY_APP_CLIENT_ID` is explicitly set blank, auth is inte
 
 ## Smallest Local Check
 
-Only run this if the machine is healthy enough. Check `free -h` first; do not run local Gradle when swap is heavily used. When local validation is unavoidable, prefer:
+Use the Blacksmith compile workflow before local Gradle:
+
+```bash
+rtk gh workflow run android-compile.yml --ref main
+```
+
+Only run the local fallback if remote CI is not practical and the machine is healthy enough. Check `free -h` first; do not run local Gradle when swap is heavily used. When local validation is unavoidable, prefer:
 
 ```bash
 rtk timeout 240 env \
@@ -111,7 +117,7 @@ rtk timeout 240 env \
   ./scripts/androidw.sh --no-daemon --console=plain --offline :app:compileDebugKotlin
 ```
 
-Do not escalate immediately to larger Android build tasks unless the Kotlin compile check is insufficient. Prefer Blacksmith before running any larger local task. If `--offline` fails because dependencies are missing, run one online wrapper command only after confirming the machine can tolerate it.
+Do not escalate immediately to larger Android build tasks unless the Kotlin compile check is insufficient. Use Blacksmith for larger validation instead of a local build. If `--offline` fails because dependencies are missing, run one online wrapper command only after confirming the machine can tolerate it.
 
 ## Previous Failure In This Workspace
 
