@@ -67,6 +67,7 @@ android {
     versionName = "0.1.0-alpha.7-play-20260513"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    manifestPlaceholders["appLabel"] = "@string/app_name"
 
     val apiBaseUrl = runtimeProp("API_BASE_URL") ?: "https://api.pirate.sc"
     buildConfigField("String", "API_BASE_URL", buildConfigString(apiBaseUrl))
@@ -128,6 +129,7 @@ android {
       if (runtimeProp("DEBUG_SIGN_WITH_RELEASE")?.lowercase() == "true") {
         signingConfig = signingConfigs.findByName("release")
       }
+      manifestPlaceholders["appLabel"] = "Pirate Blacksmith"
       versionNameSuffix = "-blacksmith"
     }
   }
@@ -184,7 +186,7 @@ dependencies {
   implementation("org.web3j:abi:4.12.2")
   implementation("org.web3j:crypto:4.12.2")
   implementation("org.xmtp:android:4.9.0")
-  implementation("io.agora.rtc:voice-sdk:4.6.3")
+  implementation("io.agora.rtc:full-sdk:4.6.3")
   implementation("org.very:sdk:1.0.29") {
     exclude(group = "com.caverock", module = "androidsvg")
   }

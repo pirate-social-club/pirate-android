@@ -20,6 +20,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,6 +38,7 @@ import com.reown.appkit.ui.openAppKit
 import kotlinx.coroutines.delay
 import sc.pirate.app.auth.AuthViewModel
 import sc.pirate.app.auth.SignInDrawer
+import sc.pirate.app.navigation.PirateDeepLinks
 import sc.pirate.app.navigation.PirateNavHost
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTheme
@@ -46,15 +48,21 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateScaffold
 
 class MainActivity : ComponentActivity() {
+    private val pendingDeepLinkRoute = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         (application as PirateApp).verificationCoordinator.handleIntent(intent)
         (application as PirateApp).reownManager.handleDeepLink(intent?.data)
         (application as PirateApp).reownManager.registerActivity(this)
+        handleAppDeepLink(intent)
         enableEdgeToEdge()
         setContent {
             PirateTheme {
-                PirateAppShell()
+                PirateAppShell(
+                    pendingDeepLinkRoute = pendingDeepLinkRoute,
+                    onDeepLinkRouteConsumed = { pendingDeepLinkRoute.value = null },
+                )
             }
         }
     }
@@ -65,16 +73,24 @@ class MainActivity : ComponentActivity() {
         setIntent(intent)
         (application as PirateApp).verificationCoordinator.handleIntent(intent)
         (application as PirateApp).reownManager.handleDeepLink(intent.data)
+        handleAppDeepLink(intent)
     }
 
     override fun onDestroy() {
         (application as PirateApp).reownManager.unregisterActivity()
         super.onDestroy()
     }
+
+    private fun handleAppDeepLink(intent: Intent?) {
+        pendingDeepLinkRoute.value = PirateDeepLinks.routeFromUri(intent?.data)
+    }
 }
 
 @Composable
-private fun PirateAppShell() {
+private fun PirateAppShell(
+    pendingDeepLinkRoute: State<String?>,
+    onDeepLinkRouteConsumed: () -> Unit,
+) {
     val context = LocalContext.current
     val app = context.applicationContext as PirateApp
     val session by app.sessionStore.observe().collectAsState(initial = null)
@@ -206,6 +222,16 @@ private fun PirateAppShell() {
             )
         },
     ) { navController, modifier, openDrawer ->
+        val routeFromDeepLink = pendingDeepLinkRoute.value
+        LaunchedEffect(routeFromDeepLink, navController) {
+            if (!routeFromDeepLink.isNullOrBlank()) {
+                navController.navigate(routeFromDeepLink) {
+                    launchSingleTop = true
+                }
+                onDeepLinkRouteConsumed()
+            }
+        }
+
         LaunchedEffect(pendingWalletOpen) {
             if (pendingWalletOpen) {
                 delay(260)
