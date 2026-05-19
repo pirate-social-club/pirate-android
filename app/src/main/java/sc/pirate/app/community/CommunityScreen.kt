@@ -696,7 +696,6 @@ fun CommunityScreen(
                                         val postIsBuffering = playbackState.postId == postResp.post.postId && playbackState.isBuffering
                                         SongPostRow(
                                             post = postResp,
-                                            communityName = displayName,
                                             isVoting = isVoting,
                                             canPlay = resolveSongAudioUrl(postResp) != null,
                                             isBuffering = postIsBuffering,
@@ -710,7 +709,6 @@ fun CommunityScreen(
                                         val postIsCurrentVideo = videoPlaybackState.postId == postResp.post.postId
                                         VideoPostRow(
                                             post = postResp,
-                                            communityName = displayName,
                                             isVoting = isVoting,
                                             isActive = postIsCurrentVideo,
                                             isBuffering = postIsCurrentVideo && videoPlaybackState.isBuffering,
@@ -722,7 +720,6 @@ fun CommunityScreen(
                                     } else {
                                         CommunityPostRow(
                                             post = postResp,
-                                            communityName = displayName,
                                             isVoting = isVoting,
                                             onClick = { onNavigateToPost(postResp.post.postId) },
                                             onVote = { value -> viewModel.votePost(postResp.post.postId, value) },
@@ -1291,7 +1288,6 @@ private fun PostEngagementRow(
 @Composable
 private fun SongPostRow(
     post: LocalizedPostResponse,
-    communityName: String,
     isVoting: Boolean,
     canPlay: Boolean,
     isBuffering: Boolean,
@@ -1319,28 +1315,7 @@ private fun SongPostRow(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                UserAvatar(label = authorLabel)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = authorLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "${relativeTimeLabel(post.post.createdAt)} - $communityName",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = PirateTokens.colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            CommunityPostByline(authorLabel = authorLabel, timestampLabel = relativeTimeLabel(post.post.createdAt))
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1417,7 +1392,6 @@ private fun SongPostRow(
 @Composable
 private fun VideoPostRow(
     post: LocalizedPostResponse,
-    communityName: String,
     isVoting: Boolean,
     isActive: Boolean,
     isBuffering: Boolean,
@@ -1444,28 +1418,7 @@ private fun VideoPostRow(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                UserAvatar(label = authorLabel)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = authorLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "${relativeTimeLabel(post.post.createdAt)} - $communityName",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = PirateTokens.colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            CommunityPostByline(authorLabel = authorLabel, timestampLabel = relativeTimeLabel(post.post.createdAt))
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1580,7 +1533,6 @@ private fun SongArtwork(label: String, artworkSrc: String?) {
 @Composable
 private fun CommunityPostRow(
     post: LocalizedPostResponse,
-    communityName: String,
     isVoting: Boolean,
     onClick: () -> Unit,
     onVote: (Int) -> Unit,
@@ -1602,28 +1554,7 @@ private fun CommunityPostRow(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                UserAvatar(label = authorLabel)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = authorLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "${relativeTimeLabel(post.post.createdAt)} - $communityName",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = PirateTokens.colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
+            CommunityPostByline(authorLabel = authorLabel, timestampLabel = relativeTimeLabel(post.post.createdAt))
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -1646,6 +1577,24 @@ private fun CommunityPostRow(
                 onVote = onVote,
             )
         }
+    }
+}
+
+@Composable
+private fun CommunityPostByline(authorLabel: String, timestampLabel: String) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        UserAvatar(label = authorLabel)
+        Text(
+            text = "$authorLabel \u2022 $timestampLabel",
+            style = MaterialTheme.typography.labelLarge,
+            color = PirateTokens.colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
