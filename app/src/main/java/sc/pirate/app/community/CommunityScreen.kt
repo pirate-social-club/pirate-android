@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -37,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,10 +55,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
@@ -85,6 +91,11 @@ import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
+import sc.pirate.app.video.VideoPlaybackState
+import sc.pirate.app.video.VideoPlayerView
+import sc.pirate.app.video.isVideoPost
+import sc.pirate.app.video.resolveVideoPosterUrl
+import sc.pirate.app.video.videoAspectRatio
 
 data class CommunityUiState(
     val community: Community? = null,
@@ -114,6 +125,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
     private val _state = MutableStateFlow(CommunityUiState())
     val state: StateFlow<CommunityUiState> = _state.asStateFlow()
     val playbackState: StateFlow<SongPlaybackState> = app.songPlaybackController.state
+    val videoPlaybackState: StateFlow<VideoPlaybackState> = app.videoPlaybackController.state
 
     private var currentCommunityId: String? = null
     private var currentHasSession: Boolean = false
@@ -358,6 +370,16 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
     fun pauseSongPlayback() {
         app.songPlaybackController.pause()
     }
+
+    fun playVideoPreview(post: LocalizedPostResponse) {
+        app.videoPlaybackController.playPreview(post)
+    }
+
+    fun pauseVideoPlayback() {
+        app.videoPlaybackController.pause()
+    }
+
+    fun currentVideoPlayer() = app.videoPlaybackController.currentPlayer()
 }
 
 private val communityTabOptions = listOf(
@@ -434,7 +456,9 @@ fun CommunityScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
+    val videoPlaybackState by viewModel.videoPlaybackState.collectAsState()
     var activeTab by rememberSaveable(communityId) { mutableStateOf("feed") }
+    val listState = rememberLazyListState()
     val preview = state.preview
     val community = state.community
     val eligibility = state.eligibility
@@ -458,6 +482,7 @@ fun CommunityScreen(
             val observer = LifecycleEventObserver { _, event ->
                 if (event == Lifecycle.Event.ON_STOP) {
                     viewModel.pauseSongPlayback()
+                    viewModel.pauseVideoPlayback()
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -465,6 +490,25 @@ fun CommunityScreen(
                 lifecycleOwner.lifecycle.removeObserver(observer)
             }
         }
+    }
+
+    LaunchedEffect(activeTab, state.posts) {
+        if (activeTab != "feed") {
+            viewModel.pauseVideoPlayback()
+            return@LaunchedEffect
+        }
+        snapshotFlow { mostVisibleVideoPostId(listState, state.posts) }
+            .distinctUntilChanged()
+            .collect { postId ->
+                val post = postId?.let { nextPostId ->
+                    state.posts.firstOrNull { it.post.postId == nextPostId }
+                }
+                if (post != null) {
+                    viewModel.playVideoPreview(post)
+                } else {
+                    viewModel.pauseVideoPlayback()
+                }
+            }
     }
 
     Scaffold(
@@ -538,6 +582,7 @@ fun CommunityScreen(
                     val followerCount = preview?.followerCount ?: community?.followerCount
                     val avatarSrc = community?.avatarRef ?: preview?.avatarRef
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier
                             .fillMaxSize()
                             .background(PirateTokens.colors.bgPage),
@@ -621,6 +666,19 @@ fun CommunityScreen(
                                 }
                             }
 
+                            videoPlaybackState.error?.let { playbackError ->
+                                item {
+                                    StatusCard(
+                                        title = "Video unavailable",
+                                        description = playbackError,
+                                        tone = StatusTone.Warning,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp),
+                                    )
+                                }
+                            }
+
                             if (state.posts.isEmpty()) {
                                 item {
                                     EmptyFeedState(
@@ -645,6 +703,19 @@ fun CommunityScreen(
                                             isPlaying = postIsPlaying,
                                             onClick = { onNavigateToPost(postResp.post.postId) },
                                             onPlayPause = { viewModel.toggleSongPlayback(postResp) },
+                                            onVote = { value -> viewModel.votePost(postResp.post.postId, value) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    } else if (isVideoPost(postResp)) {
+                                        val postIsCurrentVideo = videoPlaybackState.postId == postResp.post.postId
+                                        VideoPostRow(
+                                            post = postResp,
+                                            communityName = displayName,
+                                            isVoting = isVoting,
+                                            isActive = postIsCurrentVideo,
+                                            isBuffering = postIsCurrentVideo && videoPlaybackState.isBuffering,
+                                            player = if (postIsCurrentVideo) viewModel.currentVideoPlayer() else null,
+                                            onClick = { onNavigateToPost(postResp.post.postId) },
                                             onVote = { value -> viewModel.votePost(postResp.post.postId, value) },
                                             modifier = Modifier.fillMaxWidth(),
                                         )
@@ -835,6 +906,31 @@ private fun postAuthorLabel(post: LocalizedPostResponse): String =
     post.post.anonymousLabel
         ?: post.post.authorUserId?.take(16)?.let { "$it.pirate" }
         ?: "anonymous"
+
+private fun mostVisibleVideoPostId(
+    listState: LazyListState,
+    posts: List<LocalizedPostResponse>,
+): String? {
+    val videoPostIds = posts
+        .filter(::isVideoPost)
+        .map { it.post.postId }
+        .toSet()
+    if (videoPostIds.isEmpty()) return null
+
+    val layoutInfo = listState.layoutInfo
+    return layoutInfo.visibleItemsInfo
+        .mapNotNull { itemInfo ->
+            val postId = itemInfo.key as? String
+            if (postId !in videoPostIds) return@mapNotNull null
+            val visibleStart = itemInfo.offset.coerceAtLeast(layoutInfo.viewportStartOffset)
+            val visibleEnd = (itemInfo.offset + itemInfo.size).coerceAtMost(layoutInfo.viewportEndOffset)
+            val visiblePx = (visibleEnd - visibleStart).coerceAtLeast(0)
+            val visibleRatio = if (itemInfo.size > 0) visiblePx.toFloat() / itemInfo.size.toFloat() else 0f
+            if (visibleRatio >= 0.5f) postId to visiblePx else null
+        }
+        .maxByOrNull { it.second }
+        ?.first
+}
 
 private fun List<LocalizedPostResponse>.withPostVote(postId: String, value: Int): List<LocalizedPostResponse> =
     map { post ->
@@ -1306,6 +1402,143 @@ private fun SongPostRow(
                         modifier = Modifier.padding(12.dp),
                     )
                 }
+            }
+            PostEngagementRow(
+                score = score,
+                viewerVote = post.viewerVote,
+                comments = comments,
+                isVoting = isVoting,
+                onVote = onVote,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VideoPostRow(
+    post: LocalizedPostResponse,
+    communityName: String,
+    isVoting: Boolean,
+    isActive: Boolean,
+    isBuffering: Boolean,
+    player: Player?,
+    onClick: () -> Unit,
+    onVote: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val title = post.translatedTitle ?: post.post.title ?: post.post.caption ?: "Video"
+    val body = post.translatedBody ?: post.post.body
+    val score = post.upvoteCount - post.downvoteCount
+    val comments = post.threadSnapshot?.commentCount ?: 0
+    val posterSrc = resolveVideoPosterUrl(post)
+    val duration = durationLabel(post.post.mediaRefs.firstOrNull { it.mimeType?.startsWith("video/") == true }?.durationMs)
+    val authorLabel = postAuthorLabel(post)
+
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(0.dp),
+        border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                UserAvatar(label = authorLabel)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = authorLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${relativeTimeLabel(post.post.createdAt)} - $communityName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(videoAspectRatio(post))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (isActive && player != null) {
+                    VideoPlayerView(
+                        player = player,
+                        showControls = false,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (posterSrc != null) {
+                    AsyncImage(
+                        model = posterSrc,
+                        contentDescription = title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                } else {
+                    Icon(
+                        imageVector = PhosphorIcons.VideoCamera,
+                        contentDescription = null,
+                        tint = PirateTokens.colors.textSecondary,
+                    )
+                }
+                if (!isActive || isBuffering) {
+                    Surface(
+                        shape = RoundedCornerShape(PirateTokens.radius.full),
+                        color = Color.Black.copy(alpha = 0.55f),
+                    ) {
+                        Icon(
+                            imageVector = if (isBuffering) PhosphorIcons.MusicNotes else PhosphorIcons.Play,
+                            contentDescription = if (isBuffering) "Loading video" else "Open video",
+                            tint = Color.White,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                }
+                duration?.let {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp),
+                        shape = RoundedCornerShape(PirateTokens.radius.full),
+                        color = Color.Black.copy(alpha = 0.65f),
+                    ) {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = PirateTokens.colors.textPrimary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
+                Text(
+                    text = bodyText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             PostEngagementRow(
                 score = score,

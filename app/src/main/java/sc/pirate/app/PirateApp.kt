@@ -20,6 +20,7 @@ import sc.pirate.app.chat.XmtpChatService
 import sc.pirate.app.communities.KnownCommunitiesStore
 import sc.pirate.app.home.HomeFeedCache
 import sc.pirate.app.song.SongPlaybackController
+import sc.pirate.app.video.VideoPlaybackController
 import sc.pirate.app.verification.VerificationCoordinator
 import sc.pirate.app.walletconnect.ReownManager
 
@@ -44,7 +45,12 @@ class PirateApp : Application(), ImageLoaderFactory {
     val chatService by lazy { XmtpChatService(this) }
     val knownCommunitiesStore by lazy { KnownCommunitiesStore(this) }
     val homeFeedCache by lazy { HomeFeedCache() }
-    val songPlaybackController by lazy { SongPlaybackController(this) }
+    val songPlaybackController: SongPlaybackController by lazy {
+        SongPlaybackController(this) { videoPlaybackController.pause() }
+    }
+    val videoPlaybackController: VideoPlaybackController by lazy {
+        VideoPlaybackController(this) { songPlaybackController.pause() }
+    }
 
     override fun onCreate() {
         super.onCreate()

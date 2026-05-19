@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,6 +51,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.Player
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -96,6 +98,12 @@ import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
+import sc.pirate.app.video.VideoPlaybackState
+import sc.pirate.app.video.VideoPlayerView
+import sc.pirate.app.video.isVideoPost
+import sc.pirate.app.video.resolveVideoPosterUrl
+import sc.pirate.app.video.resolveVideoUrl
+import sc.pirate.app.video.videoAspectRatio
 
 data class PostUiState(
     val post: LocalizedPostResponse? = null,
@@ -154,6 +162,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     private val _state = MutableStateFlow(PostUiState())
     val state: StateFlow<PostUiState> = _state.asStateFlow()
     val playbackState: StateFlow<SongPlaybackState> = app.songPlaybackController.state
+    val videoPlaybackState: StateFlow<VideoPlaybackState> = app.videoPlaybackController.state
     private var currentPostId: String? = null
     private var currentHasSession: Boolean = false
 
@@ -286,6 +295,16 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     fun pauseSongPlayback() {
         app.songPlaybackController.pause()
     }
+
+    fun playVideoDetail(post: LocalizedPostResponse) {
+        app.videoPlaybackController.playDetail(post)
+    }
+
+    fun pauseVideoPlayback() {
+        app.videoPlaybackController.pause()
+    }
+
+    fun currentVideoPlayer() = app.videoPlaybackController.currentPlayer()
 
     fun loadMoreComments() {
         val current = _state.value
@@ -910,6 +929,7 @@ fun PostScreen(
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
+    val videoPlaybackState by viewModel.videoPlaybackState.collectAsState()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
     var observedFirstResume by rememberSaveable(postId, hasSession) { mutableStateOf(false) }
@@ -934,6 +954,7 @@ fun PostScreen(
                     }
                     Lifecycle.Event.ON_STOP -> {
                         viewModel.pauseSongPlayback()
+                        viewModel.pauseVideoPlayback()
                     }
                     else -> Unit
                 }
@@ -1046,6 +1067,12 @@ fun PostScreen(
                             assetListing = state.assetListing,
                             assetPurchase = state.assetPurchase,
                             songPlaybackState = playbackState,
+                            videoPlaybackState = videoPlaybackState,
+                            videoPlayer = if (videoPlaybackState.postId == postResponse.post.postId) {
+                                viewModel.currentVideoPlayer()
+                            } else {
+                                null
+                            },
                             purchaseSubmitting = state.purchaseSubmitting,
                             purchaseError = state.purchaseError,
                             purchaseMessage = state.purchaseMessage,
@@ -1071,6 +1098,9 @@ fun PostScreen(
                             },
                             onToggleSongPlayback = {
                                 viewModel.toggleSongPlayback(postResponse)
+                            },
+                            onPlayVideoDetail = {
+                                viewModel.playVideoDetail(postResponse)
                             },
                             onRenewLiveRoomViewer = { uid ->
                                 viewModel.renewLiveRoomViewer(uid, hasSession)
@@ -1252,6 +1282,8 @@ private fun ThreadRootPost(
     assetListing: CommunityListing?,
     assetPurchase: CommunityPurchase?,
     songPlaybackState: SongPlaybackState,
+    videoPlaybackState: VideoPlaybackState,
+    videoPlayer: Player?,
     purchaseSubmitting: Boolean,
     purchaseError: String?,
     purchaseMessage: String?,
@@ -1262,6 +1294,7 @@ private fun ThreadRootPost(
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
     onToggleSongPlayback: () -> Unit,
+    onPlayVideoDetail: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
     val post = postResponse.post
@@ -1349,6 +1382,17 @@ private fun ThreadRootPost(
                     isPlaying = postIsCurrent && songPlaybackState.isPlaying,
                     error = songPlaybackState.error.takeIf { postIsCurrent },
                     onPlayPause = onToggleSongPlayback,
+                )
+            }
+            if (isVideoPost(postResponse) && post.anchorLiveRoom == null) {
+                val postIsCurrent = videoPlaybackState.postId == post.postId
+                ThreadVideoSummary(
+                    postResponse = postResponse,
+                    canPlay = resolveVideoUrl(postResponse) != null,
+                    isBuffering = postIsCurrent && videoPlaybackState.isBuffering,
+                    player = videoPlayer,
+                    error = videoPlaybackState.error.takeIf { postIsCurrent },
+                    onPlay = onPlayVideoDetail,
                 )
             }
             post.anchorLiveRoom?.let { liveRoomId ->
@@ -1524,6 +1568,107 @@ private fun durationLabel(durationMs: Long?): String? {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+
+@Composable
+private fun ThreadVideoSummary(
+    postResponse: LocalizedPostResponse,
+    canPlay: Boolean,
+    isBuffering: Boolean,
+    player: Player?,
+    error: String?,
+    onPlay: () -> Unit,
+) {
+    val title = postResponse.translatedTitle ?: postResponse.post.title ?: postResponse.post.caption ?: "Video"
+    val posterSrc = resolveVideoPosterUrl(postResponse)
+    val duration = durationLabel(postResponse.post.mediaRefs.firstOrNull { it.mimeType?.startsWith("video/") == true }?.durationMs)
+
+    LaunchedEffect(postResponse.post.postId, canPlay) {
+        if (canPlay) onPlay()
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(videoAspectRatio(postResponse))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black)
+                    .clickable(enabled = canPlay, onClick = onPlay),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (player != null) {
+                    VideoPlayerView(
+                        player = player,
+                        showControls = true,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else if (posterSrc != null) {
+                    AsyncImage(
+                        model = posterSrc,
+                        contentDescription = title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                } else {
+                    Icon(
+                        imageVector = if (canPlay) PhosphorIcons.Play else PhosphorIcons.Lock,
+                        contentDescription = null,
+                        tint = Color.White,
+                    )
+                }
+                if (isBuffering || player == null) {
+                    Surface(
+                        shape = RoundedCornerShape(PirateTokens.radius.full),
+                        color = Color.Black.copy(alpha = 0.55f),
+                    ) {
+                        Icon(
+                            imageVector = when {
+                                !canPlay -> PhosphorIcons.Lock
+                                isBuffering -> PhosphorIcons.MusicNotes
+                                else -> PhosphorIcons.Play
+                            },
+                            contentDescription = when {
+                                !canPlay -> "Video locked"
+                                isBuffering -> "Loading video"
+                                else -> "Play video"
+                            },
+                            tint = Color.White,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                }
+                duration?.let {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp),
+                        shape = RoundedCornerShape(PirateTokens.radius.full),
+                        color = Color.Black.copy(alpha = 0.65f),
+                    ) {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                    }
+                }
+            }
+            error?.let {
+                FormNote(message = it, tone = FormTone.Error)
+            }
+        }
+    }
 }
 
 @Composable

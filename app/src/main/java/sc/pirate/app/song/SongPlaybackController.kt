@@ -22,7 +22,10 @@ data class SongPlaybackState(
     val errorNonce: Long = 0,
 )
 
-class SongPlaybackController(context: Context) {
+class SongPlaybackController(
+    context: Context,
+    private val onPlayRequested: () -> Unit = {},
+) {
     private val appContext = context.applicationContext
     private val _state = MutableStateFlow(SongPlaybackState())
     val state: StateFlow<SongPlaybackState> = _state.asStateFlow()
@@ -42,6 +45,7 @@ class SongPlaybackController(context: Context) {
             return
         }
 
+        onPlayRequested()
         val songPlayer = ensurePlayer()
         val current = _state.value
         if (current.postId == postId && current.error == null) {
