@@ -57,6 +57,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.supervisorScope
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
@@ -72,6 +74,7 @@ import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
 import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
+import sc.pirate.app.api.model.HomeFeedCommunitySummary
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.commerce.buildStoryCheckoutQuoteRequest
@@ -165,26 +168,20 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     val videoPlaybackState: StateFlow<VideoPlaybackState> = app.videoPlaybackController.state
     private var currentPostId: String? = null
     private var currentHasSession: Boolean = false
+    private var loadGeneration = 0
+    private val postPreviewCache get() = app.postPreviewCache
 
     fun loadPost(postId: String, hasSession: Boolean, commentSort: String = _state.value.commentSort) {
         currentPostId = postId
         currentHasSession = hasSession
+        val generation = ++loadGeneration
         val existingState = _state.value
+
+        val cached = postPreviewCache.get(postId)
+
         viewModelScope.launch {
-            _state.value = existingState.copy(
-                loading = true,
-                error = null,
-                commentSort = commentSort,
-            )
-            try {
-                val post = if (hasSession) {
-                    postRepository.getPost(postId)
-                } else {
-                    postRepository.getPublicPost(postId)
-                }
-                val commerce = loadPostCommerce(post, hasSession)
-                val session = app.sessionStore.get()
-                val communityPreview = loadCommunityPreview(post.post.communityId, hasSession)
+            if (cached != null) {
+                val communityPreview = cached.communitySummary?.toCommunityPreview()
                 communityPreview?.let { preview ->
                     app.knownCommunitiesStore.remember(
                         communityId = preview.communityId,
@@ -193,27 +190,159 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                         routeSlug = preview.routeSlug,
                     )
                 }
+                val session = app.sessionStore.get()
                 _state.value = PostUiState(
-                    post = post,
+                    post = cached.post,
                     communityPreview = communityPreview,
-                    authorProfiles = loadAuthorProfiles(listOfNotNull(post.post.authorUserId)),
                     commentSort = commentSort,
                     commentDraft = existingState.commentDraft,
                     loading = false,
                     commentsLoading = true,
                     viewerUserId = session?.user?.userId,
-                    liveRoomAccess = commerce.liveRoomAccess,
-                    liveRoomListing = commerce.liveRoomListing,
-                    liveRoomPurchase = commerce.liveRoomPurchase,
-                    assetListing = commerce.assetListing,
-                    assetPurchase = commerce.assetPurchase,
                 )
-                loadTopLevelComments(post, hasSession)
-            } catch (e: Exception) {
-                _state.value = _state.value.copy(
-                    loading = false,
-                    error = e.message ?: "Failed to load post",
+                if (generation != loadGeneration || currentPostId != postId) return@launch
+
+                supervisorScope {
+                    val refreshDeferred = async {
+                        runCatching {
+                            val refreshed = if (hasSession) {
+                                postRepository.getPost(postId)
+                            } else {
+                                postRepository.getPublicPost(postId)
+                            }
+                            if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                            postPreviewCache.put(refreshed, cached.communitySummary)
+                            _state.value = _state.value.copy(
+                                post = refreshed,
+                            )
+                        }
+                    }
+                    val commerceDeferred = async {
+                        runCatching {
+                            val postForCommerce = _state.value.post ?: return@runCatching
+                            val commerce = loadPostCommerce(postForCommerce, hasSession)
+                            if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                            _state.value = _state.value.copy(
+                                liveRoomAccess = commerce.liveRoomAccess,
+                                liveRoomListing = commerce.liveRoomListing,
+                                liveRoomPurchase = commerce.liveRoomPurchase,
+                                assetListing = commerce.assetListing,
+                                assetPurchase = commerce.assetPurchase,
+                            )
+                        }
+                    }
+                    val communityDeferred = async {
+                        runCatching {
+                            val communityId = cached.post.post.communityId.takeIf { it.isNotBlank() } ?: return@runCatching
+                            val preview = loadCommunityPreview(communityId, hasSession)
+                            if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                            preview?.let { p ->
+                                app.knownCommunitiesStore.remember(
+                                    communityId = p.communityId,
+                                    displayName = p.displayName,
+                                    avatarRef = p.avatarRef,
+                                    routeSlug = p.routeSlug,
+                                )
+                                _state.value = _state.value.copy(communityPreview = p)
+                            }
+                        }
+                    }
+                    val authorDeferred = async {
+                        runCatching {
+                            val profiles = loadAuthorProfiles(listOfNotNull(cached.post.post.authorUserId))
+                            if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                            _state.value = _state.value.copy(
+                                authorProfiles = _state.value.authorProfiles + profiles,
+                            )
+                        }
+                    }
+
+                    loadTopLevelComments(cached.post, hasSession)
+                    if (generation != loadGeneration || currentPostId != postId) return@launch
+
+                    refreshDeferred.await()
+                    commerceDeferred.await()
+                    communityDeferred.await()
+                    authorDeferred.await()
+                }
+            } else {
+                _state.value = existingState.copy(
+                    loading = true,
+                    error = null,
+                    commentSort = commentSort,
                 )
+                try {
+                    val post = if (hasSession) {
+                        postRepository.getPost(postId)
+                    } else {
+                        postRepository.getPublicPost(postId)
+                    }
+                    if (generation != loadGeneration || currentPostId != postId) return@launch
+                    postPreviewCache.put(post, null)
+                    val session = app.sessionStore.get()
+                    _state.value = PostUiState(
+                        post = post,
+                        commentSort = commentSort,
+                        commentDraft = existingState.commentDraft,
+                        loading = false,
+                        commentsLoading = true,
+                        viewerUserId = session?.user?.userId,
+                    )
+
+                    supervisorScope {
+                        val commerceDeferred = async {
+                            runCatching {
+                                val commerce = loadPostCommerce(post, hasSession)
+                                if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                                _state.value = _state.value.copy(
+                                    liveRoomAccess = commerce.liveRoomAccess,
+                                    liveRoomListing = commerce.liveRoomListing,
+                                    liveRoomPurchase = commerce.liveRoomPurchase,
+                                    assetListing = commerce.assetListing,
+                                    assetPurchase = commerce.assetPurchase,
+                                )
+                            }
+                        }
+                        val communityDeferred = async {
+                            runCatching {
+                                val communityId = post.post.communityId.takeIf { it.isNotBlank() }
+                                if (communityId == null) return@runCatching
+                                val preview = loadCommunityPreview(communityId, hasSession)
+                                if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                                preview?.let { p ->
+                                    app.knownCommunitiesStore.remember(
+                                        communityId = p.communityId,
+                                        displayName = p.displayName,
+                                        avatarRef = p.avatarRef,
+                                        routeSlug = p.routeSlug,
+                                    )
+                                    _state.value = _state.value.copy(communityPreview = p)
+                                }
+                            }
+                        }
+                        val authorDeferred = async {
+                            runCatching {
+                                val profiles = loadAuthorProfiles(listOfNotNull(post.post.authorUserId))
+                                if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                                _state.value = _state.value.copy(
+                                    authorProfiles = _state.value.authorProfiles + profiles,
+                                )
+                            }
+                        }
+
+                        loadTopLevelComments(post, hasSession)
+
+                        commerceDeferred.await()
+                        communityDeferred.await()
+                        authorDeferred.await()
+                    }
+                } catch (e: Exception) {
+                    if (generation != loadGeneration || currentPostId != postId) return@launch
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        error = e.message ?: "Failed to load post",
+                    )
+                }
             }
         }
     }
@@ -265,19 +394,29 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         val previousPost = current.post ?: return
         if (current.postVoting || previousPost.viewerVote == value) return
 
+        val votedPost = previousPost.withPostVote(value)
         _state.value = current.copy(
-            post = previousPost.withPostVote(value),
+            post = votedPost,
             postVoting = true,
             postVoteError = null,
         )
+        postPreviewCache.get(previousPost.post.postId)?.let { cached ->
+            postPreviewCache.put(votedPost, cached.communitySummary)
+        }
 
         viewModelScope.launch {
             try {
                 val response = postRepository.votePost(previousPost.post.postId, value)
+                val updatedPost = _state.value.post?.withPostVote(response.value)
                 _state.value = _state.value.copy(
-                    post = _state.value.post?.withPostVote(response.value),
+                    post = updatedPost,
                     postVoting = false,
                 )
+                updatedPost?.let { post ->
+                    postPreviewCache.get(post.post.postId)?.let { cached ->
+                        postPreviewCache.put(post, cached.communitySummary)
+                    }
+                }
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     post = previousPost,
@@ -714,21 +853,23 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         }
 
     private suspend fun loadTopLevelComments(post: LocalizedPostResponse, hasSession: Boolean) {
+        val postId = post.post.postId
         try {
             val response = if (hasSession) {
                 postRepository.listComments(
                     communityId = post.post.communityId,
-                    postId = post.post.postId,
+                    postId = postId,
                     limit = 25,
                     sort = _state.value.commentSort,
                 )
             } else {
                 postRepository.listPublicComments(
-                    postId = post.post.postId,
+                    postId = postId,
                     limit = 25,
                     sort = _state.value.commentSort,
                 )
             }
+            if (currentPostId != postId) return
             _state.value = _state.value.copy(
                 comments = response.items,
                 authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
@@ -740,6 +881,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 commentsPaginationError = null,
             )
         } catch (e: Exception) {
+            if (currentPostId != postId) return
             _state.value = _state.value.copy(
                 commentsLoading = false,
                 commentsError = e.message ?: "Failed to load comments",
@@ -2217,3 +2359,14 @@ private fun relativeTimeLabel(timestamp: String): String {
         else -> "${days / 365}y"
     }
 }
+
+private fun HomeFeedCommunitySummary.toCommunityPreview(): CommunityPreview =
+    CommunityPreview(
+        contractCommunityId = communityId,
+        displayName = displayName,
+        routeSlug = routeSlug,
+        avatarRef = avatarRef,
+        membershipMode = "open",
+        humanVerificationLane = "none",
+        viewerFollowing = viewerFollowing,
+    )

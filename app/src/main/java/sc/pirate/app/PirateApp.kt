@@ -19,6 +19,7 @@ import sc.pirate.app.shared.api.AppRepositories
 import sc.pirate.app.chat.XmtpChatService
 import sc.pirate.app.communities.KnownCommunitiesStore
 import sc.pirate.app.home.HomeFeedCache
+import sc.pirate.app.post.PostPreviewCache
 import sc.pirate.app.song.SongPlaybackController
 import sc.pirate.app.video.VideoPlaybackController
 import sc.pirate.app.verification.VerificationCoordinator
@@ -45,6 +46,7 @@ class PirateApp : Application(), ImageLoaderFactory {
     val chatService by lazy { XmtpChatService(this) }
     val knownCommunitiesStore by lazy { KnownCommunitiesStore(this) }
     val homeFeedCache by lazy { HomeFeedCache() }
+    val postPreviewCache by lazy { PostPreviewCache() }
     val songPlaybackController: SongPlaybackController by lazy {
         SongPlaybackController(this) { videoPlaybackController.pause() }
     }

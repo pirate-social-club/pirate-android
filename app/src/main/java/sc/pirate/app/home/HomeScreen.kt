@@ -138,6 +138,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val postRepository get() = app.repositories.postRepository
     private val communityRepository get() = app.repositories.communityRepository
     private val homeFeedCache get() = app.homeFeedCache
+    private val postPreviewCache get() = app.postPreviewCache
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
@@ -165,6 +166,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     timeRange = if (sort == "top") timeRange else null,
                 )
                 homeFeedCache.put(key, feed)
+                cacheFeedItems(feed.items)
                 _state.value = _state.value.withFeed(
                     refreshing = false,
                     loading = false,
@@ -252,6 +254,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val key = cacheKey(sort, timeRange)
             val cached = homeFeedCache.get(key)
             if (cached != null) {
+                cacheFeedItems(cached.feed.items)
                 _state.value = _state.value.withFeed(
                     loading = false,
                     feed = cached.feed,
@@ -277,6 +280,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     timeRange = if (sort == "top") timeRange else null,
                 )
                 homeFeedCache.put(key, feed)
+                cacheFeedItems(feed.items)
                 _state.value = _state.value.withFeed(
                     loading = false,
                     feed = feed,
@@ -328,6 +332,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     cacheKey(currentState.activeSort, currentState.topTimeRange),
                     nextFeed,
                 )
+                cacheFeedItems(nextPage.items)
                 _state.value = _state.value.copy(
                     loadingMore = false,
                     feed = nextFeed,
@@ -387,6 +392,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             sort = sort,
             timeRange = if (sort == "top") timeRange else null,
         )
+    }
+
+    private fun cacheFeedItems(items: List<HomeFeedItem>) {
+        for (item in items) {
+            postPreviewCache.put(
+                post = item.post,
+                communitySummary = item.community,
+            )
+        }
     }
 
     private fun loadEnrichmentInBackground(
