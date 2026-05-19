@@ -139,6 +139,20 @@ data class PublicProfileResolution(
 )
 
 @Serializable
+data class PostableCommunitySummary(
+    @SerialName("community_id") val communityId: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("avatar_ref") val avatarRef: String? = null,
+    @SerialName("route_slug") val routeSlug: String? = null,
+    val action: String,
+)
+
+@Serializable
+data class PostableCommunitiesResponse(
+    val communities: List<PostableCommunitySummary> = emptyList(),
+)
+
+@Serializable
 data class Community(
     @SerialName("community_id") private val contractCommunityId: String? = null,
     @SerialName("id") private val feedCommunityId: String? = null,
@@ -605,6 +619,7 @@ data class CreatePostRequest(
     @SerialName("idempotency_key") val idempotencyKey: String? = null,
     val title: String? = null,
     val body: String? = null,
+    val caption: String? = null,
     @SerialName("post_type") val postType: String = "text",
     @SerialName("link_url") val linkUrl: String? = null,
     @SerialName("age_gate_policy") val ageGatePolicy: String? = null,
@@ -612,6 +627,115 @@ data class CreatePostRequest(
     @SerialName("identity_mode") val identityMode: String? = null,
     @SerialName("translation_policy") val translationPolicy: String? = null,
     val visibility: String? = null,
+    @SerialName("song_artifact_bundle") val songArtifactBundle: String? = null,
+    @SerialName("song_mode") val songMode: String? = null,
+    @SerialName("rights_basis") val rightsBasis: String? = null,
+    @SerialName("access_mode") val accessMode: String? = null,
+    @SerialName("license_preset") val licensePreset: String? = null,
+    @SerialName("commercial_rev_share_pct") val commercialRevSharePct: Int? = null,
+    @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String>? = null,
+)
+
+@Serializable
+data class CreateSongArtifactUploadRequest(
+    @SerialName("artifact_kind") val artifactKind: String,
+    @SerialName("mime_type") val mimeType: String,
+    val filename: String? = null,
+    @SerialName("size_bytes") val sizeBytes: Long? = null,
+    @SerialName("content_hash") val contentHash: String? = null,
+)
+
+@Serializable
+data class SongArtifactUpload(
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    @SerialName("uploader_user") val uploaderUser: String = "",
+    @SerialName("artifact_kind") val artifactKind: String = "",
+    val status: String = "pending_upload",
+    @SerialName("storage_ref") val storageRef: String = "",
+    @SerialName("mime_type") val mimeType: String = "",
+    val filename: String? = null,
+    @SerialName("size_bytes") val sizeBytes: Long? = null,
+    @SerialName("content_hash") val contentHash: String? = null,
+    @SerialName("storage_provider") val storageProvider: String? = null,
+    @SerialName("storage_bucket") val storageBucket: String? = null,
+    @SerialName("storage_object_key") val storageObjectKey: String? = null,
+    @SerialName("storage_endpoint") val storageEndpoint: String? = null,
+    @SerialName("gateway_url") val gatewayUrl: String? = null,
+    @SerialName("upload_url") val uploadUrl: String = "",
+    val created: Long = 0,
+)
+
+@Serializable
+data class SongArtifactUploadRef(
+    @SerialName("song_artifact_upload") val songArtifactUpload: String,
+)
+
+@Serializable
+data class SongPreviewWindow(
+    @SerialName("start_ms") val startMs: Long,
+    @SerialName("duration_ms") val durationMs: Long,
+)
+
+@Serializable
+data class CreateSongArtifactBundleRequest(
+    @SerialName("primary_audio") val primaryAudio: SongArtifactUploadRef,
+    val title: String,
+    val lyrics: String = "",
+    @SerialName("genius_annotations_url") val geniusAnnotationsUrl: String? = null,
+    @SerialName("cover_art") val coverArt: SongArtifactUploadRef? = null,
+    @SerialName("preview_audio") val previewAudio: SongArtifactUploadRef? = null,
+    @SerialName("preview_window") val previewWindow: SongPreviewWindow? = null,
+    @SerialName("canvas_video") val canvasVideo: SongArtifactUploadRef? = null,
+    @SerialName("instrumental_audio") val instrumentalAudio: SongArtifactUploadRef? = null,
+    @SerialName("vocal_audio") val vocalAudio: SongArtifactUploadRef? = null,
+)
+
+@Serializable
+data class SongArtifactBundle(
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    @SerialName("creator_user") val creatorUser: String = "",
+    val status: String = "draft",
+    val title: String = "",
+    @SerialName("primary_audio") val primaryAudio: JsonObject? = null,
+    val lyrics: String = "",
+    @SerialName("genius_annotations_url") val geniusAnnotationsUrl: String? = null,
+    @SerialName("cover_art") val coverArt: JsonObject? = null,
+    @SerialName("preview_audio") val previewAudio: JsonObject? = null,
+    @SerialName("preview_window") val previewWindow: SongPreviewWindow? = null,
+    @SerialName("preview_status") val previewStatus: String = "pending",
+    @SerialName("preview_error") val previewError: String? = null,
+    @SerialName("canvas_video") val canvasVideo: JsonObject? = null,
+    @SerialName("instrumental_audio") val instrumentalAudio: JsonObject? = null,
+    @SerialName("vocal_audio") val vocalAudio: JsonObject? = null,
+    @SerialName("moderation_result") val moderationResult: JsonObject? = null,
+    val created: Long = 0,
+)
+
+@Serializable
+data class DerivativeSource(
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    val community: String = "",
+    val asset: String = "",
+    val title: String = "",
+    val kind: String = "",
+    @SerialName("story_ip") val storyIp: String = "",
+    @SerialName("story_license_terms") val storyLicenseTerms: String = "",
+    @SerialName("license_preset") val licensePreset: String? = null,
+    @SerialName("commercial_rev_share_pct") val commercialRevSharePct: Int? = null,
+    @SerialName("creator_user") val creatorUser: String = "",
+    @SerialName("creator_handle") val creatorHandle: String? = null,
+    @SerialName("creator_display_name") val creatorDisplayName: String? = null,
+)
+
+@Serializable
+data class DerivativeSourceListResponse(
+    val items: List<DerivativeSource> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
 )
 
 @Serializable

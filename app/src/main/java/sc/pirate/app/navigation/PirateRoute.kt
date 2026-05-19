@@ -27,6 +27,21 @@ object PirateRouteSections {
     )
 }
 
+object PirateDeepLinks {
+    fun routeFromUri(uri: Uri?): String? {
+        if (uri == null || !uri.scheme.equals("pirate", ignoreCase = true)) return null
+        return when (uri.host) {
+            "post" -> uri.pathSegments.firstOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let(PirateRoute.Post::buildRoute)
+            "community" -> uri.pathSegments.firstOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?.let(PirateRoute.Community::buildRoute)
+            else -> null
+        }
+    }
+}
+
 sealed class PirateRoute(val route: String) {
     data object Auth : PirateRoute("auth")
     data object Onboarding : PirateRoute("onboarding")
@@ -74,6 +89,10 @@ sealed class PirateRoute(val route: String) {
     data object ComposePost : PirateRoute("community/{communityId}/compose") {
         const val ARG_COMMUNITY_ID = "communityId"
         fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/compose"
+    }
+    data object DerivativeSourceSearch : PirateRoute("community/{communityId}/song-source-search") {
+        const val ARG_COMMUNITY_ID = "communityId"
+        fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/song-source-search"
     }
     data object Notifications : PirateRoute("notifications")
     data object Inbox : PirateRoute("inbox")

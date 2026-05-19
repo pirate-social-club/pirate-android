@@ -1,10 +1,15 @@
 package sc.pirate.app.post
 
 import sc.pirate.app.api.model.CreateCommunityListingRequest
+import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.LiveRoomPerformerAllocationInput
 import sc.pirate.app.api.model.LiveRoomSetlistInput
 import sc.pirate.app.api.model.LiveRoomSetlistItemInput
+import sc.pirate.app.api.model.SongArtifactBundle
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.net.URI
@@ -17,8 +22,22 @@ const val POST_COMPOSER_TITLE_MAX_LENGTH = 300
 
 enum class PostComposerMode(val apiValue: String) {
     Text("text"),
+    Image("image"),
+    Video("video"),
     Link("link"),
+    Song("song"),
     Live("live"),
+}
+
+enum class SongMode(val apiValue: String) {
+    Original("original"),
+    Remix("remix"),
+}
+
+enum class AssetLicensePreset(val apiValue: String) {
+    NonCommercial("non-commercial"),
+    CommercialUse("commercial-use"),
+    CommercialRemix("commercial-remix"),
 }
 
 enum class LiveRoomKind(val apiValue: String) {
@@ -83,6 +102,25 @@ data class LiveComposerState(
     val regionalPricingEnabled: Boolean = false,
 )
 
+data class SongComposerState(
+    val songTitle: String = "",
+    val lyrics: String = "",
+    val geniusAnnotationsUrl: String = "",
+    val previewStartSeconds: String = "",
+    val primaryAudioLabel: String = "",
+    val coverLabel: String = "",
+    val canvasVideoLabel: String = "",
+    val instrumentalAudioLabel: String = "",
+    val vocalAudioLabel: String = "",
+    val songMode: SongMode = SongMode.Original,
+    val licensePreset: AssetLicensePreset = AssetLicensePreset.NonCommercial,
+    val commercialRevSharePct: String = "",
+    val paidSongPriceUsd: String = "",
+    val regionalPricingEnabled: Boolean = false,
+    val pendingBundleId: String? = null,
+    val upstreamAssetRefs: List<String> = emptyList(),
+)
+
 enum class PostComposerStep {
     Write,
     Settings,
@@ -133,6 +171,7 @@ fun validatePostComposerDraft(
     title: String,
     linkUrl: String,
     live: LiveComposerState = LiveComposerState(),
+    song: SongComposerState = SongComposerState(),
 ): PostComposerDraftValidation {
     return when (mode) {
         PostComposerMode.Text -> {
@@ -162,7 +201,30 @@ fun validatePostComposerDraft(
             }
         }
 
+        PostComposerMode.Image -> {
+            if (title.isBlank()) {
+                PostComposerDraftValidation(
+                    canSubmit = false,
+                    errorMessage = "Add a title before posting this image.",
+                )
+            } else {
+                PostComposerDraftValidation(canSubmit = true)
+            }
+        }
+
+        PostComposerMode.Video -> {
+            if (title.isBlank()) {
+                PostComposerDraftValidation(
+                    canSubmit = false,
+                    errorMessage = "Add a title before posting this video.",
+                )
+            } else {
+                PostComposerDraftValidation(canSubmit = true)
+            }
+        }
+
         PostComposerMode.Live -> validateLiveComposerDraft(title, live)
+        PostComposerMode.Song -> validateSongComposerDraft(song)
     }
 }
 
@@ -193,6 +255,58 @@ fun validateLiveComposerDraft(
             canSubmit = false,
             errorMessage = "Enter a valid ticket price.",
         )
+    }
+    return PostComposerDraftValidation(canSubmit = true)
+}
+
+fun validateSongComposerDraft(song: SongComposerState): PostComposerDraftValidation {
+    if (song.songTitle.isBlank()) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Enter a song title before publishing this song.",
+        )
+    }
+    val hasUploadedAudio = song.primaryAudioLabel.isNotBlank()
+    val hasPendingBundle = !song.pendingBundleId.isNullOrBlank()
+    if (!hasUploadedAudio && !hasPendingBundle) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Add primary audio before publishing this song.",
+        )
+    }
+    if (song.songMode == SongMode.Remix && song.upstreamAssetRefs.isEmpty()) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Attach a source track before publishing this remix.",
+        )
+    }
+    if (song.licensePreset == AssetLicensePreset.CommercialRemix) {
+        val sharePct = song.commercialRevSharePct.trim().toIntOrNull()
+        if (sharePct == null || sharePct < 0 || sharePct > 100) {
+            return PostComposerDraftValidation(
+                canSubmit = false,
+                errorMessage = "Choose a valid remix revenue share before publishing this song.",
+            )
+        }
+    } else if (song.commercialRevSharePct.isNotBlank()) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Revenue share is only available for commercial remix licenses.",
+        )
+    }
+    if (song.paidSongPriceUsd.isNotBlank()) {
+        if (usdToCents(song.paidSongPriceUsd) == null) {
+            return PostComposerDraftValidation(
+                canSubmit = false,
+                errorMessage = "Enter a valid unlock price before publishing this song.",
+            )
+        }
+        if (parseSongPreviewStartMs(song.previewStartSeconds) == null) {
+            return PostComposerDraftValidation(
+                canSubmit = false,
+                errorMessage = "Choose where the 30 second preview starts.",
+            )
+        }
     }
     return PostComposerDraftValidation(canSubmit = true)
 }
@@ -244,6 +358,69 @@ fun buildLiveRoomListingRequest(
         status = "active",
     )
 }
+
+fun buildSongPostRequest(
+    bundleId: String,
+    caption: String,
+    idempotencyKey: String,
+    song: SongComposerState,
+    title: String,
+    visibility: String = "public",
+): CreatePostRequest {
+    val isLocked = song.paidSongPriceUsd.isNotBlank()
+    return CreatePostRequest(
+        idempotencyKey = idempotencyKey,
+        title = title.trim().ifBlank { null },
+        caption = caption.trim().ifBlank { null },
+        postType = PostComposerMode.Song.apiValue,
+        identityMode = "public",
+        translationPolicy = "machine_allowed",
+        visibility = visibility,
+        songArtifactBundle = bundleId,
+        songMode = song.songMode.apiValue,
+        rightsBasis = if (song.songMode == SongMode.Original) "original" else "derivative",
+        accessMode = if (isLocked) "locked" else "public",
+        licensePreset = song.licensePreset.apiValue,
+        commercialRevSharePct = if (song.licensePreset == AssetLicensePreset.CommercialRemix) {
+            song.commercialRevSharePct.trim().toIntOrNull()
+        } else {
+            null
+        },
+        upstreamAssetRefs = if (song.songMode == SongMode.Remix) song.upstreamAssetRefs else null,
+    )
+}
+
+fun buildSongListingRequest(
+    assetId: String,
+    paidSongPriceUsd: String,
+    pricingPolicyRegionalPricingEnabled: Boolean = false,
+    regionalPricingEnabled: Boolean = false,
+): CreateCommunityListingRequest? {
+    val priceCents = usdToCents(paidSongPriceUsd) ?: return null
+    return CreateCommunityListingRequest(
+        asset = assetId,
+        priceCents = priceCents,
+        regionalPricingEnabled = pricingPolicyRegionalPricingEnabled && regionalPricingEnabled,
+        status = "active",
+    )
+}
+
+fun parseSongPreviewStartMs(value: String): Long? {
+    val parsed = value.trim().toLongOrNull() ?: return null
+    if (parsed < 0) return null
+    return parsed * 1000L
+}
+
+fun resolveSongBundleAnalysisState(bundle: SongArtifactBundle): String? {
+    val moderationResult = bundle.moderationResult ?: return null
+    val direct = (moderationResult["analysis_state"] as? JsonPrimitive)?.contentOrNull
+    if (direct != null) return direct
+    val nestedResult = moderationResult["moderation_result"] as? JsonObject ?: return null
+    return (nestedResult["analysis_state"] as? JsonPrimitive)?.contentOrNull
+}
+
+fun songBundleRequiresSourceReference(bundle: SongArtifactBundle): Boolean =
+    resolveSongBundleAnalysisState(bundle) == "allow_with_required_reference"
 
 fun parseLiveScheduleEpochSeconds(value: String): Long? {
     val trimmed = value.trim()

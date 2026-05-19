@@ -166,6 +166,50 @@ class ApiClient(private val sessionStore: SessionStore) {
         return response.body
     }
 
+    private suspend fun putBytesString(
+        path: String,
+        bytes: ByteArray,
+        contentType: String = "application/octet-stream",
+        requireAuth: Boolean = true,
+    ): String {
+        val response = withContext(Dispatchers.IO) {
+            val requestBuilder = Request.Builder().url("$baseUrl$path")
+            if (requireAuth) {
+                val token = sessionStore.getAccessToken()
+                if (token != null) {
+                    requestBuilder.header("Authorization", "Bearer $token")
+                }
+            }
+            client.newCall(
+                requestBuilder
+                    .put(bytes.toRequestBody(contentType.toMediaTypeOrNull()))
+                    .build(),
+            ).execute().use { rawResponse ->
+                ApiResponse(
+                    successful = rawResponse.isSuccessful,
+                    status = rawResponse.code,
+                    body = rawResponse.body?.string().orEmpty(),
+                )
+            }
+        }
+
+        if (!response.successful) {
+            val errorResponse = try {
+                json.decodeFromString<ErrorResponse>(response.body)
+            } catch (_: Exception) {
+                null
+            }
+            throw ApiError(
+                code = errorResponse?.code ?: "internal_error",
+                message = displayApiErrorMessage(errorResponse, response.status),
+                status = response.status,
+                retryable = errorResponse?.retryable == true,
+            )
+        }
+
+        return response.body
+    }
+
     internal fun buildQueryPath(path: String, params: List<Pair<String, String?>>): String {
         val query = params
             .mapNotNull { (key, value) ->
@@ -392,6 +436,59 @@ class ApiClient(private val sessionStore: SessionStore) {
                 .build()
             val response = api.postMultipartString("/community-media", body)
             return api.json.decodeFromString(CommunityMediaUploadResponse.serializer(), response)
+        }
+
+        suspend fun createArtifactUpload(
+            communityId: String,
+            request: CreateSongArtifactUploadRequest,
+        ): SongArtifactUpload {
+            val body = api.json.encodeToString(CreateSongArtifactUploadRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/song-artifact-uploads", body)
+            return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
+        }
+
+        suspend fun uploadArtifactContent(
+            communityId: String,
+            uploadId: String,
+            bytes: ByteArray,
+        ): SongArtifactUpload {
+            val response = api.putBytesString(
+                "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(uploadId)}/content",
+                bytes,
+            )
+            return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
+        }
+
+        suspend fun createSongArtifactBundle(
+            communityId: String,
+            request: CreateSongArtifactBundleRequest,
+        ): SongArtifactBundle {
+            val body = api.json.encodeToString(CreateSongArtifactBundleRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/song-artifacts", body)
+            return api.json.decodeFromString(SongArtifactBundle.serializer(), response)
+        }
+
+        suspend fun getSongArtifactBundle(communityId: String, bundleId: String): SongArtifactBundle {
+            val response = api.getString("/communities/$communityId/song-artifacts/${api.encodePathSegment(bundleId)}")
+            return api.json.decodeFromString(SongArtifactBundle.serializer(), response)
+        }
+
+        suspend fun listDerivativeSources(
+            communityId: String,
+            kind: String? = null,
+            query: String? = null,
+            limit: Int? = null,
+        ): DerivativeSourceListResponse {
+            val path = api.buildQueryPath(
+                "/communities/$communityId/derivative-sources",
+                listOf(
+                    "kind" to kind,
+                    "q" to query,
+                    "limit" to limit?.toString(),
+                ),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(DerivativeSourceListResponse.serializer(), response)
         }
 
         suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom {
@@ -762,6 +859,11 @@ class ApiClient(private val sessionStore: SessionStore) {
         suspend fun getMe(): Profile {
             val response = api.getString("/profiles/me")
             return api.json.decodeFromString(Profile.serializer(), response)
+        }
+
+        suspend fun getPostableCommunities(): PostableCommunitiesResponse {
+            val response = api.getString("/profiles/me/postable-communities")
+            return api.json.decodeFromString(PostableCommunitiesResponse.serializer(), response)
         }
 
         suspend fun getByUserId(userId: String): Profile {

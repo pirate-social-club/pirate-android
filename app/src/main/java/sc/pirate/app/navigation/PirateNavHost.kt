@@ -41,6 +41,8 @@ import sc.pirate.app.live.LiveRoomWebViewScreen
 import sc.pirate.app.moderation.CommunityModerationScreen
 import sc.pirate.app.onboarding.OnboardingScreen
 import sc.pirate.app.onboarding.OnboardingViewModel
+import sc.pirate.app.post.DerivativeSourceSearchScreen
+import sc.pirate.app.post.DerivativeSourceSearchViewModel
 import sc.pirate.app.post.PostComposerScreen
 import sc.pirate.app.post.PostComposerViewModel
 import sc.pirate.app.post.PostScreen
@@ -57,6 +59,9 @@ import sc.pirate.app.wallet.WalletViewModel
 import kotlinx.coroutines.launch
 
 private const val TAG = "PirateNavHost"
+private const val DERIVATIVE_SOURCE_RESULT_UNSET = "__unset__"
+private const val DERIVATIVE_SOURCE_INITIAL_KEY = "initial_derivative_source_refs"
+private const val DERIVATIVE_SOURCE_SELECTED_KEY = "selected_derivative_source_refs"
 
 @Composable
 fun PirateNavHost(
@@ -381,12 +386,30 @@ fun PirateNavHost(
         ) { backStackEntry ->
             val communityId = backStackEntry.arguments?.getString(PirateRoute.ComposePost.ARG_COMMUNITY_ID).orEmpty()
             val vm: PostComposerViewModel = viewModel()
+            val selectedDerivativeRefs by backStackEntry.savedStateHandle
+                .getStateFlow(DERIVATIVE_SOURCE_SELECTED_KEY, DERIVATIVE_SOURCE_RESULT_UNSET)
+                .collectAsState()
+            LaunchedEffect(selectedDerivativeRefs) {
+                if (selectedDerivativeRefs == DERIVATIVE_SOURCE_RESULT_UNSET) return@LaunchedEffect
+                val refs = selectedDerivativeRefs
+                    .split(",")
+                    .mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }
+                vm.setDerivativeRefs(refs)
+                backStackEntry.savedStateHandle.set(DERIVATIVE_SOURCE_SELECTED_KEY, DERIVATIVE_SOURCE_RESULT_UNSET)
+            }
             PostComposerScreen(
                 viewModel = vm,
                 communityId = communityId,
                 hasSession = hasSession,
                 onSignIn = {
                     navController.navigate(PirateRoute.Auth.route)
+                },
+                onOpenDerivativeSourceSearch = { selectedRefs ->
+                    navController.currentBackStackEntry?.savedStateHandle?.set(
+                        DERIVATIVE_SOURCE_INITIAL_KEY,
+                        selectedRefs.joinToString(","),
+                    )
+                    navController.navigate(PirateRoute.DerivativeSourceSearch.buildRoute(communityId))
                 },
                 onPosted = { postId ->
                     navController.navigate(PirateRoute.Post.buildRoute(postId)) {
@@ -400,6 +423,40 @@ fun PirateNavHost(
                 },
                 onBack = { navController.popBackStack() },
             )
+        }
+
+        composable(
+            route = PirateRoute.DerivativeSourceSearch.route,
+            arguments = listOf(navArgument(PirateRoute.DerivativeSourceSearch.ARG_COMMUNITY_ID) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments
+                ?.getString(PirateRoute.DerivativeSourceSearch.ARG_COMMUNITY_ID)
+                .orEmpty()
+            val selectedRefs = navController.previousBackStackEntry
+                ?.savedStateHandle
+                ?.get<String>(DERIVATIVE_SOURCE_INITIAL_KEY)
+                ?.takeIf { it != DERIVATIVE_SOURCE_RESULT_UNSET }
+                ?.split(",")
+                ?.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }
+                .orEmpty()
+            val vm: DerivativeSourceSearchViewModel = viewModel()
+            AuthGate(hasSession, navController) {
+                DerivativeSourceSearchScreen(
+                    communityId = communityId,
+                    initialSelectedIds = selectedRefs,
+                    viewModel = vm,
+                    onBack = { navController.popBackStack() },
+                    onDone = { refs ->
+                        navController.previousBackStackEntry?.savedStateHandle?.set(
+                            DERIVATIVE_SOURCE_SELECTED_KEY,
+                            refs.joinToString(","),
+                        )
+                        navController.popBackStack()
+                    },
+                )
+            }
         }
 
         fun androidx.navigation.NavGraphBuilder.notificationsDestination(route: String) {

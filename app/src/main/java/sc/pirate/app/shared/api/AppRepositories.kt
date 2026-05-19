@@ -11,6 +11,7 @@ import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.CommunityCreateAcceptedResponse
 import sc.pirate.app.api.model.CommunityFollowResponse
 import sc.pirate.app.api.model.CommunityJoinResponse
+import sc.pirate.app.api.model.CommunityListing
 import sc.pirate.app.api.model.CommunityListingListResponse
 import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CommunityPurchaseListResponse
@@ -22,9 +23,13 @@ import sc.pirate.app.api.model.CommunityPurchaseSettlementFailureRequest
 import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
 import sc.pirate.app.api.model.CommentListResponse
 import sc.pirate.app.api.model.CommentVoteResponse
+import sc.pirate.app.api.model.CreateCommunityListingRequest
 import sc.pirate.app.api.model.CreateCommunityRequest
 import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.CreatePostRequest
+import sc.pirate.app.api.model.CreateSongArtifactBundleRequest
+import sc.pirate.app.api.model.CreateSongArtifactUploadRequest
+import sc.pirate.app.api.model.DerivativeSourceListResponse
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LiveRoom
@@ -41,12 +46,15 @@ import sc.pirate.app.api.model.NotificationTasksResponse
 import sc.pirate.app.api.model.OnboardingStatus
 import sc.pirate.app.api.model.PostListResponse
 import sc.pirate.app.api.model.PostVoteResponse
+import sc.pirate.app.api.model.PostableCommunitiesResponse
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.PublishLiveRoomResponse
 import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.api.model.PublicCommunitySearchResponse
 import sc.pirate.app.api.model.SessionExchangeResponse
+import sc.pirate.app.api.model.SongArtifactBundle
+import sc.pirate.app.api.model.SongArtifactUpload
 import sc.pirate.app.api.model.UserTask
 import sc.pirate.app.api.model.VerificationSession
 
@@ -98,6 +106,22 @@ interface CommunityRepository {
     ): PostListResponse
     suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse
     suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String
+    suspend fun createArtifactUpload(
+        communityId: String,
+        request: CreateSongArtifactUploadRequest,
+    ): SongArtifactUpload
+    suspend fun uploadArtifactContent(communityId: String, uploadId: String, bytes: ByteArray): SongArtifactUpload
+    suspend fun createSongArtifactBundle(
+        communityId: String,
+        request: CreateSongArtifactBundleRequest,
+    ): SongArtifactBundle
+    suspend fun getSongArtifactBundle(communityId: String, bundleId: String): SongArtifactBundle
+    suspend fun listDerivativeSources(
+        communityId: String,
+        kind: String? = null,
+        query: String? = null,
+        limit: Int? = null,
+    ): DerivativeSourceListResponse
     suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom
     suspend fun publishLiveRoom(communityId: String, request: PublishLiveRoomRequest): PublishLiveRoomResponse
     suspend fun hostAttachLiveRoom(
@@ -129,6 +153,7 @@ interface CommunityRepository {
         request: LiveRoomViewerRenewRequest,
     ): LiveRoomViewerAttachResponse
     suspend fun listListings(communityId: String): CommunityListingListResponse
+    suspend fun createListing(communityId: String, request: CreateCommunityListingRequest): CommunityListing
     suspend fun listPurchases(communityId: String): CommunityPurchaseListResponse
     suspend fun createPurchaseQuote(
         communityId: String,
@@ -184,6 +209,7 @@ interface PostRepository {
 
 interface ProfileRepository {
     suspend fun getMe(): Profile
+    suspend fun getPostableCommunities(): PostableCommunitiesResponse
     suspend fun getByUserId(userId: String): Profile
     suspend fun getPublicByHandle(handleLabel: String): PublicProfileResolution
     suspend fun getPublicByWallet(walletAddress: String): PublicProfileResolution
@@ -341,6 +367,41 @@ class ApiCommunityRepository(
         return apiClient.communities.uploadMedia(kind, bytes, filename, mimeType).mediaRef
     }
 
+    override suspend fun createArtifactUpload(
+        communityId: String,
+        request: CreateSongArtifactUploadRequest,
+    ): SongArtifactUpload {
+        return apiClient.communities.createArtifactUpload(communityId, request)
+    }
+
+    override suspend fun uploadArtifactContent(
+        communityId: String,
+        uploadId: String,
+        bytes: ByteArray,
+    ): SongArtifactUpload {
+        return apiClient.communities.uploadArtifactContent(communityId, uploadId, bytes)
+    }
+
+    override suspend fun createSongArtifactBundle(
+        communityId: String,
+        request: CreateSongArtifactBundleRequest,
+    ): SongArtifactBundle {
+        return apiClient.communities.createSongArtifactBundle(communityId, request)
+    }
+
+    override suspend fun getSongArtifactBundle(communityId: String, bundleId: String): SongArtifactBundle {
+        return apiClient.communities.getSongArtifactBundle(communityId, bundleId)
+    }
+
+    override suspend fun listDerivativeSources(
+        communityId: String,
+        kind: String?,
+        query: String?,
+        limit: Int?,
+    ): DerivativeSourceListResponse {
+        return apiClient.communities.listDerivativeSources(communityId, kind, query, limit)
+    }
+
     override suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom {
         return apiClient.communities.createLiveRoom(communityId, request)
     }
@@ -424,6 +485,13 @@ class ApiCommunityRepository(
 
     override suspend fun listListings(communityId: String): CommunityListingListResponse {
         return apiClient.communities.listListings(communityId)
+    }
+
+    override suspend fun createListing(
+        communityId: String,
+        request: CreateCommunityListingRequest,
+    ): CommunityListing {
+        return apiClient.communities.createListing(communityId, request)
     }
 
     override suspend fun listPurchases(communityId: String): CommunityPurchaseListResponse {
@@ -544,6 +612,9 @@ class ApiProfileRepository(
     private val apiClient: ApiClient,
 ) : ProfileRepository {
     override suspend fun getMe(): Profile = apiClient.profiles.getMe()
+
+    override suspend fun getPostableCommunities(): PostableCommunitiesResponse =
+        apiClient.profiles.getPostableCommunities()
 
     override suspend fun getByUserId(userId: String): Profile = apiClient.profiles.getByUserId(userId)
 

@@ -5,6 +5,9 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import sc.pirate.app.api.model.SongArtifactBundle
 
 class PostComposerStateTest {
     @Test
@@ -157,6 +160,192 @@ class PostComposerStateTest {
                 live = LiveComposerState(accessMode = LiveAccessMode.Paid, paidPriceUsd = "5.00"),
             ).canSubmit,
         )
+    }
+
+    @Test
+    fun validatePostComposerDraft_requiresSongTitleAndPrimaryAudio() {
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "Post title",
+                linkUrl = "",
+                song = SongComposerState(primaryAudioLabel = "song.wav"),
+            ).canSubmit,
+        )
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "Post title",
+                linkUrl = "",
+                song = SongComposerState(songTitle = "Track"),
+            ).canSubmit,
+        )
+        assertTrue(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "",
+                linkUrl = "",
+                song = SongComposerState(songTitle = "Track", primaryAudioLabel = "song.wav"),
+            ).canSubmit,
+        )
+    }
+
+    @Test
+    fun validatePostComposerDraft_validatesSongLicenseAndPaidPreview() {
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "",
+                linkUrl = "",
+                song = SongComposerState(
+                    songTitle = "Track",
+                    primaryAudioLabel = "song.wav",
+                    licensePreset = AssetLicensePreset.CommercialRemix,
+                    commercialRevSharePct = "101",
+                ),
+            ).canSubmit,
+        )
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "",
+                linkUrl = "",
+                song = SongComposerState(
+                    songTitle = "Track",
+                    primaryAudioLabel = "song.wav",
+                    paidSongPriceUsd = "5.00",
+                    previewStartSeconds = "",
+                ),
+            ).canSubmit,
+        )
+        assertTrue(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "",
+                linkUrl = "",
+                song = SongComposerState(
+                    songTitle = "Track",
+                    primaryAudioLabel = "song.wav",
+                    licensePreset = AssetLicensePreset.CommercialRemix,
+                    commercialRevSharePct = "25",
+                    paidSongPriceUsd = "5.00",
+                    previewStartSeconds = "12",
+                ),
+            ).canSubmit,
+        )
+    }
+
+    @Test
+    fun validatePostComposerDraft_requiresSourceRefsForRemixes() {
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "",
+                linkUrl = "",
+                song = SongComposerState(
+                    songTitle = "Remix",
+                    primaryAudioLabel = "song.wav",
+                    songMode = SongMode.Remix,
+                ),
+            ).canSubmit,
+        )
+        assertTrue(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Song,
+                title = "",
+                linkUrl = "",
+                song = SongComposerState(
+                    songTitle = "Remix",
+                    primaryAudioLabel = "song.wav",
+                    songMode = SongMode.Remix,
+                    upstreamAssetRefs = listOf("story:asset:123"),
+                ),
+            ).canSubmit,
+        )
+    }
+
+    @Test
+    fun buildSongPostRequest_mapsOriginalPaidSongToApiPayload() {
+        val request = buildSongPostRequest(
+            bundleId = "sab_track",
+            caption = "Listen now",
+            idempotencyKey = "idem-song",
+            song = SongComposerState(
+                songTitle = "Track",
+                primaryAudioLabel = "song.wav",
+                licensePreset = AssetLicensePreset.CommercialRemix,
+                commercialRevSharePct = "30",
+                paidSongPriceUsd = "5.00",
+                previewStartSeconds = "9",
+            ),
+            title = "Post title",
+        )
+
+        assertEquals("idem-song", request.idempotencyKey)
+        assertEquals("song", request.postType)
+        assertEquals("Post title", request.title)
+        assertEquals("Listen now", request.caption)
+        assertEquals("public", request.identityMode)
+        assertEquals("machine_allowed", request.translationPolicy)
+        assertEquals("sab_track", request.songArtifactBundle)
+        assertEquals("original", request.songMode)
+        assertEquals("original", request.rightsBasis)
+        assertEquals("locked", request.accessMode)
+        assertEquals("commercial-remix", request.licensePreset)
+        assertEquals(30, request.commercialRevSharePct)
+        assertNull(request.upstreamAssetRefs)
+    }
+
+    @Test
+    fun buildSongPostRequest_mapsRemixSourceRefsOnlyForRemixes() {
+        val request = buildSongPostRequest(
+            bundleId = "sab_track",
+            caption = "",
+            idempotencyKey = "idem-song",
+            song = SongComposerState(
+                songTitle = "Remix",
+                primaryAudioLabel = "song.wav",
+                songMode = SongMode.Remix,
+                upstreamAssetRefs = listOf("story:asset:123"),
+            ),
+            title = "Remix post",
+            visibility = "members_only",
+        )
+
+        assertEquals("remix", request.songMode)
+        assertEquals("derivative", request.rightsBasis)
+        assertEquals("public", request.accessMode)
+        assertEquals("members_only", request.visibility)
+        assertEquals(listOf("story:asset:123"), request.upstreamAssetRefs)
+        assertNull(request.caption)
+    }
+
+    @Test
+    fun buildSongListingRequest_returnsActiveAssetListing() {
+        val request = buildSongListingRequest(
+            assetId = "asset_song",
+            paidSongPriceUsd = "4.99",
+            pricingPolicyRegionalPricingEnabled = true,
+            regionalPricingEnabled = true,
+        )
+
+        assertEquals("asset_song", request?.asset)
+        assertEquals(499, request?.priceCents)
+        assertEquals(true, request?.regionalPricingEnabled)
+        assertEquals("active", request?.status)
+    }
+
+    @Test
+    fun songBundleRequiresSourceReference_readsAnalysisState() {
+        val bundle = SongArtifactBundle(
+            id = "sab_track",
+            moderationResult = JsonObject(
+                mapOf("analysis_state" to JsonPrimitive("allow_with_required_reference")),
+            ),
+        )
+
+        assertEquals("allow_with_required_reference", resolveSongBundleAnalysisState(bundle))
+        assertTrue(songBundleRequiresSourceReference(bundle))
     }
 
     @Test
