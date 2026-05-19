@@ -258,12 +258,12 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     loadTopLevelComments(cached.post, hasSession)
-                    if (generation != loadGeneration || currentPostId != postId) return@launch
-
-                    refreshDeferred.await()
-                    commerceDeferred.await()
-                    communityDeferred.await()
-                    authorDeferred.await()
+                    if (generation == loadGeneration && currentPostId == postId) {
+                        refreshDeferred.await()
+                        commerceDeferred.await()
+                        communityDeferred.await()
+                        authorDeferred.await()
+                    }
                 }
             } else {
                 _state.value = existingState.copy(
