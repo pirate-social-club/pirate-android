@@ -47,29 +47,37 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import sc.pirate.app.api.PoWGate
+import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.CreateSongArtifactBundleRequest
 import sc.pirate.app.api.model.CreateSongArtifactUploadRequest
 import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.JoinEligibility
+import sc.pirate.app.api.model.LiveRoom
+import sc.pirate.app.api.model.LocalizedPostResponse
+import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.SongArtifactBundle
 import sc.pirate.app.api.model.SongArtifactUpload
 import sc.pirate.app.api.model.SongArtifactUploadRef
 import sc.pirate.app.api.model.SongPreviewWindow
+import sc.pirate.app.shared.buildDefaultUserAvatarSrc
+import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
-import sc.pirate.app.ui.StatusCard
-import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.ui.VoteControl
 import java.util.UUID
 
 data class PostComposerUiState(
@@ -83,6 +91,10 @@ data class PostComposerUiState(
     val live: LiveComposerState = LiveComposerState(),
     val song: SongComposerState = SongComposerState(),
     val liveCoverUri: Uri? = null,
+    val mediaUri: Uri? = null,
+    val mediaLabel: String = "",
+    val mediaMimeType: String? = null,
+    val mediaSizeBytes: Long? = null,
     val songPrimaryAudioUri: Uri? = null,
     val songCoverUri: Uri? = null,
     val songCanvasVideoUri: Uri? = null,
@@ -90,18 +102,30 @@ data class PostComposerUiState(
     val songVocalAudioUri: Uri? = null,
     val eligibility: JoinEligibility? = null,
     val viewerUserId: String? = null,
+    val publicHandle: String? = null,
+    val publicAvatarRef: String? = null,
+    val identityMode: PostComposerIdentityMode = PostComposerIdentityMode.Public,
+    val allowAnonymousIdentity: Boolean = false,
+    val anonymousIdentityScope: String = "community_stable",
     val hasCommunityPostingRole: Boolean = false,
     val loadingEligibility: Boolean = false,
     val submitting: Boolean = false,
+    val solvingProofOfWork: Boolean = false,
     val error: String? = null,
     val submitted: Boolean = false,
     val createdPostId: String? = null,
 )
 
+enum class PostComposerIdentityMode(val apiValue: String) {
+    Public("public"),
+    Anonymous("anonymous"),
+}
+
 class PostComposerViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val communityRepository get() = app.repositories.communityRepository
     private val profileRepository get() = app.repositories.profileRepository
+    private val powGate by lazy { PoWGate(app.apiClient) }
     private val _state = MutableStateFlow(PostComposerUiState())
     val state: StateFlow<PostComposerUiState> = _state.asStateFlow()
 
@@ -148,11 +172,23 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             try {
                 val eligibility = communityRepository.getJoinEligibility(selectedCommunityId)
                 val preview = runCatching { communityRepository.getPreview(selectedCommunityId) }.getOrNull()
-                val viewerUserId = runCatching { profileRepository.getMe().userId }.getOrNull()
+                val profile = runCatching { profileRepository.getMe() }.getOrNull()
+                val viewerUserId = profile?.userId
+                val allowAnonymous = preview?.allowAnonymousIdentity == true && _state.value.postType.anonymousEligible()
+                val nextIdentityMode = if (allowAnonymous) {
+                    _state.value.identityMode
+                } else {
+                    PostComposerIdentityMode.Public
+                }
                 _state.value = _state.value.copy(
                     selectedCommunityName = preview?.displayName ?: _state.value.selectedCommunityName,
                     eligibility = eligibility,
                     viewerUserId = viewerUserId,
+                    publicHandle = profile?.displayPirateHandle() ?: _state.value.publicHandle,
+                    publicAvatarRef = profile?.avatarRef ?: _state.value.publicAvatarRef,
+                    identityMode = nextIdentityMode,
+                    allowAnonymousIdentity = allowAnonymous,
+                    anonymousIdentityScope = preview?.anonymousIdentityScope?.takeIf { it.isNotBlank() } ?: "community_stable",
                     hasCommunityPostingRole = viewerHasCommunityPostingRole(viewerUserId, preview),
                     loadingEligibility = false,
                 )
@@ -185,12 +221,27 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         _state.value = _state.value.copy(song = song, error = null)
     }
 
+    fun selectMedia(uri: Uri?) {
+        val label = uri?.displayName().orEmpty()
+        _state.value = _state.value.copy(
+            mediaUri = uri,
+            mediaLabel = label,
+            mediaMimeType = uri?.let { app.contentResolver.getType(it) },
+            mediaSizeBytes = uri?.sizeBytes(),
+            error = null,
+        )
+    }
+
     fun setDerivativeRefs(refs: List<String>) {
         val normalized = refs.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }.distinct()
         _state.value = _state.value.copy(
             song = _state.value.song.copy(upstreamAssetRefs = normalized),
             error = null,
         )
+    }
+
+    private fun setSolvingProofOfWork(solving: Boolean) {
+        _state.value = _state.value.copy(solvingProofOfWork = solving)
     }
 
     fun updateLiveRoomKind(roomKind: LiveRoomKind) {
@@ -275,10 +326,26 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun selectPostType(postType: PostComposerMode) {
+        val identityMode = if (postType.anonymousEligible()) {
+            _state.value.identityMode
+        } else {
+            PostComposerIdentityMode.Public
+        }
         _state.value = _state.value.copy(
             postType = postType,
+            identityMode = identityMode,
+            mediaUri = if (postType == _state.value.postType) _state.value.mediaUri else null,
+            mediaLabel = if (postType == _state.value.postType) _state.value.mediaLabel else "",
+            mediaMimeType = if (postType == _state.value.postType) _state.value.mediaMimeType else null,
+            mediaSizeBytes = if (postType == _state.value.postType) _state.value.mediaSizeBytes else null,
             error = null,
         )
+    }
+
+    fun selectIdentityMode(identityMode: PostComposerIdentityMode) {
+        val current = _state.value
+        if (identityMode == PostComposerIdentityMode.Anonymous && !current.canUseAnonymousIdentity()) return
+        _state.value = current.copy(identityMode = identityMode, error = null)
     }
 
     fun goToNextStep() {
@@ -289,6 +356,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             linkUrl = current.linkUrl,
             live = current.live,
             song = current.song,
+            hasMedia = current.mediaUri != null,
         )
         _state.value = current.copy(
             step = getNextPostComposerStep(current.step, draftValidation),
@@ -312,6 +380,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             linkUrl = current.linkUrl,
             live = current.live,
             song = current.song,
+            hasMedia = current.mediaUri != null,
         )
         if (!draftValidation.canSubmit) {
             _state.value = current.copy(error = draftValidation.errorMessage)
@@ -319,12 +388,6 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         }
         if (communityId == null) {
             _state.value = current.copy(error = "Choose a community before posting.")
-            return
-        }
-        if (requiresProofOfWork(current.eligibility)) {
-            _state.value = current.copy(
-                error = "Proof-of-work is required to post here. Android needs the final Post-button unlock flow wired before this can publish.",
-            )
             return
         }
         viewModelScope.launch {
@@ -337,19 +400,38 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     PostComposerMode.Video,
                     PostComposerMode.Link,
                     PostComposerMode.Text -> {
-                        val createdPost = communityRepository.createPost(
+                        val createdPost = createPostWithProofOfWork(
                             communityId,
                             CreatePostRequest(
                                 idempotencyKey = UUID.randomUUID().toString(),
                                 title = current.title.trim().ifBlank { null },
-                                body = current.body.trim().ifBlank { null },
+                                body = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
+                                    null
+                                } else {
+                                    current.body.trim().ifBlank { null }
+                                },
+                                caption = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
+                                    current.body.trim().ifBlank { null }
+                                } else {
+                                    null
+                                },
                                 postType = current.postType.apiValue,
                                 linkUrl = if (current.postType == PostComposerMode.Link) {
                                     normalizeHttpUrl(current.linkUrl)
                                 } else {
                                     null
                                 },
-                                identityMode = "public",
+                                mediaRefs = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
+                                    listOf(uploadPostMediaRef(communityId, current))
+                                } else {
+                                    null
+                                },
+                                identityMode = current.resolvedIdentityMode().apiValue,
+                                anonymousScope = if (current.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) {
+                                    current.anonymousIdentityScope
+                                } else {
+                                    null
+                                },
                                 translationPolicy = "machine_allowed",
                                 visibility = "public",
                             ),
@@ -363,13 +445,31 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     createdPostId = createdPostId,
                 )
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _state.value = _state.value.copy(
                     submitting = false,
+                    solvingProofOfWork = false,
                     error = e.message ?: "Failed to create post",
                 )
             }
         }
     }
+
+    private suspend fun createPostWithProofOfWork(
+        communityId: String,
+        request: CreatePostRequest,
+    ): LocalizedPostResponse =
+        powGate.execute(
+            scope = "post_create",
+            action = "community:$communityId",
+            onSolvingProofOfWorkChanged = ::setSolvingProofOfWork,
+        ) { altchaHeader ->
+            communityRepository.createPost(
+                communityId = communityId,
+                request = request,
+                altchaHeader = altchaHeader,
+            )
+        }
 
     private suspend fun submitLiveRoom(communityId: String, current: PostComposerUiState): String {
         val hostUserId = current.viewerUserId?.trim()?.takeIf { it.isNotBlank() }
@@ -389,21 +489,39 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             resolvedGuestUserId = resolvedGuestUserId,
             title = current.title,
         )
-        val room = if (current.live.accessMode == LiveAccessMode.Paid) {
-            val listingRequest = buildLiveRoomListingRequest(
-                liveRoomId = null,
-                paidLiveRoomPriceUsd = current.live.paidPriceUsd,
-                regionalPricingEnabled = current.live.regionalPricingEnabled,
-            ) ?: throw IllegalStateException("Enter a valid ticket price.")
-            communityRepository.publishLiveRoom(
-                communityId,
-                PublishLiveRoomRequest(room = roomRequest, listing = listingRequest),
-            ).room
-        } else {
-            communityRepository.createLiveRoom(communityId, roomRequest)
-        }
+        val room = createLiveRoomWithProofOfWork(communityId, current, roomRequest)
         return room.anchorPost
     }
+
+    private suspend fun createLiveRoomWithProofOfWork(
+        communityId: String,
+        current: PostComposerUiState,
+        roomRequest: CreateLiveRoomRequest,
+    ): LiveRoom =
+        powGate.execute(
+            scope = "post_create",
+            action = "community:$communityId",
+            onSolvingProofOfWorkChanged = ::setSolvingProofOfWork,
+        ) { altchaHeader ->
+            if (current.live.accessMode == LiveAccessMode.Paid) {
+                val listingRequest = buildLiveRoomListingRequest(
+                    liveRoomId = null,
+                    paidLiveRoomPriceUsd = current.live.paidPriceUsd,
+                    regionalPricingEnabled = current.live.regionalPricingEnabled,
+                ) ?: throw IllegalStateException("Enter a valid ticket price.")
+                communityRepository.publishLiveRoom(
+                    communityId = communityId,
+                    request = PublishLiveRoomRequest(room = roomRequest, listing = listingRequest),
+                    altchaHeader = altchaHeader,
+                ).room
+            } else {
+                communityRepository.createLiveRoom(
+                    communityId = communityId,
+                    request = roomRequest,
+                    altchaHeader = altchaHeader,
+                )
+            }
+        }
 
     private suspend fun submitSong(communityId: String, current: PostComposerUiState): String {
         val song = current.song
@@ -450,7 +568,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         if (isLocked) {
             bundle = waitForSongPreview(communityId, bundle.id)
         }
-        val postResponse = communityRepository.createPost(
+        val postResponse = createPostWithProofOfWork(
             communityId,
             buildSongPostRequest(
                 bundleId = bundle.id,
@@ -473,6 +591,48 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             communityRepository.createListing(communityId, listingRequest)
         }
         return postResponse.post.postId
+    }
+
+    private suspend fun uploadPostMediaRef(communityId: String, current: PostComposerUiState): PostMediaRef {
+        val uri = current.mediaUri ?: throw IllegalStateException(
+            if (current.postType == PostComposerMode.Video) "Choose a video before posting." else "Choose an image before posting.",
+        )
+        return if (current.postType == PostComposerMode.Video) {
+            val upload = uploadVideoArtifact(communityId, uri)
+            PostMediaRef(
+                storageRef = upload.storageRef,
+                mimeType = upload.mimeType.ifBlank { current.mediaMimeType ?: "video/mp4" },
+                sizeBytes = upload.sizeBytes ?: current.mediaSizeBytes,
+                contentHash = upload.contentHash,
+            )
+        } else {
+            PostMediaRef(
+                storageRef = uri.uploadCommunityMedia("post_image"),
+                mimeType = current.mediaMimeType ?: app.contentResolver.getType(uri) ?: "image/jpeg",
+                sizeBytes = current.mediaSizeBytes,
+            )
+        }
+    }
+
+    private suspend fun uploadVideoArtifact(
+        communityId: String,
+        uri: Uri,
+    ): SongArtifactUpload {
+        val contentResolver = app.contentResolver
+        val mimeType = contentResolver.getType(uri) ?: "video/mp4"
+        val name = uri.displayName()
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalStateException("Could not read selected video: $name")
+        val intent = communityRepository.createArtifactUpload(
+            communityId,
+            CreateSongArtifactUploadRequest(
+                artifactKind = "primary_video",
+                mimeType = mimeType,
+                filename = name,
+                sizeBytes = bytes.size.toLong(),
+            ),
+        )
+        return communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
     }
 
     private suspend fun uploadSongArtifact(
@@ -540,6 +700,18 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         return lastPathSegment ?: "Selected image"
     }
 
+    private fun Uri.sizeBytes(): Long? {
+        app.contentResolver.query(this, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) {
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0 && !cursor.isNull(index)) {
+                    return cursor.getLong(index)
+                }
+            }
+        }
+        return null
+    }
+
     private suspend fun Uri.uploadCommunityMedia(kind: String): String {
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(this) ?: "image/jpeg"
@@ -569,6 +741,10 @@ fun PostComposerScreen(
         viewModel.configureInitialCommunity(communityId)
     }
 
+    LaunchedEffect(state.selectedCommunityId, hasSession) {
+        viewModel.loadEligibility(state.selectedCommunityId, hasSession)
+    }
+
     LaunchedEffect(state.submitted) {
         val createdPostId = state.createdPostId
         if (state.submitted && createdPostId != null) {
@@ -584,17 +760,18 @@ fun PostComposerScreen(
         linkUrl = state.linkUrl,
         live = state.live,
         song = state.song,
+        hasMedia = state.mediaUri != null,
     )
     val canAdvanceStep = canAdvancePostComposerStep(state.step, draftValidation)
     val bottomActionLabel = when (state.step) {
         PostComposerStep.Write,
         PostComposerStep.Settings -> "Next"
-        PostComposerStep.Publish -> "Post"
+        PostComposerStep.Publish -> "Publish"
     }
     val pageTitle = when (state.step) {
         PostComposerStep.Write -> "Post to ${state.communityLabel()}"
         PostComposerStep.Settings -> "Post settings"
-        PostComposerStep.Publish -> "Publish post"
+        PostComposerStep.Publish -> "Preview"
     }
 
     BackHandler(enabled = state.step != PostComposerStep.Write) {
@@ -653,7 +830,6 @@ fun PostComposerScreen(
                     border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
                 ) {
                     PirateButton(
-                        text = bottomActionLabel,
                         onClick = {
                             when {
                                 !hasSession -> onSignIn()
@@ -662,6 +838,11 @@ fun PostComposerScreen(
                             }
                         },
                         loading = state.submitting,
+                        text = if (state.solvingProofOfWork) {
+                            "Verifying access..."
+                        } else {
+                            bottomActionLabel
+                        },
                         enabled = canAdvanceStep && !state.submitting,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -690,7 +871,10 @@ fun PostComposerScreen(
                     }
 
                     PostComposerStep.Settings -> {
-                        PostComposerSettingsContent()
+                        PostComposerSettingsContent(
+                            state = state,
+                            onIdentityModeChange = viewModel::selectIdentityMode,
+                        )
                     }
 
                     PostComposerStep.Publish -> {
@@ -737,6 +921,9 @@ private fun PostComposerWriteContent(
     }
     val songVocalAudioPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         viewModel.selectSongVocalAudio(uri, uri?.lastPathSegment)
+    }
+    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        viewModel.selectMedia(uri)
     }
 
     ComposerTabs(
@@ -833,7 +1020,12 @@ private fun PostComposerWriteContent(
     } else if (state.postType == PostComposerMode.Image || state.postType == PostComposerMode.Video) {
         MediaComposerFields(
             enabled = !state.submitting,
+            mediaLabel = state.mediaLabel,
+            mediaUri = state.mediaUri,
             mode = state.postType,
+            onMediaSelect = {
+                mediaPicker.launch(if (state.postType == PostComposerMode.Video) "video/*" else "image/*")
+            },
         )
         Spacer(modifier = Modifier.height(16.dp))
         BodyEditorChrome {
@@ -871,15 +1063,44 @@ private fun PostComposerWriteContent(
 @Composable
 private fun MediaComposerFields(
     enabled: Boolean,
+    mediaLabel: String,
+    mediaUri: Uri?,
     mode: PostComposerMode,
+    onMediaSelect: () -> Unit,
 ) {
     PirateButton(
-        text = if (mode == PostComposerMode.Image) "Upload image" else "Upload video",
-        onClick = {},
-        enabled = false && enabled,
+        text = when {
+            mediaLabel.isNotBlank() && mode == PostComposerMode.Image -> "Replace image"
+            mediaLabel.isNotBlank() -> "Replace video"
+            mode == PostComposerMode.Image -> "Upload image"
+            else -> "Upload video"
+        },
+        onClick = onMediaSelect,
+        enabled = enabled,
         variant = ButtonVariant.Outline,
         modifier = Modifier.fillMaxWidth(),
     )
+    if (mode == PostComposerMode.Image && mediaUri != null) {
+        Spacer(modifier = Modifier.height(8.dp))
+        AsyncImage(
+            model = mediaUri,
+            contentDescription = "Selected image",
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .border(BorderStroke(1.dp, PirateTokens.colors.borderSoft), RoundedCornerShape(8.dp)),
+        )
+    }
+    if (mediaLabel.isNotBlank()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = mediaLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = PirateTokens.colors.textSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 @Composable
@@ -1389,24 +1610,65 @@ private fun BodyEditorChrome(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun PostComposerSettingsContent() {
+private fun PostComposerSettingsContent(
+    state: PostComposerUiState,
+    onIdentityModeChange: (PostComposerIdentityMode) -> Unit,
+) {
+    Text(
+        text = "Post as",
+        style = MaterialTheme.typography.titleMedium,
+        color = PirateTokens.colors.textSecondary,
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    ComposerSettingsOptionRow(
+        checked = state.resolvedIdentityMode() == PostComposerIdentityMode.Public,
+        title = state.publicAuthorLabel(),
+        description = "Post from your public identity",
+        icon = {
+            AuthorPreviewAvatar(
+                label = state.publicAuthorLabel(),
+                avatarSrc = state.publicAvatarSrc(),
+                anonymous = false,
+            )
+        },
+        onClick = { onIdentityModeChange(PostComposerIdentityMode.Public) },
+    )
+    if (state.canUseAnonymousIdentity()) {
+        Spacer(modifier = Modifier.height(8.dp))
+        ComposerSettingsOptionRow(
+            checked = state.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous,
+            title = state.anonymousAuthorLabel(),
+            description = "Same identity across this community",
+            icon = {
+                AuthorPreviewAvatar(
+                    label = state.anonymousAuthorLabel(),
+                    avatarSrc = null,
+                    anonymous = true,
+                )
+            },
+            onClick = { onIdentityModeChange(PostComposerIdentityMode.Anonymous) },
+        )
+    }
+    Spacer(modifier = Modifier.height(28.dp))
     Text(
         text = "Visibility",
-        style = MaterialTheme.typography.labelLarge,
-        color = PirateTokens.colors.textPrimary,
+        style = MaterialTheme.typography.titleMedium,
+        color = PirateTokens.colors.textSecondary,
     )
-    Spacer(modifier = Modifier.height(8.dp))
-    OutlinedTextField(
-        value = "Public",
-        onValueChange = {},
-        enabled = false,
-        leadingIcon = {
-            Icon(PhosphorIcons.Globe, contentDescription = null)
+    Spacer(modifier = Modifier.height(12.dp))
+    ComposerSettingsOptionRow(
+        checked = true,
+        title = "Public",
+        description = "Visible to everyone",
+        icon = {
+            Icon(
+                PhosphorIcons.Globe,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(24.dp),
+            )
         },
-        trailingIcon = {
-            Icon(PhosphorIcons.CaretDown, contentDescription = null)
-        },
-        modifier = Modifier.fillMaxWidth(),
+        onClick = {},
     )
 }
 
@@ -1415,9 +1677,67 @@ private fun PostComposerUiState.communityLabel(): String =
         ?: selectedCommunityId?.takeIf { it.isNotBlank() }?.let { "Selected community" }
         ?: "Community"
 
-private fun requiresProofOfWork(eligibility: JoinEligibility?): Boolean =
-    eligibility?.missingCapabilities?.contains("altcha_pow") == true ||
-        eligibility?.membershipGateSummaries?.any { it.gateType == "altcha_pow" } == true
+@Composable
+private fun ComposerSettingsOptionRow(
+    checked: Boolean,
+    title: String,
+    description: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        color = if (checked) PirateTokens.colors.surfaceSubtle else PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(
+            width = if (checked) 1.5.dp else 1.dp,
+            color = if (checked) PirateTokens.colors.accentBrand else PirateTokens.colors.borderSoft,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                color = PirateTokens.colors.bgPage,
+                shape = RoundedCornerShape(PirateTokens.radius.full),
+                border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    icon()
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = PirateTokens.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (checked) {
+                Icon(
+                    PhosphorIcons.CheckCircle,
+                    contentDescription = null,
+                    tint = PirateTokens.colors.accentBrand,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun PostComposerPublishContent(
@@ -1425,109 +1745,354 @@ private fun PostComposerPublishContent(
     hasSession: Boolean,
     state: PostComposerUiState,
 ) {
-    val hasSelectedCommunity = !state.selectedCommunityId.isNullOrBlank()
-    val requiresProofOfWork = requiresProofOfWork(state.eligibility)
-    StatusCard(
-        title = when {
-            hasSession && canPublish && requiresProofOfWork -> "Proof-of-work required"
-            hasSession && canPublish -> "Ready to publish"
-            hasSession && !hasSelectedCommunity -> "Choose a community"
-            else -> "Publishing needs access"
-        },
-        description = if (hasSession && canPublish && requiresProofOfWork) {
-            "This should run when you tap Post, after your draft is ready."
-        } else if (hasSession && canPublish) {
-            "Publish this draft when ready."
-        } else if (!hasSession) {
-            "Sign in before publishing this draft."
-        } else if (!hasSelectedCommunity) {
-            "Choose a community before publishing this draft."
-        } else {
-            "Open the community to complete posting access."
-        },
-        tone = if (hasSession && canPublish && !requiresProofOfWork) {
-            StatusTone.Default
-        } else {
-            StatusTone.Warning
-        },
+    PostComposerPreviewCard(
+        state = state,
         modifier = Modifier.fillMaxWidth(),
     )
-    Spacer(modifier = Modifier.height(16.dp))
-
-    Text(
-        text = state.title.trim().ifBlank { "Untitled" },
-        style = MaterialTheme.typography.titleLarge,
-        color = PirateTokens.colors.textPrimary,
-    )
-    if (state.postType == PostComposerMode.Link) {
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = normalizeHttpUrl(state.linkUrl) ?: state.linkUrl.trim(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = PirateTokens.colors.textSecondary,
-        )
-    } else if (state.postType == PostComposerMode.Live) {
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = listOf(
-                state.live.roomKind.apiValue,
-                state.live.accessMode.apiValue,
-                state.live.visibility.apiValue,
-            ).joinToString(" / "),
-            style = MaterialTheme.typography.bodyMedium,
-            color = PirateTokens.colors.textSecondary,
-        )
-        if (state.live.scheduleForLater && state.live.scheduleAt.isNotBlank()) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Starts ${state.live.scheduleAt}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-        if (state.live.accessMode == LiveAccessMode.Paid) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Ticket ${state.live.paidPriceUsd.trim()} USD",
-                style = MaterialTheme.typography.bodyMedium,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-    } else if (state.postType == PostComposerMode.Song) {
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = state.song.songTitle.trim().ifBlank { "Untitled song" },
-            style = MaterialTheme.typography.bodyMedium,
-            color = PirateTokens.colors.textSecondary,
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = listOf(
-                state.song.songMode.apiValue,
-                state.song.licensePreset.apiValue,
-                if (state.song.paidSongPriceUsd.isBlank()) "public" else "locked",
-            ).joinToString(" / "),
-            style = MaterialTheme.typography.bodyMedium,
-            color = PirateTokens.colors.textSecondary,
-        )
-        if (state.song.paidSongPriceUsd.isNotBlank()) {
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "Unlock ${state.song.paidSongPriceUsd.trim()} USD",
-                style = MaterialTheme.typography.bodyMedium,
-                color = PirateTokens.colors.textSecondary,
-            )
-        }
-    }
-    val body = state.body.trim()
-    if (body.isNotBlank()) {
+    if (state.solvingProofOfWork) {
         Spacer(modifier = Modifier.height(12.dp))
-        Text(
-            text = body,
-            style = MaterialTheme.typography.bodyLarge,
-            color = PirateTokens.colors.textPrimary,
+        FormNote(
+            message = "Verifying community access...",
+            tone = FormTone.Warning,
+        )
+    } else if (!hasSession) {
+        Spacer(modifier = Modifier.height(12.dp))
+        FormNote(
+            message = "Sign in before publishing this draft.",
+            tone = FormTone.Error,
+        )
+    } else if (!canPublish) {
+        Spacer(modifier = Modifier.height(12.dp))
+        FormNote(
+            message = "Finish the required fields before publishing.",
+            tone = FormTone.Error,
         )
     }
+}
+
+@Composable
+private fun PostComposerPreviewCard(
+    state: PostComposerUiState,
+    modifier: Modifier = Modifier,
+) {
+    val title = state.previewTitle()
+    val body = state.body.trim()
+    Surface(
+        modifier = modifier,
+        color = PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(0.dp),
+        border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            PostPreviewHeader(state = state)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = PirateTokens.colors.textPrimary,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (body.isNotBlank() && body != title) {
+                Text(
+                    text = body,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 5,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            PostPreviewAttachment(state = state)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                VoteControl(
+                    score = 0,
+                    viewerVote = 0,
+                    enabled = false,
+                    onVote = {},
+                )
+                PreviewCommentPill(count = 0)
+                Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PostPreviewHeader(state: PostComposerUiState) {
+    val authorLabel = state.previewAuthorLabel()
+    val avatarSrc = state.previewAuthorAvatarSrc()
+    val anonymous = state.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AuthorPreviewAvatar(
+            label = authorLabel,
+            avatarSrc = avatarSrc,
+            anonymous = anonymous,
+            modifier = Modifier.size(36.dp),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = authorLabel,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = PirateTokens.colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "· Public",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 1,
+                )
+            }
+            Text(
+                text = state.communityLabel(),
+                style = MaterialTheme.typography.bodySmall,
+                color = PirateTokens.colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        IconButton(onClick = {}, enabled = false) {
+            Icon(
+                imageVector = PhosphorIcons.DotsThree,
+                contentDescription = "Post options",
+                tint = PirateTokens.colors.textSecondary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PostPreviewAttachment(state: PostComposerUiState) {
+    when (state.postType) {
+        PostComposerMode.Text -> Unit
+        PostComposerMode.Link -> {
+            val url = normalizeHttpUrl(state.linkUrl) ?: state.linkUrl.trim()
+            if (url.isNotBlank()) {
+                PreviewAttachmentCard(
+                    icon = PhosphorIcons.Link,
+                    title = url,
+                    subtitle = "Link",
+                )
+            }
+        }
+        PostComposerMode.Image -> PreviewAttachmentCard(
+            icon = PhosphorIcons.Image,
+            title = state.mediaLabel.ifBlank { "Image post" },
+            subtitle = "Image attachment",
+        )
+        PostComposerMode.Video -> PreviewAttachmentCard(
+            icon = PhosphorIcons.VideoCamera,
+            title = state.mediaLabel.ifBlank { "Video post" },
+            subtitle = "Video attachment",
+        )
+        PostComposerMode.Song -> {
+            val paid = state.song.paidSongPriceUsd.trim()
+            PreviewAttachmentCard(
+                icon = PhosphorIcons.MusicNotes,
+                title = state.song.songTitle.trim().ifBlank { "Untitled song" },
+                subtitle = listOf(
+                    state.song.songMode.apiValue,
+                    state.song.licensePreset.apiValue,
+                    if (paid.isBlank()) "public" else "locked $paid USD",
+                ).joinToString(" / "),
+            )
+        }
+        PostComposerMode.Live -> {
+            val schedule = if (state.live.scheduleForLater && state.live.scheduleAt.isNotBlank()) {
+                " / starts ${state.live.scheduleAt}"
+            } else {
+                ""
+            }
+            val paid = if (state.live.accessMode == LiveAccessMode.Paid && state.live.paidPriceUsd.isNotBlank()) {
+                " / ticket ${state.live.paidPriceUsd.trim()} USD"
+            } else {
+                ""
+            }
+            PreviewAttachmentCard(
+                icon = PhosphorIcons.Microphone,
+                title = "Live room",
+                subtitle = "${state.live.roomKind.apiValue} / ${state.live.accessMode.apiValue} / ${state.live.visibility.apiValue}$schedule$paid",
+            )
+        }
+    }
+}
+
+@Composable
+private fun PreviewAttachmentCard(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+) {
+    Surface(
+        color = PirateTokens.colors.surfaceSubtle,
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Surface(
+                color = PirateTokens.colors.bgPage,
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+                modifier = Modifier.size(44.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = PirateTokens.colors.textSecondary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = PirateTokens.colors.textPrimary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreviewCommentPill(count: Int) {
+    Surface(
+        color = PirateTokens.colors.surfaceSubtle,
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.ChatCircle,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+    }
+}
+
+private fun PostComposerUiState.previewTitle(): String =
+    when (postType) {
+        PostComposerMode.Song -> song.songTitle.trim().ifBlank { title.trim().ifBlank { "Untitled song" } }
+        else -> title.trim().ifBlank { "Untitled" }
+    }
+
+@Composable
+private fun AuthorPreviewAvatar(
+    label: String,
+    avatarSrc: String?,
+    anonymous: Boolean,
+    modifier: Modifier = Modifier.size(24.dp),
+) {
+    Surface(
+        color = PirateTokens.colors.surfaceSubtle,
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+        modifier = modifier,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (avatarSrc != null && !anonymous) {
+                AsyncImage(
+                    model = avatarSrc,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (anonymous) {
+                Icon(
+                    imageVector = PhosphorIcons.UserCircle,
+                    contentDescription = null,
+                    tint = PirateTokens.colors.textSecondary,
+                    modifier = Modifier.size(22.dp),
+                )
+            } else {
+                Text(
+                    text = label.firstOrNull()?.uppercase() ?: "P",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = PirateTokens.colors.textPrimary,
+                )
+            }
+        }
+    }
+}
+
+private fun PostComposerUiState.canUseAnonymousIdentity(): Boolean =
+    allowAnonymousIdentity && postType.anonymousEligible()
+
+private fun PostComposerUiState.resolvedIdentityMode(): PostComposerIdentityMode =
+    if (identityMode == PostComposerIdentityMode.Anonymous && canUseAnonymousIdentity()) {
+        PostComposerIdentityMode.Anonymous
+    } else {
+        PostComposerIdentityMode.Public
+    }
+
+private fun PostComposerUiState.publicAuthorLabel(): String =
+    publicHandle?.takeIf { it.isNotBlank() } ?: "name.pirate"
+
+private fun PostComposerUiState.anonymousAuthorLabel(): String =
+    "Pseudonym"
+
+private fun PostComposerUiState.previewAuthorLabel(): String =
+    if (resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) anonymousAuthorLabel() else publicAuthorLabel()
+
+private fun PostComposerUiState.publicAvatarSrc(): String? =
+    resolvePublicMediaSrc(publicAvatarRef) ?: buildDefaultUserAvatarSrc(publicAuthorLabel()).takeIf { it.isNotBlank() }
+
+private fun PostComposerUiState.previewAuthorAvatarSrc(): String? =
+    if (resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) null else publicAvatarSrc()
+
+private fun PostComposerMode.anonymousEligible(): Boolean =
+    this == PostComposerMode.Text ||
+        this == PostComposerMode.Image ||
+        this == PostComposerMode.Video ||
+        this == PostComposerMode.Link
+
+private fun sc.pirate.app.api.model.Profile.displayPirateHandle(): String {
+    val label = primaryPublicHandle?.label ?: globalHandle?.label.orEmpty()
+    if (label.isBlank()) return ""
+    return if (label.contains(".")) label else "$label.pirate"
 }
 
 @Composable

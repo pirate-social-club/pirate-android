@@ -2,17 +2,23 @@
 
 ## Build Path
 
-Use Blacksmith-backed GitHub Actions as the default Android verification path:
+Blacksmith-backed GitHub Actions is the default Android verification path. Do
+not start with a local Gradle compile for routine verification on this
+workstation.
 
 ```bash
-rtk gh workflow run android-compile.yml --ref main
+rtk gh workflow run android-compile.yml --ref <branch-or-commit-ref>
 ```
 
 The compile-only workflow is `.github/workflows/android-compile.yml`, runs on
 `blacksmith-4vcpu-ubuntu-2404`, and checks `:app:compileDebugKotlin`.
 
-Avoid local Gradle builds for routine verification on this workstation. If local
-Gradle is unavoidable because remote CI is not practical, use the repo wrapper:
+Blacksmith can only verify code that exists on the pushed ref. For local dirty
+work, finish the static review, commit the intended files on a branch, push that
+branch, and run `android-compile.yml` against the branch ref.
+
+Use local Gradle only as a fallback when remote CI is not practical. If local
+Gradle is unavoidable, use the repo wrapper:
 
 ```bash
 rtk timeout 240 env \
@@ -28,6 +34,7 @@ Avoid calling `./gradlew` directly in agent workflows.
 
 - Prefer static review first, then Blacksmith compile verification.
 - Do not use the local offline Gradle command by default.
+- Do not run local online Gradle just because dependencies are missing; push a branch and use Blacksmith unless the user explicitly accepts a local fallback.
 - Use local Gradle only as a narrow fallback when remote CI is not practical and swap pressure is low.
 - Do not run repeated full local builds.
 - Batch code edits before compiling; do not compile after every small edit.

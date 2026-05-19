@@ -38,20 +38,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import coil.compose.AsyncImage
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
-import sc.pirate.app.api.model.CommunityPreview
-import sc.pirate.app.api.model.JoinEligibility
-import sc.pirate.app.api.model.Profile
-import sc.pirate.app.api.model.PublicProfileCommunitySummary
-import sc.pirate.app.communities.KnownCommunity
+import sc.pirate.app.api.model.PostableCommunitySummary
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
@@ -59,8 +50,14 @@ import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 
+enum class CommunityListAction {
+    Compose,
+    OpenCommunity,
+}
+
 data class CommunityListItem(
     val avatarRef: String? = null,
+    val action: CommunityListAction = CommunityListAction.Compose,
     val communityId: String,
     val displayName: String,
     val routeSlug: String? = null,
@@ -68,13 +65,12 @@ data class CommunityListItem(
 
 data class PostableCommunityListUiState(
     val communities: List<CommunityListItem> = emptyList(),
-    val loading: Boolean = false,
+    val loading: Boolean = true,
     val error: String? = null,
 )
 
 class PostableCommunityListViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
-    private val communityRepository get() = app.repositories.communityRepository
     private val profileRepository get() = app.repositories.profileRepository
     private val _state = MutableStateFlow(PostableCommunityListUiState())
     val state: StateFlow<PostableCommunityListUiState> = _state.asStateFlow()
@@ -87,7 +83,7 @@ class PostableCommunityListViewModel(application: Application) : AndroidViewMode
 
         _state.value = PostableCommunityListUiState(loading = true)
         viewModelScope.launch {
-            loadReadyCommunities()
+            loadPostableCommunities()
         }
     }
 
@@ -100,70 +96,19 @@ class PostableCommunityListViewModel(application: Application) : AndroidViewMode
         )
     }
 
-    private suspend fun loadReadyCommunities() {
+    private suspend fun loadPostableCommunities() {
         try {
-            val profile = profileRepository.getMe()
-            val local = app.knownCommunitiesStore.getRecent().map { it.toListItem() }
-            val created = loadCreatedCommunities(profile)
-            val candidates = (created + local)
-                .distinctBy { it.communityId }
-                .take(20)
-
-            val semaphore = Semaphore(5)
-            val ready = coroutineScope {
-                candidates.map { candidate ->
-                    async {
-                        semaphore.withPermit {
-                            validateReady(candidate, profile.userId)
-                        }
-                    }
-                }.awaitAll()
-            }
-                .filterNotNull()
-                .sortedBy { it.displayName.lowercase() }
-
-            _state.value = PostableCommunityListUiState(communities = ready)
+            val communities = profileRepository
+                .getPostableCommunities()
+                .communities
+                .mapNotNull { it.toListItem() }
+            _state.value = PostableCommunityListUiState(communities = communities)
         } catch (e: Exception) {
             _state.value = PostableCommunityListUiState(
                 error = e.message ?: "Could not load communities.",
             )
         }
     }
-
-    private suspend fun loadCreatedCommunities(profile: Profile): List<CommunityListItem> {
-        val handleLabel = profile.globalHandle?.label?.takeIf { it.isNotBlank() }
-            ?: return emptyList()
-        return profileRepository.getPublicByHandle(handleLabel)
-            .createdCommunities
-            .sortedByDescending { it.createdAt }
-            .map { it.toListItem() }
-    }
-
-    private suspend fun validateReady(
-        item: CommunityListItem,
-        viewerUserId: String?,
-    ): CommunityListItem? {
-        val eligibility = runCatching {
-            communityRepository.getJoinEligibility(item.communityId)
-        }.getOrNull()
-        val preview = runCatching {
-            communityRepository.getPreview(item.communityId)
-        }.getOrNull()
-
-        if (!canPostNow(eligibility, viewerUserId, preview)) return null
-        return item.copy(
-            avatarRef = item.avatarRef ?: preview?.avatarRef,
-            displayName = preview?.displayName ?: item.displayName,
-            routeSlug = preview?.routeSlug ?: item.routeSlug,
-        )
-    }
-
-    private fun canPostNow(
-        eligibility: JoinEligibility?,
-        viewerUserId: String?,
-        preview: CommunityPreview?,
-    ): Boolean =
-        eligibility?.status == "already_joined" || viewerHasCommunityPostingRole(viewerUserId, preview)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -174,7 +119,6 @@ fun PostableCommunityListScreen(
     onBack: () -> Unit,
     onSignIn: () -> Unit,
     onSelectCommunity: (String) -> Unit,
-    onOpenCommunity: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
@@ -233,19 +177,19 @@ fun PostableCommunityListScreen(
             }
 
             when {
-                state.loading -> CommunityListSkeleton()
-                state.error != null -> CommunityListError(
-                    message = state.error.orEmpty(),
-                    onRetry = { viewModel.load(hasSession) },
-                )
-                state.communities.isEmpty() -> CommunityListEmpty()
-                else -> CommunityList(
+                state.communities.isNotEmpty() -> CommunityList(
                     communities = state.communities,
                     onSelect = { community ->
                         viewModel.rememberSelected(community)
                         onSelectCommunity(community.communityId)
                     },
                 )
+                state.loading -> CommunityListSkeleton()
+                state.error != null -> CommunityListError(
+                    message = state.error.orEmpty(),
+                    onRetry = { viewModel.load(hasSession) },
+                )
+                state.communities.isEmpty() -> CommunityListEmpty()
             }
         }
     }
@@ -336,8 +280,8 @@ private fun CommunityListError(
 private fun CommunityListEmpty() {
     Spacer(modifier = Modifier.height(16.dp))
     StatusCard(
-        title = "No communities ready",
-        description = "Join a community before creating a post.",
+        title = "No communities available",
+        description = "Join or unlock a community before creating a post.",
         tone = StatusTone.Default,
         modifier = Modifier.fillMaxWidth(),
     )
@@ -368,6 +312,12 @@ private fun CommunityListRow(
                 style = MaterialTheme.typography.titleMedium,
                 color = PirateTokens.colors.textPrimary,
                 modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = PhosphorIcons.CaretRight,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
             )
         }
     }
@@ -405,40 +355,17 @@ private fun CommunityAvatar(community: CommunityListItem) {
     }
 }
 
-private fun KnownCommunity.toListItem(): CommunityListItem =
-    CommunityListItem(
-        avatarRef = avatarRef,
-        communityId = communityId,
-        displayName = displayName,
-        routeSlug = routeSlug,
-    )
-
-private fun PublicProfileCommunitySummary.toListItem(): CommunityListItem =
-    CommunityListItem(
-        communityId = communityId,
-        displayName = displayName,
-        routeSlug = routeSlug,
-    )
-
-private fun viewerHasCommunityPostingRole(
-    viewerUserId: String?,
-    community: CommunityPreview?,
-): Boolean {
-    if (community == null) return false
-    if (community.viewerCommunityRole.isCommunityPostingRole()) return true
-    val userId = viewerUserId?.trim()?.takeIf { it.isNotBlank() } ?: return false
-    if (sameUserId(userId, community.owner?.user)) return true
-    return community.moderators.any { moderator ->
-        sameUserId(userId, moderator.user) &&
-            moderator.role.isCommunityPostingRole()
+private fun PostableCommunitySummary.toListItem(): CommunityListItem? {
+    val listAction = when (action) {
+        "compose" -> CommunityListAction.Compose
+        "unlock" -> CommunityListAction.OpenCommunity
+        else -> return null
     }
-}
-
-private fun String?.isCommunityPostingRole(): Boolean =
-    this == "owner" || this == "admin" || this == "moderator"
-
-private fun sameUserId(left: String?, right: String?): Boolean {
-    val leftId = left?.trim()?.takeIf { it.isNotBlank() } ?: return false
-    val rightId = right?.trim()?.takeIf { it.isNotBlank() } ?: return false
-    return leftId == rightId
+    return CommunityListItem(
+        avatarRef = avatarRef,
+        action = listAction,
+        communityId = communityId,
+        displayName = displayName,
+        routeSlug = routeSlug,
+    )
 }

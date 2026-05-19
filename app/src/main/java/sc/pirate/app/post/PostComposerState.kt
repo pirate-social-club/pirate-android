@@ -172,6 +172,7 @@ fun validatePostComposerDraft(
     linkUrl: String,
     live: LiveComposerState = LiveComposerState(),
     song: SongComposerState = SongComposerState(),
+    hasMedia: Boolean = true,
 ): PostComposerDraftValidation {
     return when (mode) {
         PostComposerMode.Text -> {
@@ -207,6 +208,11 @@ fun validatePostComposerDraft(
                     canSubmit = false,
                     errorMessage = "Add a title before posting this image.",
                 )
+            } else if (!hasMedia) {
+                PostComposerDraftValidation(
+                    canSubmit = false,
+                    errorMessage = "Choose an image before posting.",
+                )
             } else {
                 PostComposerDraftValidation(canSubmit = true)
             }
@@ -217,6 +223,11 @@ fun validatePostComposerDraft(
                 PostComposerDraftValidation(
                     canSubmit = false,
                     errorMessage = "Add a title before posting this video.",
+                )
+            } else if (!hasMedia) {
+                PostComposerDraftValidation(
+                    canSubmit = false,
+                    errorMessage = "Choose a video before posting.",
                 )
             } else {
                 PostComposerDraftValidation(canSubmit = true)

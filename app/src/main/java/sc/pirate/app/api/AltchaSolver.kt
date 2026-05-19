@@ -17,17 +17,18 @@ object AltchaSolver {
         require(params.algorithm == "PBKDF2/SHA-256") {
             "Unsupported proof-of-work algorithm: ${params.algorithm}"
         }
-        val salt = params.salt.toByteArray(Charsets.UTF_8)
+        val nonce = params.nonce.hexToBytes()
+        val salt = params.salt.hexToBytes()
         val prefix = params.keyPrefix.lowercase()
 
         for (counter in 0..maxCounter) {
             if (counter % 1000 == 0 && isCancelled()) return null
-            val password = ByteBuffer.allocate(4)
-                .order(ByteOrder.LITTLE_ENDIAN)
+            val counterBytes = ByteBuffer.allocate(4)
+                .order(ByteOrder.BIG_ENDIAN)
                 .putInt(counter)
                 .array()
             val derivedKey = pbkdf2HmacSha256(
-                password = password,
+                password = nonce + counterBytes,
                 salt = salt,
                 iterations = params.cost,
                 keyLength = params.keyLength,
@@ -76,6 +77,17 @@ object AltchaSolver {
 }
 
 private val hexDigits = "0123456789abcdef".toCharArray()
+
+private fun String.hexToBytes(): ByteArray {
+    val normalized = trim()
+    require(normalized.length % 2 == 0) { "Invalid hex value length." }
+    return ByteArray(normalized.length / 2) { index ->
+        val high = Character.digit(normalized[index * 2], 16)
+        val low = Character.digit(normalized[index * 2 + 1], 16)
+        require(high >= 0 && low >= 0) { "Invalid hex value." }
+        ((high shl 4) + low).toByte()
+    }
+}
 
 private fun ByteArray.toHex(): String {
     val chars = CharArray(size * 2)

@@ -608,9 +608,6 @@ fun PirateNavHost(
                 onSelectCommunity = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
                 },
-                onOpenCommunity = { communityId ->
-                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
-                },
             )
         }
 

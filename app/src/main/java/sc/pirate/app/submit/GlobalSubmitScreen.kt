@@ -9,7 +9,6 @@ fun GlobalSubmitScreen(
     onBack: () -> Unit,
     onSignIn: () -> Unit,
     onSelectCommunity: (String) -> Unit,
-    onOpenCommunity: (String) -> Unit,
     modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier,
 ) {
     val listViewModel: PostableCommunityListViewModel = viewModel()
@@ -20,7 +19,6 @@ fun GlobalSubmitScreen(
         onBack = onBack,
         onSignIn = onSignIn,
         onSelectCommunity = onSelectCommunity,
-        onOpenCommunity = onOpenCommunity,
         modifier = modifier,
     )
 }
