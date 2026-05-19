@@ -8,6 +8,7 @@
 /captures
 .externalNativeBuild
 .cxx
+.kotlin/
 *.apk
 *.aab
 app/build/
