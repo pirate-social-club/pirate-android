@@ -8,7 +8,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
@@ -386,14 +389,37 @@ fun PirateNavHost(
         notificationsDestination(PirateRoute.Inbox.route)
 
         composable(PirateRoute.Wallet.route) {
-            AuthGate(hasSession, navController) {
-                val walletConnectState by app.reownManager.state.collectAsState()
-                val vm: WalletViewModel = viewModel()
-                val walletUiState by vm.state.collectAsState()
-                WalletScreen(
-                    session = session,
+            val walletConnectState by app.reownManager.state.collectAsState()
+            val vm: WalletViewModel = viewModel()
+            val walletUiState by vm.state.collectAsState()
+            val authVm: AuthViewModel = viewModel()
+            val authState by authVm.state.collectAsState()
+            var showSignInDrawer by remember { mutableStateOf(false) }
+            WalletScreen(
+                session = session,
+                walletConnectState = walletConnectState,
+                walletUiState = walletUiState,
+                onOpenWalletConnect = {
+                    navController.openAppKit(
+                        shouldOpenChooseNetwork = false,
+                        onError = { error ->
+                            app.reownManager.refreshState(
+                                error.message ?: "Could not open wallet chooser."
+                            )
+                        },
+                    )
+                },
+                onLinkWallet = vm::linkConnectedWallet,
+                onClearWalletFeedback = vm::clearFeedback,
+                onDisconnectWallet = app.reownManager::disconnect,
+                onSignIn = {
+                    showSignInDrawer = true
+                },
+            )
+            if (showSignInDrawer) {
+                SignInDrawer(
+                    state = authState,
                     walletConnectState = walletConnectState,
-                    walletUiState = walletUiState,
                     onOpenWalletConnect = {
                         navController.openAppKit(
                             shouldOpenChooseNetwork = false,
@@ -404,12 +430,13 @@ fun PirateNavHost(
                             },
                         )
                     },
-                    onLinkWallet = vm::linkConnectedWallet,
-                    onClearWalletFeedback = vm::clearFeedback,
-                    onDisconnectWallet = app.reownManager::disconnect,
-                    onSignIn = {
-                        navController.navigate(PirateRoute.Auth.route)
-                    },
+                    onLoginWallet = authVm::loginWithConnectedWallet,
+                    onLoginGoogle = authVm::loginWithGoogle,
+                    onLoginTwitter = authVm::loginWithTwitter,
+                    onSendEmailCode = authVm::sendEmailCode,
+                    onLoginEmail = authVm::loginWithEmail,
+                    onLogout = authVm::logout,
+                    onDismiss = { showSignInDrawer = false },
                 )
             }
         }

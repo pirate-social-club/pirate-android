@@ -117,7 +117,6 @@ private fun PirateAppShell() {
             "Wallet",
             PhosphorIcons.Wallet,
             PhosphorIcons.WalletFill,
-            requiresAuth = true,
         ),
         BottomNavItem(
             route = PirateRoute.Chat.route,

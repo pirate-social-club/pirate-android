@@ -170,12 +170,27 @@ fun WalletScreen(
     val walletAddress = primaryWallet?.walletAddress
         ?: walletConnectState.connectedAddress
     val canReceive = !walletAddress.isNullOrBlank()
+    val requiresSignIn = session == null
+    val walletAction = if (requiresSignIn) onSignIn else onOpenWalletConnect
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(0.dp),
     ) {
+        item {
+            WalletBalanceSection(
+                walletAddress = walletAddress,
+                actionsPending = walletConnectState.available && walletConnectState.statusMessage?.contains("ready", ignoreCase = true) == false,
+                onSend = walletAction,
+                onReceive = when {
+                    requiresSignIn -> walletAction
+                    canReceive -> onOpenWalletConnect
+                    else -> walletAction
+                },
+            )
+        }
+
         if (session == null) {
             item {
                 StatusCard(
@@ -196,16 +211,6 @@ fun WalletScreen(
                         .padding(horizontal = 16.dp),
                 )
             }
-            return@LazyColumn
-        }
-
-        item {
-            WalletBalanceSection(
-                walletAddress = walletAddress,
-                actionsPending = walletConnectState.available && walletConnectState.statusMessage?.contains("ready", ignoreCase = true) == false,
-                onSend = {},
-                onReceive = if (canReceive) onOpenWalletConnect else null,
-            )
         }
 
         item {
@@ -228,7 +233,7 @@ private fun WalletBalanceSection(
     onSend: (() -> Unit)?,
     onReceive: (() -> Unit)?,
 ) {
-    val showWalletActions = !walletAddress.isNullOrBlank() || actionsPending
+    val showWalletActions = !walletAddress.isNullOrBlank() || actionsPending || onSend != null || onReceive != null
 
     Column(
         modifier = Modifier
@@ -255,13 +260,13 @@ private fun WalletBalanceSection(
                 WalletActionButton(
                     text = "Send",
                     onClick = onSend,
-                    enabled = false,
+                    enabled = !actionsPending && onSend != null,
                     modifier = Modifier.weight(1f),
                 )
                 WalletActionButton(
                     text = "Receive",
                     onClick = onReceive,
-                    enabled = !actionsPending && !walletAddress.isNullOrBlank() && onReceive != null,
+                    enabled = !actionsPending && onReceive != null,
                     modifier = Modifier.weight(1f),
                 )
             }
