@@ -4,6 +4,7 @@ import android.net.Uri
 
 object PirateRouteSections {
     val settings = setOf("profile", "domains", "preferences", "agents")
+    val selfCapabilities = setOf("unique_human", "age_over_18", "nationality", "gender")
     val verificationIntents = setOf(
         "profile_verification",
         "community_creation",
@@ -38,14 +39,21 @@ sealed class PirateRoute(val route: String) {
     }
     data object CreateCommunity : PirateRoute("communities/new")
     data object GlobalSubmit : PirateRoute("submit")
-    data object VerifySelf : PirateRoute("verification/self/{intent}") {
+    data object VerifySelf : PirateRoute("verification/self/{intent}?capabilities={capabilities}") {
         const val ARG_INTENT = "intent"
+        const val ARG_CAPABILITIES = "capabilities"
         const val DEFAULT_INTENT = "community_creation"
-        fun buildRoute(intent: String = DEFAULT_INTENT): String {
+        fun buildRoute(intent: String = DEFAULT_INTENT, capabilities: List<String> = emptyList()): String {
             require(intent in PirateRouteSections.verificationIntents) {
                 "Unknown verification intent: $intent"
             }
-            return "verification/self/${Uri.encode(intent)}"
+            val selectedCapabilities = capabilities
+                .map { it.trim() }
+                .filter { it in PirateRouteSections.selfCapabilities }
+                .distinct()
+            val path = "verification/self/${Uri.encode(intent)}"
+            if (selectedCapabilities.isEmpty()) return path
+            return "$path?capabilities=${Uri.encode(selectedCapabilities.joinToString(","))}"
         }
     }
     data object Post : PirateRoute("post/{postId}") {

@@ -47,6 +47,26 @@ class LiveRoomPresentationTest {
     }
 
     @Test
+    fun ageProofRequiredBlocksInlineAttachAndCover() {
+        val presentation = buildPresentation(
+            room = LiveRoom(
+                status = "live",
+                accessMode = "free",
+                visibility = "public",
+                hostUser = "usr_host",
+                coverRef = "ipfs://adult-cover",
+            ),
+            access = LiveRoomAccess(allowed = true, decisionReason = "allowed", accessMode = "free", visibility = "public"),
+            viewerUserId = "usr_viewer",
+            ageProofRequired = true,
+        )
+
+        assertFalse(presentation.canInlineAttachViewer)
+        assertNull(presentation.coverSrc)
+        assertEquals(LiveRoomUiState.NeedsVerification(), presentation.uiState)
+    }
+
+    @Test
     fun producerDoesNotInlineAttachViewer() {
         val presentation = buildPresentation(
             room = LiveRoom(status = "live", accessMode = "free", visibility = "public", hostUser = "usr_host"),
@@ -84,6 +104,7 @@ class LiveRoomPresentationTest {
         access: LiveRoomAccess,
         viewerUserId: String? = null,
         postAuthorUserId: String? = "usr_author",
+        ageProofRequired: Boolean = false,
     ): LiveRoomPresentation =
         buildLiveRoomPresentation(
             LiveRoomPresentationInput(
@@ -97,6 +118,7 @@ class LiveRoomPresentationTest {
                 viewerUserId = viewerUserId,
                 postAuthorUserId = postAuthorUserId,
                 liveRoomId = null,
+                ageProofRequired = ageProofRequired,
             ),
         )
 }

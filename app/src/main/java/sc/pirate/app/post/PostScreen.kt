@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -40,10 +41,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -74,6 +79,7 @@ import sc.pirate.app.live.LiveRoomViewerWebView
 import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
+import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
@@ -554,6 +560,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 viewerUserId = current.viewerUserId,
                 postAuthorUserId = post.authorUserId,
                 liveRoomId = liveRoomId,
+                ageProofRequired = postResponse.requiresAgeProof(),
             ),
         )
         if (!presentation.canInlineAttachViewer) return
@@ -842,6 +849,7 @@ fun PostScreen(
     onNavigateToCompose: ((String) -> Unit)? = null,
     onNavigateToCommunity: (String) -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onVerifyAge: () -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -850,9 +858,31 @@ fun PostScreen(
     val state by viewModel.state.collectAsState()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var observedFirstResume by rememberSaveable(postId, hasSession) { mutableStateOf(false) }
+    val lifecycleOwner = LocalView.current.findViewTreeLifecycleOwner()
 
     LaunchedEffect(postId, hasSession) {
         viewModel.loadPost(postId, hasSession)
+    }
+
+    DisposableEffect(lifecycleOwner, postId, hasSession) {
+        if (lifecycleOwner == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    if (observedFirstResume) {
+                        viewModel.loadPost(postId, hasSession)
+                    } else {
+                        observedFirstResume = true
+                    }
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
     }
 
     LaunchedEffect(
@@ -967,6 +997,9 @@ fun PostScreen(
                             },
                             onWatchLiveRoom = {
                                 onWatchLiveRoom()
+                            },
+                            onVerifyAge = {
+                                if (hasSession) onVerifyAge() else authPromptAction = "Age verification"
                             },
                             onRenewLiveRoomViewer = { uid ->
                                 viewModel.renewLiveRoomViewer(uid, hasSession)
@@ -1154,6 +1187,7 @@ private fun ThreadRootPost(
     onVote: (Int) -> Unit,
     onBuyLiveRoomTicket: () -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onVerifyAge: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
     val post = postResponse.post
@@ -1220,6 +1254,18 @@ private fun ThreadRootPost(
                     color = PirateTokens.colors.textPrimary,
                 )
             }
+            if (postResponse.requiresAgeProof() && post.anchorLiveRoom == null) {
+                StatusCard(
+                    title = "18+ proof required",
+                    description = "Prove you are 18+ with Self to view this content.",
+                    tone = StatusTone.Warning,
+                )
+                PirateButton(
+                    text = "Verify age",
+                    onClick = onVerifyAge,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             post.anchorLiveRoom?.let { liveRoomId ->
                 ThreadLiveRoomSummary(
                     presentation = buildLiveRoomPresentation(
@@ -1234,6 +1280,7 @@ private fun ThreadRootPost(
                             viewerUserId = viewerUserId,
                             postAuthorUserId = post.authorUserId,
                             liveRoomId = liveRoomId,
+                            ageProofRequired = postResponse.requiresAgeProof(),
                         ),
                     ),
                     inlineViewerAttach = inlineLiveViewerAttach?.takeIf { it.room.id == liveRoomId },
@@ -1242,6 +1289,7 @@ private fun ThreadRootPost(
                     purchaseMessage = purchaseMessage,
                     onBuyTicket = onBuyLiveRoomTicket,
                     onWatch = onWatchLiveRoom,
+                    onVerifyAge = onVerifyAge,
                     onRenewViewer = onRenewLiveRoomViewer,
                 )
             }
@@ -1277,6 +1325,7 @@ private fun ThreadLiveRoomSummary(
     purchaseMessage: String?,
     onBuyTicket: () -> Unit,
     onWatch: () -> Unit,
+    onVerifyAge: () -> Unit,
     onRenewViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
     val primaryActionLabel = when (val ui = presentation.uiState) {
@@ -1427,6 +1476,7 @@ private fun ThreadLiveRoomSummary(
                     onClick = {
                         when {
                             presentation.uiState is LiveRoomUiState.NeedsTicket -> onBuyTicket()
+                            presentation.uiState is LiveRoomUiState.NeedsVerification -> onVerifyAge()
                             else -> onWatch()
                         }
                     },

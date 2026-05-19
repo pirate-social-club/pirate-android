@@ -379,7 +379,7 @@ fun CommunityScreen(
     viewerUserId: String?,
     onNavigateToPost: (String) -> Unit,
     onNavigateToCompose: () -> Unit,
-    onVerifyWithSelf: (String) -> Unit,
+    onVerifyWithSelf: (String, List<String>) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -495,6 +495,9 @@ fun CommunityScreen(
                                 onVerify = {
                                     onVerifyWithSelf(
                                         eligibility?.suggestedVerificationIntent ?: "community_join",
+                                        eligibility?.missingCapabilities
+                                            ?.filter(::isSelfCapability)
+                                            .orEmpty(),
                                     )
                                 },
                             )
@@ -660,6 +663,12 @@ private fun gateSummaryText(gate: MembershipGateSummary): String =
         "courtyard_inventory" -> "Courtyard inventory: ${gate.assetFilterLabel ?: gate.assetCategory ?: "required"}"
         else -> gate.gateType.replace('_', ' ')
     }
+
+private fun isSelfCapability(capability: String): Boolean =
+    capability == "unique_human" ||
+        capability == "age_over_18" ||
+        capability == "nationality" ||
+        capability == "gender"
 
 private fun referenceLinkText(link: CommunityReferenceLink): String {
     val label = link.label ?: link.platform ?: "Link"

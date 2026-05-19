@@ -260,8 +260,8 @@ fun PirateNavHost(
                 onNavigateToCompose = {
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
                 },
-                onVerifyWithSelf = { intent ->
-                    navController.navigate(PirateRoute.VerifySelf.buildRoute(intent))
+                onVerifyWithSelf = { intent, capabilities ->
+                    navController.navigate(PirateRoute.VerifySelf.buildRoute(intent, capabilities))
                 },
                 onBack = { navController.popBackStack() },
             )
@@ -290,6 +290,14 @@ fun PirateNavHost(
                     navController.navigate(PirateRoute.LiveRoomWeb.buildRoute(postId)) {
                         launchSingleTop = true
                     }
+                },
+                onVerifyAge = {
+                    navController.navigate(
+                        PirateRoute.VerifySelf.buildRoute(
+                            intent = "post_access_18_plus",
+                            capabilities = listOf("age_over_18"),
+                        ),
+                    )
                 },
                 signInDrawer = { onDismiss ->
                     SignInDrawer(
@@ -516,15 +524,32 @@ fun PirateNavHost(
             route = PirateRoute.VerifySelf.route,
             arguments = listOf(navArgument(PirateRoute.VerifySelf.ARG_INTENT) {
                 type = NavType.StringType
+            }, navArgument(PirateRoute.VerifySelf.ARG_CAPABILITIES) {
+                defaultValue = ""
+                nullable = true
+                type = NavType.StringType
             }),
         ) { backStackEntry ->
             val intent = backStackEntry.arguments
                 ?.getString(PirateRoute.VerifySelf.ARG_INTENT)
                 ?.takeIf { it in PirateRouteSections.verificationIntents }
                 ?: PirateRoute.VerifySelf.DEFAULT_INTENT
+            val requestedCapabilities = backStackEntry.arguments
+                ?.getString(PirateRoute.VerifySelf.ARG_CAPABILITIES)
+                .orEmpty()
+                .split(',')
+                .map { it.trim() }
+                .filter { it in PirateRouteSections.selfCapabilities }
+                .distinct()
             AuthGate(hasSession, navController) {
                 SelfVerificationScreen(
                     verificationIntent = intent,
+                    requestedCapabilities = requestedCapabilities,
+                    onVerified = if (intent == "post_access_18_plus") {
+                        { navController.popBackStack() }
+                    } else {
+                        null
+                    },
                     onBack = { navController.popBackStack() },
                 )
             }

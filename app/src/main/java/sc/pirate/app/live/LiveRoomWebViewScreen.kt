@@ -49,6 +49,7 @@ import org.json.JSONObject
 import sc.pirate.app.BuildConfig
 import sc.pirate.app.PirateApp
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
+import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.ui.PhosphorIcons
 
 private sealed interface LiveRoomViewerState {
@@ -379,6 +380,12 @@ private suspend fun loadLiveRoomViewerState(
         app.repositories.postRepository.getPublicPost(postId)
     }
     val post = postResponse.post
+    if (postResponse.requiresAgeProof()) {
+        return LiveRoomViewerState.Blocked(
+            title = post.title ?: "Live room",
+            message = "18+ proof is required before you can watch this live room.",
+        )
+    }
     val communityId = post.communityId.takeIf { it.isNotBlank() }
         ?: return LiveRoomViewerState.Blocked(
             title = post.title ?: "Live room",
@@ -437,6 +444,7 @@ private suspend fun renewLiveRoomViewerState(
     } else {
         app.repositories.postRepository.getPublicPost(postId)
     }
+    if (postResponse.requiresAgeProof()) return null
     val post = postResponse.post
     val communityId = post.communityId.takeIf { it.isNotBlank() } ?: return null
     val liveRoomId = post.anchorLiveRoom?.takeIf { it.isNotBlank() } ?: return null

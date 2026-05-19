@@ -464,6 +464,7 @@ data class Post(
 @Serializable
 data class LocalizedPostResponse(
     val post: Post,
+    @SerialName("age_gate_viewer_state") val ageGateViewerState: String? = null,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
     @SerialName("comment_count") val commentCount: Int? = null,
     @SerialName("upvote_count") val upvoteCount: Int = 0,

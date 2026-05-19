@@ -93,6 +93,7 @@ import sc.pirate.app.live.LiveRoomPresentationInput
 import sc.pirate.app.live.LiveRoomUiState
 import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.shared.formatCommunityRouteLabel
+import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
@@ -637,6 +638,7 @@ private data class MediaPreview(
     val videoUrl: String? = null,
     val width: Int? = null,
     val height: Int? = null,
+    val ageProofRequired: Boolean = false,
 )
 
 private data class ActiveMediaPreview(
@@ -1339,6 +1341,7 @@ private fun HomePostCard(
                             viewerUserId = viewerUserId,
                             postAuthorUserId = post.authorUserId,
                             liveRoomId = liveRoomId,
+                            ageProofRequired = postResponse.requiresAgeProof(),
                         ),
                     ),
                     onOpenPost = onOpenPost,
@@ -1362,7 +1365,9 @@ private fun HomePostCard(
             mediaPreview?.let { preview ->
                 FeedMediaPreview(
                     preview = preview,
-                    onClick = { onOpenMedia(preview) },
+                    onClick = {
+                        if (preview.ageProofRequired) onOpenPost() else onOpenMedia(preview)
+                    },
                 )
             }
 
@@ -1609,7 +1614,23 @@ private fun FeedMediaPreview(
                 .clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
         ) {
-            if (preview.isVideo) {
+            if (preview.ageProofRequired) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Icon(
+                        imageVector = PhosphorIcons.Lock,
+                        contentDescription = null,
+                        tint = PirateTokens.colors.textSecondary,
+                    )
+                    Text(
+                        text = "18+ proof required",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textSecondary,
+                    )
+                }
+            } else if (preview.isVideo) {
                 VideoPlayer(
                     url = preview.videoUrl ?: preview.url,
                     autoplay = true,
@@ -1731,6 +1752,16 @@ private fun HomeFeedItem.primaryMediaPreview(title: String): MediaPreview? {
     if (post.post.primaryXEmbed() != null) return null
 
     val media = post.post.mediaRefs.firstOrNull()
+    if (post.requiresAgeProof()) {
+        return MediaPreview(
+            url = "",
+            title = title,
+            mimeType = media?.mimeType,
+            width = media?.posterWidth ?: media?.width,
+            height = media?.posterHeight ?: media?.height,
+            ageProofRequired = true,
+        )
+    }
     if (media != null) {
         val previewUrl = when {
             media.mimeType?.startsWith("image/") == true -> media.storageRef

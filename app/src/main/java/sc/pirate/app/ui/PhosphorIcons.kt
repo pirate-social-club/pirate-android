@@ -46,6 +46,7 @@ object PhosphorIcons {
     val SquaresFour: ImageVector = AdamPhosphorIcons.Regular.SquaresFour
     val Globe: ImageVector = AdamPhosphorIcons.Regular.Globe
     val Users: ImageVector = AdamPhosphorIcons.Regular.Users
+    val Lock: ImageVector = AdamPhosphorIcons.Regular.Lock
     val HandPalm: ImageVector = AdamPhosphorIcons.Regular.HandPalm
     val IdentificationCard: ImageVector = AdamPhosphorIcons.Regular.IdentificationCard
     val PaperPlaneRight: ImageVector = AdamPhosphorIcons.Regular.PaperPlaneRight

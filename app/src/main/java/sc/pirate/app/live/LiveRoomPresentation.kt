@@ -141,6 +141,7 @@ fun buildLiveRoomPresentation(input: LiveRoomPresentationInput): LiveRoomPresent
         status == "ended" && replayStatus == "ready" -> "Replay is ready."
         status == "ended" -> "This room has ended."
         status == "canceled" -> "This room was canceled."
+        uiState is LiveRoomUiState.NeedsVerification -> "18+ proof required before you can watch."
         uiState is LiveRoomUiState.NeedsTicket -> priceLabel?.let { "$it ticket required to watch." } ?: "Ticket required to watch."
         uiState is LiveRoomUiState.NeedsAccess -> "Community access is required before you can watch."
         status == "live" && hasEntitlement -> "Watch the concert from this page."
@@ -155,7 +156,11 @@ fun buildLiveRoomPresentation(input: LiveRoomPresentationInput): LiveRoomPresent
         visibility = visibility,
         accessState = accessState,
         replayStatus = replayStatus,
-        coverSrc = resolvePublicMediaSrc(room?.coverRef ?: input.fallbackCoverRef),
+        coverSrc = if (input.ageProofRequired) {
+            null
+        } else {
+            resolvePublicMediaSrc(room?.coverRef ?: input.fallbackCoverRef)
+        },
         priceLabel = priceLabel,
         hasEntitlement = hasEntitlement,
         producerRole = producerRole,
@@ -167,7 +172,8 @@ fun buildLiveRoomPresentation(input: LiveRoomPresentationInput): LiveRoomPresent
         uiState = uiState,
         participantLabel = participantsLabel(room?.hostUser, room?.guestUser),
         setlistPreview = room?.setlist?.items.orEmpty().take(3),
-        canInlineAttachViewer = status == "live" &&
+        canInlineAttachViewer = !input.ageProofRequired &&
+            status == "live" &&
             accessMode == "free" &&
             visibility == "public" &&
             liveAccess?.allowed == true &&

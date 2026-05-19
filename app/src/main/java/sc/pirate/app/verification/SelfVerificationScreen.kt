@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,8 @@ class SelfVerificationViewModel(application: Application) : AndroidViewModel(app
     private val _state = MutableStateFlow(SelfVerificationUiState())
     val state: StateFlow<SelfVerificationUiState> = _state.asStateFlow()
     private var completingSessionId: String? = null
+    private var uniqueHumanVerified: Boolean = false
+    private var activeRequestedCapabilities: List<String> = emptyList()
 
     init {
         checkExistingVerification()
@@ -72,27 +75,66 @@ class SelfVerificationViewModel(application: Application) : AndroidViewModel(app
         viewModelScope.launch {
             try {
                 val status = onboardingRepository.getStatus()
+                uniqueHumanVerified = status.uniqueHumanVerificationStatus == "verified"
                 _state.value = _state.value.copy(
-                    isUniqueHumanVerified = status.uniqueHumanVerificationStatus == "verified",
-                    verificationState = if (status.uniqueHumanVerificationStatus == "verified") {
-                        SelfVerificationState.Verified
-                    } else {
-                        SelfVerificationState.NotStarted
-                    },
+                    isUniqueHumanVerified = uniqueHumanVerified,
                 )
+                applyExistingVerificationState()
             } catch (_: Exception) { }
         }
     }
 
-    fun startVerification(verificationIntent: String = DEFAULT_VERIFICATION_INTENT) {
+    fun configureVerification(
+        verificationIntent: String,
+        requestedCapabilities: List<String> = emptyList(),
+    ) {
+        val previousCapabilities = activeRequestedCapabilities
+        activeRequestedCapabilities = resolveRequestedCapabilities(
+            verificationIntent = verificationIntent,
+            requestedCapabilities = requestedCapabilities,
+        )
+        if (
+            previousCapabilities != activeRequestedCapabilities &&
+            _state.value.verificationState != SelfVerificationState.Pending
+        ) {
+            _state.value = _state.value.copy(verificationSessionId = null)
+        }
+        applyExistingVerificationState()
+    }
+
+    private fun applyExistingVerificationState() {
+        val state = _state.value
+        if (state.verificationState == SelfVerificationState.Pending || state.verificationSessionId != null) {
+            return
+        }
+        val canUseExistingUniqueHumanStatus =
+            activeRequestedCapabilities.isNotEmpty() &&
+                activeRequestedCapabilities.all { it == "unique_human" }
+        _state.value = state.copy(
+            verificationState = if (canUseExistingUniqueHumanStatus && uniqueHumanVerified) {
+                SelfVerificationState.Verified
+            } else {
+                SelfVerificationState.NotStarted
+            },
+        )
+    }
+
+    fun startVerification(
+        verificationIntent: String = DEFAULT_VERIFICATION_INTENT,
+        requestedCapabilities: List<String> = defaultCapabilitiesForIntent(verificationIntent),
+    ) {
         viewModelScope.launch {
+            activeRequestedCapabilities = resolveRequestedCapabilities(
+                verificationIntent = verificationIntent,
+                requestedCapabilities = requestedCapabilities,
+            )
             _state.value = _state.value.copy(loading = true, error = null)
             try {
                 val result = verificationRepository.startSession(
                     StartVerificationSessionRequest(
                         provider = "self",
                         providerMode = "qr_deeplink",
-                        requestedCapabilities = listOf("unique_human"),
+                        requestedCapabilities = activeRequestedCapabilities,
                         verificationIntent = verificationIntent,
                     ),
                 )
@@ -207,10 +249,13 @@ class SelfVerificationViewModel(application: Application) : AndroidViewModel(app
                 )
                 verificationCoordinator.clearCallbackResult()
                 verificationCoordinator.clearPendingSession()
+                val verifiedUniqueHuman =
+                    _state.value.isUniqueHumanVerified ||
+                        activeRequestedCapabilities.contains("unique_human")
                 _state.value = _state.value.copy(
                     verificationState = SelfVerificationState.Verified,
                     verificationSessionId = sessionId,
-                    isUniqueHumanVerified = true,
+                    isUniqueHumanVerified = verifiedUniqueHuman,
                     loading = false,
                 )
             } catch (e: Exception) {
@@ -225,6 +270,8 @@ class SelfVerificationViewModel(application: Application) : AndroidViewModel(app
 
     private companion object {
         const val DEFAULT_VERIFICATION_INTENT = "community_creation"
+        fun defaultCapabilitiesForIntent(verificationIntent: String): List<String> =
+            defaultSelfCapabilitiesForIntent(verificationIntent)
     }
 }
 
@@ -234,15 +281,37 @@ fun SelfVerificationScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     verificationIntent: String = "community_creation",
+    requestedCapabilities: List<String> = emptyList(),
+    onVerified: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as PirateApp
     val callbackResult by app.verificationCoordinator.callbackResults.collectAsState()
     val viewModel: SelfVerificationViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
+    val resolvedRequestedCapabilities = remember(verificationIntent, requestedCapabilities) {
+        resolveRequestedCapabilities(
+            verificationIntent = verificationIntent,
+            requestedCapabilities = requestedCapabilities,
+        )
+    }
+    val isAgeVerification = resolvedRequestedCapabilities.contains("age_over_18")
+
+    LaunchedEffect(verificationIntent, resolvedRequestedCapabilities) {
+        viewModel.configureVerification(
+            verificationIntent = verificationIntent,
+            requestedCapabilities = resolvedRequestedCapabilities,
+        )
+    }
 
     LaunchedEffect(callbackResult) {
         callbackResult?.let(viewModel::handleCallback)
+    }
+
+    LaunchedEffect(state.verificationState, isAgeVerification) {
+        if (isAgeVerification && state.verificationState == SelfVerificationState.Verified) {
+            onVerified?.invoke()
+        }
     }
 
     LaunchedEffect(state.launchUrl) {
@@ -292,7 +361,11 @@ fun SelfVerificationScreen(
                     SelfVerificationState.Verified -> {
                         StatusCard(
                             title = "Verification complete",
-                            description = "Your Pirate session now has the unique-human capability.",
+                            description = if (isAgeVerification) {
+                                "Your Pirate session now has the 18+ capability."
+                            } else {
+                                "Your Pirate session now has the unique-human capability."
+                            },
                             tone = StatusTone.Success,
                         )
                     }
@@ -315,13 +388,22 @@ fun SelfVerificationScreen(
                     SelfVerificationState.NotStarted -> {
                         StatusCard(
                             title = "Verify with ID",
-                            description = "Start the Self verification flow to unlock unique-human verification in Pirate.",
+                            description = if (isAgeVerification) {
+                                "Start the Self verification flow to prove you are 18+."
+                            } else {
+                                "Start the Self verification flow to unlock unique-human verification in Pirate."
+                            },
                             tone = StatusTone.Default,
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         PirateButton(
                             text = "Start verification",
-                            onClick = { viewModel.startVerification(verificationIntent) },
+                            onClick = {
+                                viewModel.startVerification(
+                                    verificationIntent = verificationIntent,
+                                    requestedCapabilities = resolvedRequestedCapabilities,
+                                )
+                            },
                             loading = state.loading,
                             modifier = Modifier.fillMaxWidth(),
                         )
@@ -335,4 +417,25 @@ fun SelfVerificationScreen(
             }
         }
     }
+}
+
+private val supportedSelfCapabilities = setOf("unique_human", "age_over_18", "nationality", "gender")
+
+private fun defaultSelfCapabilitiesForIntent(verificationIntent: String): List<String> =
+    when (verificationIntent) {
+        "post_access_18_plus" -> listOf("age_over_18")
+        else -> listOf("unique_human")
+    }
+
+private fun resolveRequestedCapabilities(
+    verificationIntent: String,
+    requestedCapabilities: List<String>,
+): List<String> {
+    val selectedCapabilities = requestedCapabilities.ifEmpty {
+        defaultSelfCapabilitiesForIntent(verificationIntent)
+    }
+    return selectedCapabilities
+        .map { it.trim() }
+        .filter { it in supportedSelfCapabilities }
+        .distinct()
 }
