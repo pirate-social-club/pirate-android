@@ -375,6 +375,25 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
         }
 
+        suspend fun uploadMedia(
+            kind: String,
+            bytes: ByteArray,
+            filename: String,
+            mimeType: String,
+        ): CommunityMediaUploadResponse {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("kind", kind)
+                .addFormDataPart(
+                    "file",
+                    filename,
+                    bytes.toRequestBody(mimeType.toMediaTypeOrNull()),
+                )
+                .build()
+            val response = api.postMultipartString("/community-media", body)
+            return api.json.decodeFromString(CommunityMediaUploadResponse.serializer(), response)
+        }
+
         suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom {
             val body = api.json.encodeToString(CreateLiveRoomRequest.serializer(), request)
             val response = api.postString("/communities/$communityId/live-rooms", body)
@@ -410,6 +429,46 @@ class ApiClient(private val sessionStore: SessionStore) {
             val body = api.json.encodeToString(LiveRoomViewerRenewRequest.serializer(), request)
             val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/viewer_renew", body)
             return api.json.decodeFromString(LiveRoomViewerAttachResponse.serializer(), response)
+        }
+
+        suspend fun hostAttachLiveRoom(
+            communityId: String,
+            liveRoomId: String,
+            request: LiveRoomAttachRequest = LiveRoomAttachRequest(),
+        ): LiveRoomHostAttachResponse {
+            val body = api.json.encodeToString(LiveRoomAttachRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/host_attach", body)
+            return api.json.decodeFromString(LiveRoomHostAttachResponse.serializer(), response)
+        }
+
+        suspend fun guestAcceptLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/guest_accept")
+            return api.json.decodeFromString(LiveRoom.serializer(), response)
+        }
+
+        suspend fun guestAttachLiveRoom(
+            communityId: String,
+            liveRoomId: String,
+            request: LiveRoomAttachRequest = LiveRoomAttachRequest(),
+        ): LiveRoomGuestAttachResponse {
+            val body = api.json.encodeToString(LiveRoomAttachRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/guest_attach", body)
+            return api.json.decodeFromString(LiveRoomGuestAttachResponse.serializer(), response)
+        }
+
+        suspend fun guestRevokeLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/guest_revoke")
+            return api.json.decodeFromString(LiveRoom.serializer(), response)
+        }
+
+        suspend fun cancelLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/cancel")
+            return api.json.decodeFromString(LiveRoom.serializer(), response)
+        }
+
+        suspend fun endLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+            val response = api.postString("/communities/$communityId/live-rooms/${api.encodePathSegment(liveRoomId)}/end")
+            return api.json.decodeFromString(LiveRoom.serializer(), response)
         }
 
         suspend fun getAsset(communityId: String, assetId: String): Asset {
@@ -526,6 +585,18 @@ class ApiClient(private val sessionStore: SessionStore) {
     }
 
     class PublicCommunitiesEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun search(query: String, limit: Int? = null): PublicCommunitySearchResponse {
+            val path = api.buildQueryPath(
+                "/public-communities",
+                listOf(
+                    "query" to query,
+                    "limit" to limit?.toString(),
+                ),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(PublicCommunitySearchResponse.serializer(), response)
+        }
+
         suspend fun preview(communityId: String, locale: String? = null): CommunityPreview {
             val path = api.buildQueryPath(
                 "/public-communities/${api.encodePathSegment(communityId)}",
@@ -818,6 +889,17 @@ data class XmtpInboxUpdateInput(
 
 @kotlinx.serialization.Serializable
 data class ProfileMediaUploadResponse(
+    val kind: String,
+    @kotlinx.serialization.SerialName("media_ref") val mediaRef: String,
+    @kotlinx.serialization.SerialName("ipfs_cid") val ipfsCid: String? = null,
+    @kotlinx.serialization.SerialName("mime_type") val mimeType: String,
+    @kotlinx.serialization.SerialName("size_bytes") val sizeBytes: Long,
+    @kotlinx.serialization.SerialName("storage_bucket") val storageBucket: String,
+    @kotlinx.serialization.SerialName("storage_object_key") val storageObjectKey: String,
+)
+
+@kotlinx.serialization.Serializable
+data class CommunityMediaUploadResponse(
     val kind: String,
     @kotlinx.serialization.SerialName("media_ref") val mediaRef: String,
     @kotlinx.serialization.SerialName("ipfs_cid") val ipfsCid: String? = null,

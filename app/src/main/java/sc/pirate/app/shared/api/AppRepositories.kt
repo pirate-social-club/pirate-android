@@ -23,10 +23,15 @@ import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
 import sc.pirate.app.api.model.CommentListResponse
 import sc.pirate.app.api.model.CommentVoteResponse
 import sc.pirate.app.api.model.CreateCommunityRequest
+import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.JoinEligibility
+import sc.pirate.app.api.model.LiveRoom
 import sc.pirate.app.api.model.LiveRoomAccessResponse
+import sc.pirate.app.api.model.LiveRoomAttachRequest
+import sc.pirate.app.api.model.LiveRoomGuestAttachResponse
+import sc.pirate.app.api.model.LiveRoomHostAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
 import sc.pirate.app.api.model.LocalizedPostResponse
@@ -37,7 +42,10 @@ import sc.pirate.app.api.model.OnboardingStatus
 import sc.pirate.app.api.model.PostListResponse
 import sc.pirate.app.api.model.PostVoteResponse
 import sc.pirate.app.api.model.Profile
+import sc.pirate.app.api.model.PublishLiveRoomRequest
+import sc.pirate.app.api.model.PublishLiveRoomResponse
 import sc.pirate.app.api.model.PublicProfileResolution
+import sc.pirate.app.api.model.PublicCommunitySearchResponse
 import sc.pirate.app.api.model.SessionExchangeResponse
 import sc.pirate.app.api.model.UserTask
 import sc.pirate.app.api.model.VerificationSession
@@ -67,6 +75,7 @@ interface CommunityRepository {
     suspend fun setPendingNamespaceSession(communityId: String, sessionId: String?): Community
     suspend fun getPreview(communityId: String, locale: String? = null): CommunityPreview
     suspend fun getPublicPreview(communityId: String, locale: String? = null): CommunityPreview
+    suspend fun searchPublicCommunities(query: String, limit: Int? = null): PublicCommunitySearchResponse
     suspend fun getJoinEligibility(communityId: String): JoinEligibility
     suspend fun joinCommunity(communityId: String): CommunityJoinResponse
     suspend fun followCommunity(communityId: String): CommunityFollowResponse
@@ -88,6 +97,23 @@ interface CommunityRepository {
         flairId: String? = null,
     ): PostListResponse
     suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse
+    suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String
+    suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom
+    suspend fun publishLiveRoom(communityId: String, request: PublishLiveRoomRequest): PublishLiveRoomResponse
+    suspend fun hostAttachLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomAttachRequest = LiveRoomAttachRequest(),
+    ): LiveRoomHostAttachResponse
+    suspend fun guestAcceptLiveRoom(communityId: String, liveRoomId: String): LiveRoom
+    suspend fun guestAttachLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomAttachRequest = LiveRoomAttachRequest(),
+    ): LiveRoomGuestAttachResponse
+    suspend fun guestRevokeLiveRoom(communityId: String, liveRoomId: String): LiveRoom
+    suspend fun cancelLiveRoom(communityId: String, liveRoomId: String): LiveRoom
+    suspend fun endLiveRoom(communityId: String, liveRoomId: String): LiveRoom
     suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun getPublicLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun viewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse
@@ -251,6 +277,10 @@ class ApiCommunityRepository(
         return apiClient.publicCommunities.preview(communityId, locale)
     }
 
+    override suspend fun searchPublicCommunities(query: String, limit: Int?): PublicCommunitySearchResponse {
+        return apiClient.publicCommunities.search(query, limit)
+    }
+
     override suspend fun getJoinEligibility(communityId: String): JoinEligibility {
         return apiClient.communities.getJoinEligibility(communityId)
     }
@@ -305,6 +335,53 @@ class ApiCommunityRepository(
 
     override suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse {
         return apiClient.communities.createPost(communityId, request)
+    }
+
+    override suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String {
+        return apiClient.communities.uploadMedia(kind, bytes, filename, mimeType).mediaRef
+    }
+
+    override suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom {
+        return apiClient.communities.createLiveRoom(communityId, request)
+    }
+
+    override suspend fun publishLiveRoom(
+        communityId: String,
+        request: PublishLiveRoomRequest,
+    ): PublishLiveRoomResponse {
+        return apiClient.communities.publishLiveRoom(communityId, request)
+    }
+
+    override suspend fun hostAttachLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomAttachRequest,
+    ): LiveRoomHostAttachResponse {
+        return apiClient.communities.hostAttachLiveRoom(communityId, liveRoomId, request)
+    }
+
+    override suspend fun guestAcceptLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+        return apiClient.communities.guestAcceptLiveRoom(communityId, liveRoomId)
+    }
+
+    override suspend fun guestAttachLiveRoom(
+        communityId: String,
+        liveRoomId: String,
+        request: LiveRoomAttachRequest,
+    ): LiveRoomGuestAttachResponse {
+        return apiClient.communities.guestAttachLiveRoom(communityId, liveRoomId, request)
+    }
+
+    override suspend fun guestRevokeLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+        return apiClient.communities.guestRevokeLiveRoom(communityId, liveRoomId)
+    }
+
+    override suspend fun cancelLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+        return apiClient.communities.cancelLiveRoom(communityId, liveRoomId)
+    }
+
+    override suspend fun endLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
+        return apiClient.communities.endLiveRoom(communityId, liveRoomId)
     }
 
     override suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse {

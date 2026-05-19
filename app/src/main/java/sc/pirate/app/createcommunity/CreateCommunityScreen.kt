@@ -89,6 +89,12 @@ class CreateCommunityViewModel(application: Application) : AndroidViewModel(appl
                         membershipMode = current.membershipMode,
                     ),
                 )
+                app.knownCommunitiesStore.remember(
+                    communityId = result.community.communityId,
+                    displayName = result.community.displayName,
+                    avatarRef = result.community.avatarRef,
+                    routeSlug = result.community.routeSlug,
+                )
                 _state.value = _state.value.copy(
                     submitting = false,
                     createdCommunityId = result.community.communityId,

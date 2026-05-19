@@ -517,6 +517,21 @@ data class HomeFeedResponse(
 )
 
 @Serializable
+data class PublicCommunitySearchItem(
+    @SerialName("community") val communityId: String,
+    @SerialName("display_name") val displayName: String,
+    @SerialName("route_slug") val routeSlug: String? = null,
+    @SerialName("membership_gate_summaries") val membershipGateSummaries: List<MembershipGateSummary> = emptyList(),
+)
+
+@Serializable
+data class PublicCommunitySearchResponse(
+    val query: String? = null,
+    val communities: List<PublicCommunitySearchItem> = emptyList(),
+    @SerialName("has_more") val hasMore: Boolean = false,
+)
+
+@Serializable
 data class PostVoteResponse(
     @SerialName("post_id") val postId: String,
     val value: Int,
@@ -832,6 +847,8 @@ data class CreateLiveRoomRequest(
     @SerialName("guest_user") val guestUser: String? = null,
     @SerialName("event_start_at") val eventStartAt: Long? = null,
     @SerialName("cover_ref") val coverRef: String? = null,
+    @SerialName("store_url") val storeUrl: String? = null,
+    @SerialName("store_label") val storeLabel: String? = null,
     @SerialName("performer_allocations") val performerAllocations: List<LiveRoomPerformerAllocationInput> = emptyList(),
     val setlist: LiveRoomSetlistInput? = null,
 )
@@ -889,6 +906,8 @@ data class LiveRoom(
     val title: String = "",
     val description: String? = null,
     @SerialName("cover_ref") val coverRef: String? = null,
+    @SerialName("store_url") val storeUrl: String? = null,
+    @SerialName("store_label") val storeLabel: String? = null,
     @SerialName("event_start_at") val eventStartAt: Long? = null,
     @SerialName("live_started_at") val liveStartedAt: Long? = null,
     @SerialName("ended_at") val endedAt: Long? = null,
@@ -929,10 +948,22 @@ data class LiveRoomViewerRenewRequest(
 )
 
 @Serializable
+data class LiveRoomAttachRequest(
+    @SerialName("client_kind") val clientKind: String = "android_native",
+    val refresh: Boolean = false,
+)
+
+@Serializable
 data class LiveRoomRuntimeBlock(
     val status: String? = null,
     val seat: String? = null,
     @SerialName("room_runtime_id") val roomRuntimeId: String? = null,
+)
+
+@Serializable
+data class LiveRoomBridgeBlock(
+    val ticket: String? = null,
+    @SerialName("ticket_expires_at") val ticketExpiresAt: Long? = null,
 )
 
 @Serializable
@@ -943,6 +974,36 @@ data class LiveRoomAgoraBlock(
     val token: String? = null,
     @SerialName("token_expires_at") val tokenExpiresAt: Long? = null,
     val configured: Boolean = false,
+)
+
+@Serializable
+data class LiveRoomJacktripBlock(
+    val required: Boolean = false,
+    val configured: Boolean = false,
+    val server: String? = null,
+    val port: Int? = null,
+    @SerialName("bind_port") val bindPort: Int? = null,
+    val quality: String? = null,
+    @SerialName("buffer_strategy") val bufferStrategy: String? = null,
+    @SerialName("linux_audio_setup_recommended") val linuxAudioSetupRecommended: Boolean = false,
+)
+
+@Serializable
+data class LiveRoomHostAttachResponse(
+    val room: LiveRoom,
+    val runtime: LiveRoomRuntimeBlock? = null,
+    val bridge: LiveRoomBridgeBlock? = null,
+    val agora: LiveRoomAgoraBlock? = null,
+    val jacktrip: LiveRoomJacktripBlock? = null,
+)
+
+@Serializable
+data class LiveRoomGuestAttachResponse(
+    val room: LiveRoom,
+    val runtime: LiveRoomRuntimeBlock? = null,
+    val bridge: LiveRoomBridgeBlock? = null,
+    val agora: LiveRoomAgoraBlock? = null,
+    val jacktrip: LiveRoomJacktripBlock? = null,
 )
 
 @Serializable

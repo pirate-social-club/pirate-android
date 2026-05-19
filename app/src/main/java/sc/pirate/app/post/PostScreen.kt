@@ -74,6 +74,7 @@ import sc.pirate.app.commerce.buildStoryCheckoutQuoteRequest
 import sc.pirate.app.commerce.resolveStoryCheckoutTransferInput
 import sc.pirate.app.live.LiveRoomPresentation
 import sc.pirate.app.live.LiveRoomPresentationInput
+import sc.pirate.app.live.LiveRoomProducerRole
 import sc.pirate.app.live.LiveRoomUiState
 import sc.pirate.app.live.LiveRoomViewerWebView
 import sc.pirate.app.live.buildLiveRoomPresentation
@@ -168,9 +169,18 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val commerce = loadPostCommerce(post, hasSession)
                 val session = app.sessionStore.get()
+                val communityPreview = loadCommunityPreview(post.post.communityId, hasSession)
+                communityPreview?.let { preview ->
+                    app.knownCommunitiesStore.remember(
+                        communityId = preview.communityId,
+                        displayName = preview.displayName,
+                        avatarRef = preview.avatarRef,
+                        routeSlug = preview.routeSlug,
+                    )
+                }
                 _state.value = PostUiState(
                     post = post,
-                    communityPreview = loadCommunityPreview(post.post.communityId, hasSession),
+                    communityPreview = communityPreview,
                     authorProfiles = loadAuthorProfiles(listOfNotNull(post.post.authorUserId)),
                     commentSort = commentSort,
                     commentDraft = existingState.commentDraft,
@@ -849,6 +859,7 @@ fun PostScreen(
     onNavigateToCompose: ((String) -> Unit)? = null,
     onNavigateToCommunity: (String) -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
@@ -997,6 +1008,13 @@ fun PostScreen(
                             },
                             onWatchLiveRoom = {
                                 onWatchLiveRoom()
+                            },
+                            onBroadcastLiveRoom = { communityId, liveRoomId, role ->
+                                if (hasSession) {
+                                    onBroadcastLiveRoom(communityId, liveRoomId, role)
+                                } else {
+                                    authPromptAction = "Broadcasting"
+                                }
                             },
                             onVerifyAge = {
                                 if (hasSession) onVerifyAge() else authPromptAction = "Age verification"
@@ -1187,6 +1205,7 @@ private fun ThreadRootPost(
     onVote: (Int) -> Unit,
     onBuyLiveRoomTicket: () -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
@@ -1267,27 +1286,35 @@ private fun ThreadRootPost(
                 )
             }
             post.anchorLiveRoom?.let { liveRoomId ->
-                ThreadLiveRoomSummary(
-                    presentation = buildLiveRoomPresentation(
-                        LiveRoomPresentationInput(
-                            fallbackTitle = title,
-                            access = liveRoomAccess,
-                            listing = liveRoomListing,
-                            purchase = liveRoomPurchase,
-                            publicStatus = post.anchorLiveRoomStatus,
-                            publicAccessMode = post.accessMode,
-                            fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
-                            viewerUserId = viewerUserId,
-                            postAuthorUserId = post.authorUserId,
-                            liveRoomId = liveRoomId,
-                            ageProofRequired = postResponse.requiresAgeProof(),
-                        ),
+                val livePresentation = buildLiveRoomPresentation(
+                    LiveRoomPresentationInput(
+                        fallbackTitle = title,
+                        access = liveRoomAccess,
+                        listing = liveRoomListing,
+                        purchase = liveRoomPurchase,
+                        publicStatus = post.anchorLiveRoomStatus,
+                        publicAccessMode = post.accessMode,
+                        fallbackCoverRef = post.mediaRefs.firstOrNull()?.posterRef ?: post.mediaRefs.firstOrNull()?.storageRef,
+                        viewerUserId = viewerUserId,
+                        postAuthorUserId = post.authorUserId,
+                        liveRoomId = liveRoomId,
+                        ageProofRequired = postResponse.requiresAgeProof(),
                     ),
+                )
+                ThreadLiveRoomSummary(
+                    presentation = livePresentation,
                     inlineViewerAttach = inlineLiveViewerAttach?.takeIf { it.room.id == liveRoomId },
                     purchaseSubmitting = purchaseSubmitting,
                     purchaseError = purchaseError,
                     purchaseMessage = purchaseMessage,
                     onBuyTicket = onBuyLiveRoomTicket,
+                    onBroadcast = {
+                        onBroadcastLiveRoom(
+                            post.communityId,
+                            liveRoomId,
+                            if (livePresentation.producerRole == LiveRoomProducerRole.Guest) "guest" else "host",
+                        )
+                    },
                     onWatch = onWatchLiveRoom,
                     onVerifyAge = onVerifyAge,
                     onRenewViewer = onRenewLiveRoomViewer,
@@ -1324,6 +1351,7 @@ private fun ThreadLiveRoomSummary(
     purchaseError: String?,
     purchaseMessage: String?,
     onBuyTicket: () -> Unit,
+    onBroadcast: () -> Unit,
     onWatch: () -> Unit,
     onVerifyAge: () -> Unit,
     onRenewViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
@@ -1337,6 +1365,14 @@ private fun ThreadLiveRoomSummary(
         is LiveRoomUiState.CanRsvp -> ui.cta
         else -> null
     }.takeIf { presentation.producerRole == null && inlineViewerAttach == null }
+    val producerActionLabel = when {
+        inlineViewerAttach != null -> null
+        presentation.producerRole == LiveRoomProducerRole.Host && presentation.status == "scheduled" -> "Go live"
+        presentation.producerRole == LiveRoomProducerRole.Host && presentation.status == "live" -> "Open broadcaster"
+        presentation.producerRole == LiveRoomProducerRole.Guest && presentation.guestInviteStatus == "pending" -> "Accept invite"
+        presentation.producerRole == LiveRoomProducerRole.Guest && presentation.status == "live" -> "Join as guest"
+        else -> null
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1481,6 +1517,13 @@ private fun ThreadLiveRoomSummary(
                         }
                     },
                     loading = purchaseSubmitting && presentation.uiState is LiveRoomUiState.NeedsTicket,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            producerActionLabel?.let { label ->
+                PirateButton(
+                    text = label,
+                    onClick = onBroadcast,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

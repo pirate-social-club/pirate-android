@@ -36,6 +36,7 @@ import sc.pirate.app.community.CommunityViewModel
 import sc.pirate.app.createcommunity.CreateCommunityScreen
 import sc.pirate.app.home.HomeScreen
 import sc.pirate.app.inbox.InboxScreen
+import sc.pirate.app.live.LiveRoomBroadcasterScreen
 import sc.pirate.app.live.LiveRoomWebViewScreen
 import sc.pirate.app.moderation.CommunityModerationScreen
 import sc.pirate.app.onboarding.OnboardingScreen
@@ -291,6 +292,11 @@ fun PirateNavHost(
                         launchSingleTop = true
                     }
                 },
+                onBroadcastLiveRoom = { communityId, liveRoomId, role ->
+                    navController.navigate(PirateRoute.LiveRoomBroadcast.buildRoute(communityId, liveRoomId, role)) {
+                        launchSingleTop = true
+                    }
+                },
                 onVerifyAge = {
                     navController.navigate(
                         PirateRoute.VerifySelf.buildRoute(
@@ -341,6 +347,33 @@ fun PirateNavHost(
         }
 
         composable(
+            route = PirateRoute.LiveRoomBroadcast.route,
+            arguments = listOf(
+                navArgument(PirateRoute.LiveRoomBroadcast.ARG_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.LiveRoomBroadcast.ARG_LIVE_ROOM_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.LiveRoomBroadcast.ARG_ROLE) {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.LiveRoomBroadcast.ARG_COMMUNITY_ID).orEmpty()
+            val liveRoomId = backStackEntry.arguments?.getString(PirateRoute.LiveRoomBroadcast.ARG_LIVE_ROOM_ID).orEmpty()
+            val role = backStackEntry.arguments?.getString(PirateRoute.LiveRoomBroadcast.ARG_ROLE).orEmpty()
+            AuthGate(hasSession, navController) {
+                LiveRoomBroadcasterScreen(
+                    communityId = communityId,
+                    liveRoomId = liveRoomId,
+                    role = role,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+
+        composable(
             route = PirateRoute.ComposePost.route,
             arguments = listOf(navArgument(PirateRoute.ComposePost.ARG_COMMUNITY_ID) {
                 type = NavType.StringType
@@ -362,8 +395,8 @@ fun PirateNavHost(
                         }
                     }
                 },
-                onOpenCommunity = {
-                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
+                onOpenCommunity = { selectedCommunityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(selectedCommunityId))
                 },
                 onBack = { navController.popBackStack() },
             )
@@ -510,12 +543,16 @@ fun PirateNavHost(
 
         composable(PirateRoute.GlobalSubmit.route) {
             GlobalSubmitScreen(
+                hasSession = hasSession,
                 onBack = { navController.popBackStack() },
                 onSignIn = {
                     navController.navigate(PirateRoute.Auth.route)
                 },
-                onComposeInCommunity = { communityId ->
+                onSelectCommunity = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
+                },
+                onOpenCommunity = { communityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(communityId))
                 },
             )
         }

@@ -184,6 +184,7 @@ dependencies {
   implementation("org.web3j:abi:4.12.2")
   implementation("org.web3j:crypto:4.12.2")
   implementation("org.xmtp:android:4.9.0")
+  implementation("io.agora.rtc:voice-sdk:4.6.3")
   implementation("org.very:sdk:1.0.29") {
     exclude(group = "com.caverock", module = "androidsvg")
   }

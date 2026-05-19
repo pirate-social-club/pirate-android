@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -336,7 +337,6 @@ private fun LoginButtons(
         icon = PhosphorIcons.GoogleLogo,
         text = "Google",
         onClick = onLoginGoogle,
-        emphasized = true,
     )
 }
 
@@ -436,6 +436,19 @@ private fun EmailLoginForm(
         value = email,
         onValueChange = { email = it },
         label = { Text("Email") },
+        trailingIcon = {
+            if (!codeSent) {
+                TextButton(
+                    onClick = {
+                        focusManager.clearFocus()
+                        onSendCode(email)
+                    },
+                    enabled = canSendCode,
+                ) {
+                    Text(if (isSending) "Sending..." else "Send")
+                }
+            }
+        },
         modifier = Modifier
             .fillMaxWidth()
             .bringIntoViewRequester(formBringIntoView)
@@ -466,21 +479,22 @@ private fun EmailLoginForm(
 
     Spacer(modifier = Modifier.height(8.dp))
 
-    if (sentEmail != null) {
-        Text(
-            text = "Code sent to $sentEmail",
-            style = MaterialTheme.typography.bodyMedium,
-            color = PirateTokens.colors.accentSuccess,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-
     if (codeSent) {
         OutlinedTextField(
             value = code,
             onValueChange = { code = it },
             label = { Text("Verification code") },
+            trailingIcon = {
+                TextButton(
+                    onClick = {
+                        focusManager.clearFocus()
+                        onLogin(email, code)
+                    },
+                    enabled = canVerify,
+                ) {
+                    Text(if (isVerifying) "Verifying..." else "Verify")
+                }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(codeFocusRequester)
@@ -505,41 +519,14 @@ private fun EmailLoginForm(
             enabled = !isSending && !isVerifying,
         )
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = {
-                focusManager.clearFocus()
-                onLogin(email, code)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            enabled = canVerify,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = PirateTokens.colors.accentBrand,
-            ),
-        ) {
-            Text(if (isVerifying) "Verifying..." else "Verify and sign in")
-        }
-    } else {
-        Button(
-            onClick = {
-                focusManager.clearFocus()
-                onSendCode(email)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            enabled = canSendCode,
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = PirateTokens.colors.surfaceInteractive,
-                contentColor = PirateTokens.colors.textPrimary,
-            ),
-        ) {
-            Text(if (isSending) "Sending..." else "Send code")
+        if (sentEmail != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Code sent to $sentEmail",
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.accentSuccess,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }

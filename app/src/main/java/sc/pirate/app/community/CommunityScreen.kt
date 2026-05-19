@@ -127,6 +127,12 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                         limit = 25,
                         sort = sort,
                     )
+                    app.knownCommunitiesStore.remember(
+                        communityId = preview.communityId,
+                        displayName = preview.displayName,
+                        avatarRef = preview.avatarRef,
+                        routeSlug = preview.routeSlug,
+                    )
                     _state.value = CommunityUiState(
                         preview = preview,
                         posts = posts.items,
@@ -137,7 +143,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                _state.value = coroutineScope {
+                val nextState = coroutineScope {
                     val community = async { communityRepository.getCommunity(communityId) }
                     val preview = async { communityRepository.getPreview(communityId) }
                     val eligibility = async { communityRepository.getJoinEligibility(communityId) }
@@ -160,6 +166,15 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                         loading = false,
                     )
                 }
+                nextState.preview?.let { preview ->
+                    app.knownCommunitiesStore.remember(
+                        communityId = preview.communityId,
+                        displayName = preview.displayName,
+                        avatarRef = preview.avatarRef,
+                        routeSlug = preview.routeSlug,
+                    )
+                }
+                _state.value = nextState
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     loading = false,

@@ -37,10 +37,12 @@ object PhosphorIcons {
     val Flag: ImageVector = AdamPhosphorIcons.Regular.Flag
     val Robot: ImageVector = AdamPhosphorIcons.Regular.Robot
     val TextT: ImageVector = AdamPhosphorIcons.Regular.TextT
+    val Image: ImageVector = AdamPhosphorIcons.Regular.Image
     val ImageSquare: ImageVector = AdamPhosphorIcons.Regular.ImageSquare
     val Link: ImageVector = AdamPhosphorIcons.Regular.Link
     val MusicNote: ImageVector = AdamPhosphorIcons.Regular.MusicNote
     val MusicNotes: ImageVector = AdamPhosphorIcons.Regular.MusicNotes
+    val Microphone: ImageVector = AdamPhosphorIcons.Regular.Microphone
     val VideoCamera: ImageVector = AdamPhosphorIcons.Regular.VideoCamera
     val Article: ImageVector = AdamPhosphorIcons.Regular.Article
     val SquaresFour: ImageVector = AdamPhosphorIcons.Regular.SquaresFour
