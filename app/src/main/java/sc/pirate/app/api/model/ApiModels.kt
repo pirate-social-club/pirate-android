@@ -1063,16 +1063,22 @@ data class Job(
 
 @Serializable
 data class CommunityJoinResponse(
-    @SerialName("community_id") val communityId: String,
+    @SerialName("community") private val contractCommunityId: String? = null,
+    @SerialName("community_id") private val legacyCommunityId: String? = null,
     val status: String,
-)
+) {
+    val communityId: String get() = contractCommunityId ?: legacyCommunityId.orEmpty()
+}
 
 @Serializable
 data class CommunityFollowResponse(
-    @SerialName("community_id") val communityId: String,
+    @SerialName("community") private val contractCommunityId: String? = null,
+    @SerialName("community_id") private val legacyCommunityId: String? = null,
     val following: Boolean,
     @SerialName("follower_count") val followerCount: Int? = null,
-)
+) {
+    val communityId: String get() = contractCommunityId ?: legacyCommunityId.orEmpty()
+}
 
 @Serializable
 data class ErrorResponse(

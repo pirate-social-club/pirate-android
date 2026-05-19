@@ -325,7 +325,7 @@ class ApiClient(private val sessionStore: SessionStore) {
         }
 
         suspend fun unfollow(communityId: String): CommunityFollowResponse {
-            val response = api.request("/communities/$communityId/follow", "DELETE")
+            val response = api.request("/communities/$communityId/unfollow", "POST", "{}")
             return api.json.decodeFromString(CommunityFollowResponse.serializer(), response)
         }
 

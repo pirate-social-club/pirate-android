@@ -222,9 +222,24 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _state.value = _state.value.copy(joinLoading = true, joinError = null)
             try {
-                communityRepository.joinCommunity(communityId)
+                val joinResult = communityRepository.joinCommunity(communityId)
+                val currentPreview = _state.value.preview
+                val nextPreview = if (joinResult.status == "joined" && currentPreview != null) {
+                    currentPreview.copy(
+                        viewerMembershipStatus = "member",
+                        viewerFollowing = true,
+                        followerCount = if (currentPreview.viewerFollowing == true) {
+                            currentPreview.followerCount
+                        } else {
+                            currentPreview.followerCount?.plus(1)
+                        },
+                    )
+                } else {
+                    currentPreview
+                }
                 _state.value = _state.value.copy(
                     eligibility = communityRepository.getJoinEligibility(communityId),
+                    preview = nextPreview,
                     joinLoading = false,
                 )
             } catch (e: Exception) {
@@ -373,9 +388,10 @@ fun CommunityScreen(
     val preview = state.preview
     val community = state.community
     val eligibility = state.eligibility
+    val viewerIsMember = eligibility?.status == "already_joined" ||
+        preview?.viewerMembershipStatus == "member"
     val canCreatePost = hasSession && (
-        eligibility?.status == "already_joined" ||
-            preview?.viewerMembershipStatus == "member" ||
+        viewerIsMember ||
             ownsCommunity(viewerUserId, community) ||
             viewerCanModerateCommunity(viewerUserId, preview)
         )
@@ -470,6 +486,7 @@ fun CommunityScreen(
                                 followLoading = state.followLoading,
                                 hasSession = hasSession,
                                 isFollowing = preview?.viewerFollowing == true,
+                                isMember = viewerIsMember,
                                 joinLoading = state.joinLoading,
                                 followError = state.followError,
                                 joinError = state.joinError,
@@ -619,7 +636,7 @@ private fun sameUserId(left: String?, right: String?): Boolean {
 
 private fun communityStatusText(eligibility: JoinEligibility): String =
     when (eligibility.status) {
-        "already_joined" -> "You are a member."
+        "already_joined" -> ""
         "joinable" -> "Join to post and reply here."
         "requestable" -> "Membership requires a request."
         "verification_required" -> {
@@ -671,6 +688,7 @@ private fun CommunityHeaderActions(
     followLoading: Boolean,
     hasSession: Boolean,
     isFollowing: Boolean,
+    isMember: Boolean,
     joinLoading: Boolean,
     onJoin: () -> Unit,
     onToggleFollow: () -> Unit,
@@ -680,7 +698,14 @@ private fun CommunityHeaderActions(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (hasSession) {
+        if (isMember) {
+            PirateButton(
+                text = "Joined",
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else if (hasSession) {
             PirateButton(
                 text = if (isFollowing) "Following" else "Follow",
                 onClick = onToggleFollow,
@@ -755,6 +780,7 @@ private fun CommunityHero(
     followLoading: Boolean,
     hasSession: Boolean,
     isFollowing: Boolean,
+    isMember: Boolean,
     joinLoading: Boolean,
     followError: String?,
     joinError: String?,
@@ -830,6 +856,7 @@ private fun CommunityHero(
                 followLoading = followLoading,
                 hasSession = hasSession,
                 isFollowing = isFollowing,
+                isMember = isMember,
                 joinLoading = joinLoading,
                 onJoin = onJoin,
                 onToggleFollow = onToggleFollow,
