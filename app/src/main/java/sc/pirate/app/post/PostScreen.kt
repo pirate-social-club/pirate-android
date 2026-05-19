@@ -54,10 +54,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.util.Locale
+import sc.pirate.app.api.PoWGate
 import sc.pirate.app.api.CreateCommentRequest
 import sc.pirate.app.api.model.CommentListItem
 import sc.pirate.app.api.model.CommunityListing
@@ -82,6 +84,8 @@ import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.song.SongPlaybackState
+import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
@@ -144,10 +148,12 @@ private data class PostCommerceEnrichment(
 class PostViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val postRepository get() = app.repositories.postRepository
+    private val powGate by lazy { PoWGate(app.apiClient) }
     private val communityRepository get() = app.repositories.communityRepository
     private val profileRepository get() = app.repositories.profileRepository
     private val _state = MutableStateFlow(PostUiState())
     val state: StateFlow<PostUiState> = _state.asStateFlow()
+    val playbackState: StateFlow<SongPlaybackState> = app.songPlaybackController.state
     private var currentPostId: String? = null
     private var currentHasSession: Boolean = false
 
@@ -228,11 +234,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 commentSubmitError = null,
             )
             try {
-                postRepository.createComment(
-                    communityId = post.post.communityId,
-                    postId = post.post.postId,
-                    request = CreateCommentRequest(body = body),
-                )
+                createCommentWithProofOfWork(post, body)
                 _state.value = _state.value.copy(
                     commentDraft = "",
                     commentSubmitting = false,
@@ -240,6 +242,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 loadTopLevelComments(post, hasSession = true)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _state.value = _state.value.copy(
                     commentSubmitting = false,
                     commentSubmitError = e.message ?: "Failed to post comment",
@@ -274,6 +277,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun toggleSongPlayback(post: LocalizedPostResponse) {
+        app.songPlaybackController.toggle(post)
+    }
+
+    fun pauseSongPlayback() {
+        app.songPlaybackController.pause()
     }
 
     fun loadMoreComments() {
@@ -427,22 +438,53 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                postRepository.createReply(
-                    commentId = parentCommentId,
-                    request = CreateCommentRequest(body = body),
-                )
+                createReplyWithProofOfWork(parentCommentId, body)
                 _state.value = _state.value.copy(
                     replyDraftsByParentId = _state.value.replyDraftsByParentId + (parentCommentId to ""),
                     submittingReplyParentIds = _state.value.submittingReplyParentIds - parentCommentId,
                 )
                 loadReplies(parentCommentId)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _state.value = _state.value.copy(
                     submittingReplyParentIds = _state.value.submittingReplyParentIds - parentCommentId,
                     replySubmitErrorByParentId = _state.value.replySubmitErrorByParentId +
                         (parentCommentId to (e.message ?: "Failed to post reply")),
                 )
             }
+        }
+    }
+
+    private suspend fun createCommentWithProofOfWork(
+        post: LocalizedPostResponse,
+        body: String,
+    ) {
+        powGate.execute(
+            scope = "comment_create",
+            action = "post:${post.post.postId}",
+        ) { altchaHeader ->
+            postRepository.createComment(
+                communityId = post.post.communityId,
+                postId = post.post.postId,
+                request = CreateCommentRequest(body = body),
+                altchaHeader = altchaHeader,
+            )
+        }
+    }
+
+    private suspend fun createReplyWithProofOfWork(
+        parentCommentId: String,
+        body: String,
+    ) {
+        powGate.execute(
+            scope = "comment_create",
+            action = "comment:$parentCommentId",
+        ) { altchaHeader ->
+            postRepository.createReply(
+                commentId = parentCommentId,
+                request = CreateCommentRequest(body = body),
+                altchaHeader = altchaHeader,
+            )
         }
     }
 
@@ -867,6 +909,7 @@ fun PostScreen(
 ) {
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
+    val playbackState by viewModel.playbackState.collectAsState()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
     var observedFirstResume by rememberSaveable(postId, hasSession) { mutableStateOf(false) }
@@ -881,12 +924,18 @@ fun PostScreen(
             onDispose { }
         } else {
             val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME) {
-                    if (observedFirstResume) {
-                        viewModel.loadPost(postId, hasSession)
-                    } else {
-                        observedFirstResume = true
+                when (event) {
+                    Lifecycle.Event.ON_RESUME -> {
+                        if (observedFirstResume) {
+                            viewModel.loadPost(postId, hasSession)
+                        } else {
+                            observedFirstResume = true
+                        }
                     }
+                    Lifecycle.Event.ON_STOP -> {
+                        viewModel.pauseSongPlayback()
+                    }
+                    else -> Unit
                 }
             }
             lifecycleOwner.lifecycle.addObserver(observer)
@@ -996,6 +1045,7 @@ fun PostScreen(
                             viewerUserId = state.viewerUserId,
                             assetListing = state.assetListing,
                             assetPurchase = state.assetPurchase,
+                            songPlaybackState = playbackState,
                             purchaseSubmitting = state.purchaseSubmitting,
                             purchaseError = state.purchaseError,
                             purchaseMessage = state.purchaseMessage,
@@ -1018,6 +1068,9 @@ fun PostScreen(
                             },
                             onVerifyAge = {
                                 if (hasSession) onVerifyAge() else authPromptAction = "Age verification"
+                            },
+                            onToggleSongPlayback = {
+                                viewModel.toggleSongPlayback(postResponse)
                             },
                             onRenewLiveRoomViewer = { uid ->
                                 viewModel.renewLiveRoomViewer(uid, hasSession)
@@ -1198,6 +1251,7 @@ private fun ThreadRootPost(
     viewerUserId: String?,
     assetListing: CommunityListing?,
     assetPurchase: CommunityPurchase?,
+    songPlaybackState: SongPlaybackState,
     purchaseSubmitting: Boolean,
     purchaseError: String?,
     purchaseMessage: String?,
@@ -1207,6 +1261,7 @@ private fun ThreadRootPost(
     onWatchLiveRoom: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
+    onToggleSongPlayback: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
     val post = postResponse.post
@@ -1285,6 +1340,17 @@ private fun ThreadRootPost(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
+            if (post.postType == "song" && post.anchorLiveRoom == null) {
+                val postIsCurrent = songPlaybackState.postId == post.postId
+                ThreadSongSummary(
+                    postResponse = postResponse,
+                    canPlay = resolveSongAudioUrl(postResponse) != null,
+                    isBuffering = postIsCurrent && songPlaybackState.isBuffering,
+                    isPlaying = postIsCurrent && songPlaybackState.isPlaying,
+                    error = songPlaybackState.error.takeIf { postIsCurrent },
+                    onPlayPause = onToggleSongPlayback,
+                )
+            }
             post.anchorLiveRoom?.let { liveRoomId ->
                 val livePresentation = buildLiveRoomPresentation(
                     LiveRoomPresentationInput(
@@ -1341,6 +1407,123 @@ private fun ThreadRootPost(
             }
         }
     }
+}
+
+@Composable
+private fun ThreadSongSummary(
+    postResponse: LocalizedPostResponse,
+    canPlay: Boolean,
+    isBuffering: Boolean,
+    isPlaying: Boolean,
+    error: String?,
+    onPlayPause: () -> Unit,
+) {
+    val title = songTitle(postResponse)
+    val coverArtSrc = resolvePublicMediaSrc(postResponse.songPresentation?.coverArtRef)
+    val duration = durationLabel(postResponse.songPresentation?.durationMs)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(84.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(PirateTokens.colors.bgElevated),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (coverArtSrc != null) {
+                        AsyncImage(
+                            model = coverArtSrc,
+                            contentDescription = title,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = PhosphorIcons.MusicNote,
+                            contentDescription = null,
+                            tint = PirateTokens.colors.textSecondary,
+                        )
+                    }
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    duration?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Surface(
+                    modifier = Modifier.clickable(
+                        enabled = canPlay,
+                        onClick = onPlayPause,
+                    ),
+                    shape = RoundedCornerShape(PirateTokens.radius.full),
+                    color = if (canPlay) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceDisabled,
+                ) {
+                    Icon(
+                        imageVector = when {
+                            !canPlay -> PhosphorIcons.Lock
+                            isBuffering -> PhosphorIcons.MusicNotes
+                            isPlaying -> PhosphorIcons.Pause
+                            else -> PhosphorIcons.Play
+                        },
+                        contentDescription = when {
+                            !canPlay -> "Song locked"
+                            isBuffering -> "Loading song"
+                            isPlaying -> "Pause song"
+                            else -> "Play song"
+                        },
+                        tint = Color.White,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+            error?.let {
+                FormNote(message = it, tone = FormTone.Error)
+            }
+        }
+    }
+}
+
+private fun songTitle(post: LocalizedPostResponse): String =
+    post.songPresentation?.title
+        ?: post.post.songTitle
+        ?: post.translatedTitle
+        ?: post.post.title
+        ?: "Untitled song"
+
+private fun durationLabel(durationMs: Long?): String? {
+    val totalSeconds = durationMs?.takeIf { it > 0 }?.div(1000) ?: return null
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
 }
 
 @Composable

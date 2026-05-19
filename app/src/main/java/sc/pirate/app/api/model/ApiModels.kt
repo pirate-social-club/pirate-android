@@ -366,6 +366,36 @@ data class JoinEligibility(
 }
 
 @Serializable
+data class AltchaChallenge(
+    val parameters: AltchaChallengeParameters,
+    val signature: String,
+)
+
+@Serializable
+data class AltchaChallengeParameters(
+    val algorithm: String,
+    val nonce: String,
+    val salt: String,
+    val cost: Int,
+    val keyLength: Int,
+    val keyPrefix: String,
+    val expiresAt: Long? = null,
+    val data: Map<String, String?>? = null,
+)
+
+@Serializable
+data class AltchaSolution(
+    val counter: Int,
+    val derivedKey: String,
+)
+
+@Serializable
+data class AltchaPayload(
+    val challenge: AltchaChallenge,
+    val solution: AltchaSolution,
+)
+
+@Serializable
 data class ThreadSnapshot(
     @SerialName("thread_root_post_id") private val contractThreadRootPostId: String? = null,
     @SerialName("thread_root_post") private val feedThreadRootPostId: String? = null,
@@ -476,8 +506,16 @@ data class Post(
 }
 
 @Serializable
+data class SongPresentation(
+    val title: String? = null,
+    @SerialName("cover_art_ref") val coverArtRef: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+)
+
+@Serializable
 data class LocalizedPostResponse(
     val post: Post,
+    @SerialName("song_presentation") val songPresentation: SongPresentation? = null,
     @SerialName("age_gate_viewer_state") val ageGateViewerState: String? = null,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
     @SerialName("comment_count") val commentCount: Int? = null,
@@ -620,7 +658,7 @@ data class CreatePostRequest(
     val title: String? = null,
     val body: String? = null,
     val caption: String? = null,
-    @SerialName("post_type") val postType: String = "text",
+    @SerialName("post_type") val postType: String,
     @SerialName("link_url") val linkUrl: String? = null,
     @SerialName("age_gate_policy") val ageGatePolicy: String? = null,
     @SerialName("flair_id") val flairId: String? = null,
@@ -1271,4 +1309,10 @@ data class ErrorResponse(
     val code: String? = null,
     val message: String? = null,
     val retryable: Boolean? = null,
+    val details: GateFailureDetails? = null,
+)
+
+@Serializable
+data class GateFailureDetails(
+    @SerialName("missing_capabilities") val missingCapabilities: List<String> = emptyList(),
 )

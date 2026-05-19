@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -41,21 +42,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
+import java.util.Locale
 import sc.pirate.app.PirateApp
+import sc.pirate.app.api.PoWGate
 import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CommunityReferenceLink
@@ -65,6 +71,8 @@ import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.MembershipGateSummary
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.song.SongPlaybackState
+import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.EmptyFeedState
@@ -100,10 +108,12 @@ data class CommunityUiState(
 class CommunityViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<PirateApp>()
     private val communityRepository get() = app.repositories.communityRepository
+    private val powGate by lazy { PoWGate(app.apiClient) }
     private val postRepository get() = app.repositories.postRepository
 
     private val _state = MutableStateFlow(CommunityUiState())
     val state: StateFlow<CommunityUiState> = _state.asStateFlow()
+    val playbackState: StateFlow<SongPlaybackState> = app.songPlaybackController.state
 
     private var currentCommunityId: String? = null
     private var currentHasSession: Boolean = false
@@ -143,25 +153,35 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     return@launch
                 }
 
-                val nextState = coroutineScope {
-                    val community = async { communityRepository.getCommunity(communityId) }
-                    val preview = async { communityRepository.getPreview(communityId) }
-                    val eligibility = async { communityRepository.getJoinEligibility(communityId) }
-                    val posts = async {
-                        communityRepository.listPosts(
-                            communityId = communityId,
-                            limit = 25,
-                            sort = sort,
-                        )
-                    }
-
-                    val postPage = posts.await()
+                val preview = communityRepository.getPreview(communityId)
+                val eligibility = communityRepository.getJoinEligibility(communityId)
+                val nextState = if (eligibility.status != "already_joined") {
+                    val posts = communityRepository.listPublicPosts(
+                        communityId = communityId,
+                        limit = 25,
+                        sort = sort,
+                    )
                     CommunityUiState(
-                        community = community.await(),
-                        preview = preview.await(),
-                        eligibility = eligibility.await(),
-                        posts = postPage.items,
-                        nextPostsCursor = postPage.nextCursor,
+                        preview = preview,
+                        eligibility = eligibility,
+                        posts = posts.items,
+                        nextPostsCursor = posts.nextCursor,
+                        activeSort = sort,
+                        loading = false,
+                    )
+                } else {
+                    val community = communityRepository.getCommunity(communityId)
+                    val posts = communityRepository.listPosts(
+                        communityId = communityId,
+                        limit = 25,
+                        sort = sort,
+                    )
+                    CommunityUiState(
+                        community = community,
+                        preview = preview,
+                        eligibility = eligibility,
+                        posts = posts.items,
+                        nextPostsCursor = posts.nextCursor,
                         activeSort = sort,
                         loading = false,
                     )
@@ -237,7 +257,12 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             _state.value = _state.value.copy(joinLoading = true, joinError = null)
             try {
-                val joinResult = communityRepository.joinCommunity(communityId)
+                val joinResult = powGate.execute(
+                    scope = "community_join",
+                    action = "community:$communityId",
+                ) { altchaHeader ->
+                    communityRepository.joinCommunity(communityId, altchaHeader)
+                }
                 val currentPreview = _state.value.preview
                 val nextPreview = if (joinResult.status == "joined" && currentPreview != null) {
                     currentPreview.copy(
@@ -258,6 +283,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     joinLoading = false,
                 )
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _state.value = _state.value.copy(
                     joinLoading = false,
                     joinError = e.message ?: "Could not join community",
@@ -323,6 +349,14 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
         }
+    }
+
+    fun toggleSongPlayback(post: LocalizedPostResponse) {
+        app.songPlaybackController.toggle(post)
+    }
+
+    fun pauseSongPlayback() {
+        app.songPlaybackController.pause()
     }
 }
 
@@ -399,12 +433,14 @@ fun CommunityScreen(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.state.collectAsState()
+    val playbackState by viewModel.playbackState.collectAsState()
     var activeTab by rememberSaveable(communityId) { mutableStateOf("feed") }
     val preview = state.preview
     val community = state.community
     val eligibility = state.eligibility
     val viewerIsMember = eligibility?.status == "already_joined" ||
         preview?.viewerMembershipStatus == "member"
+    val lifecycleOwner = LocalView.current.findViewTreeLifecycleOwner()
     val canCreatePost = hasSession && (
         viewerIsMember ||
             ownsCommunity(viewerUserId, community) ||
@@ -413,6 +449,22 @@ fun CommunityScreen(
 
     LaunchedEffect(communityId, hasSession) {
         viewModel.loadCommunity(communityId, hasSession)
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        if (lifecycleOwner == null) {
+            onDispose { }
+        } else {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP) {
+                    viewModel.pauseSongPlayback()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose {
+                lifecycleOwner.lifecycle.removeObserver(observer)
+            }
+        }
     }
 
     Scaffold(
@@ -478,7 +530,10 @@ fun CommunityScreen(
                 community != null || preview != null -> {
                     val displayName = community?.displayName ?: preview?.displayName ?: "Community"
                     val description = community?.description ?: preview?.description
-                    val routeLabel = communityRouteLabel(community?.routeSlug ?: preview?.communityId ?: communityId, communityId)
+                    val routeLabel = communityRouteLabel(
+                        community?.routeSlug ?: preview?.routeSlug ?: preview?.communityId ?: communityId,
+                        communityId,
+                    )
                     val memberCount = preview?.memberCount ?: community?.memberCount
                     val followerCount = preview?.followerCount ?: community?.followerCount
                     val avatarSrc = community?.avatarRef ?: preview?.avatarRef
@@ -553,6 +608,19 @@ fun CommunityScreen(
                                 }
                             }
 
+                            playbackState.error?.let { playbackError ->
+                                item {
+                                    StatusCard(
+                                        title = "Playback unavailable",
+                                        description = playbackError,
+                                        tone = StatusTone.Warning,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp),
+                                    )
+                                }
+                            }
+
                             if (state.posts.isEmpty()) {
                                 item {
                                     EmptyFeedState(
@@ -565,14 +633,31 @@ fun CommunityScreen(
                             } else {
                                 items(state.posts, key = { it.post.postId }) { postResp ->
                                     val isVoting = postResp.post.postId in state.votingPostIds
-                                    CommunityPostRow(
-                                        post = postResp,
-                                        communityName = displayName,
-                                        isVoting = isVoting,
-                                        onClick = { onNavigateToPost(postResp.post.postId) },
-                                        onVote = { value -> viewModel.votePost(postResp.post.postId, value) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
+                                    if (postResp.post.postType == "song") {
+                                        val postIsPlaying = playbackState.postId == postResp.post.postId && playbackState.isPlaying
+                                        val postIsBuffering = playbackState.postId == postResp.post.postId && playbackState.isBuffering
+                                        SongPostRow(
+                                            post = postResp,
+                                            communityName = displayName,
+                                            isVoting = isVoting,
+                                            canPlay = resolveSongAudioUrl(postResp) != null,
+                                            isBuffering = postIsBuffering,
+                                            isPlaying = postIsPlaying,
+                                            onClick = { onNavigateToPost(postResp.post.postId) },
+                                            onPlayPause = { viewModel.toggleSongPlayback(postResp) },
+                                            onVote = { value -> viewModel.votePost(postResp.post.postId, value) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    } else {
+                                        CommunityPostRow(
+                                            post = postResp,
+                                            communityName = displayName,
+                                            isVoting = isVoting,
+                                            onClick = { onNavigateToPost(postResp.post.postId) },
+                                            onVote = { value -> viewModel.votePost(postResp.post.postId, value) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
                                 }
                             }
 
@@ -657,31 +742,73 @@ private fun communityStatusText(eligibility: JoinEligibility): String =
         "already_joined" -> ""
         "joinable" -> "Join to post and reply here."
         "requestable" -> "Membership requires a request."
-        "verification_required" -> {
+        "verification_required" -> if (requiresProofOfWork(eligibility)) {
+            "Proof-of-work required to join."
+        } else {
             val provider = eligibility.suggestedVerificationProvider ?: eligibility.humanVerificationLane
-            "Verification required with $provider."
+            "Verification required with ${verificationProviderLabel(provider)}."
         }
         "pending_request" -> "Your join request is pending."
         "gate_failed" -> eligibility.failureReason ?: "You do not meet this community's gate."
         "banned" -> "You cannot join this community."
-        else -> eligibility.status
+        else -> eligibility.status.replace('_', ' ')
     }
 
 private fun gateSummaryText(gate: MembershipGateSummary): String =
     when (gate.gateType) {
-        "self_minimum_age" -> "Age ${gate.requiredMinimumAge ?: gate.requiredValue ?: "required"}+"
-        "self_nationality" -> "Nationality: ${gate.requiredValues?.joinToString(", ") ?: gate.requiredValue ?: "required"}"
-        "self_excluded_nationality" -> "Excluded nationality: ${gate.excludedValues?.joinToString(", ") ?: "configured"}"
-        "self_gender" -> "Document marker: ${gate.requiredValue ?: "required"}"
-        "passport_score" -> "Passport score: ${gate.minimumScore ?: gate.requiredValue ?: "required"}+"
-        "wallet_nft" -> "NFT gate: ${gate.assetFilterLabel ?: gate.contractAddress ?: "configured"}"
-        "courtyard_inventory" -> "Courtyard inventory: ${gate.assetFilterLabel ?: gate.assetCategory ?: "required"}"
+        "altcha_pow" -> "Proof-of-work check"
+        "unique_human" -> {
+            val providers = gate.acceptedProviders
+                ?.takeIf { it.isNotEmpty() }
+                ?.joinToString(prefix = " via ") { verificationProviderLabel(it) }
+                .orEmpty()
+            "Unique human proof$providers"
+        }
+        "age_over_18" -> "Age 18+"
+        "minimum_age" -> "Age ${gate.requiredMinimumAge ?: gate.requiredValue ?: "required"}+"
+        "nationality" -> "Nationality: ${formatCountryRequirement(gate)}"
+        "gender" -> "Document marker: ${gate.requiredValue ?: "required"}"
+        "wallet_score" -> "Wallet score: ${gate.minimumScore ?: gate.requiredValue ?: "required"}+"
+        "erc721_holding" -> "NFT gate: ${gate.assetFilterLabel ?: gate.contractAddress ?: "configured"}"
+        "erc721_inventory_match" -> "Inventory gate: ${gate.assetFilterLabel ?: gate.assetCategory ?: "required"}"
         else -> gate.gateType.replace('_', ' ')
     }
+
+private fun verificationProviderLabel(provider: String?): String =
+    when (provider) {
+        "self" -> "Self"
+        "very" -> "Very"
+        "passport" -> "Passport"
+        else -> provider?.replace('_', ' ') ?: "verification"
+    }
+
+private fun formatCountryRequirement(gate: MembershipGateSummary): String {
+    val countries = gate.requiredValues?.takeIf { it.isNotEmpty() }
+        ?: gate.requiredValue?.takeIf { it.isNotBlank() }?.let(::listOf)
+        ?: return "required"
+    return countries.joinToString(", ") { countryCodeToName(it) }
+}
+
+private fun countryCodeToName(value: String): String {
+    val code = value.trim()
+    if (code.length != 2) return code.ifBlank { "required" }
+    return runCatching {
+        Locale.Builder()
+            .setRegion(code.uppercase(Locale.ROOT))
+            .build()
+            .getDisplayCountry(Locale.getDefault())
+            .takeIf { it.isNotBlank() }
+    }.getOrNull() ?: code
+}
+
+private fun requiresProofOfWork(eligibility: JoinEligibility?): Boolean =
+    eligibility?.missingCapabilities?.contains("altcha_pow") == true ||
+        eligibility?.membershipGateSummaries?.any { it.gateType == "altcha_pow" } == true
 
 private fun isSelfCapability(capability: String): Boolean =
     capability == "unique_human" ||
         capability == "age_over_18" ||
+        capability == "minimum_age" ||
         capability == "nationality" ||
         capability == "gender"
 
@@ -689,6 +816,25 @@ private fun referenceLinkText(link: CommunityReferenceLink): String {
     val label = link.label ?: link.platform ?: "Link"
     return "$label: ${link.url}"
 }
+
+private fun songTitle(post: LocalizedPostResponse): String =
+    post.songPresentation?.title
+        ?: post.post.songTitle
+        ?: post.translatedTitle
+        ?: post.post.title
+        ?: "Untitled song"
+
+private fun durationLabel(durationMs: Long?): String? {
+    val totalSeconds = durationMs?.takeIf { it > 0 }?.div(1000) ?: return null
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "$minutes:${seconds.toString().padStart(2, '0')}"
+}
+
+private fun postAuthorLabel(post: LocalizedPostResponse): String =
+    post.post.anonymousLabel
+        ?: post.post.authorUserId?.take(16)?.let { "$it.pirate" }
+        ?: "anonymous"
 
 private fun List<LocalizedPostResponse>.withPostVote(postId: String, value: Int): List<LocalizedPostResponse> =
     map { post ->
@@ -752,14 +898,22 @@ private fun CommunityHeaderActions(
                     loading = joinLoading,
                     modifier = Modifier.fillMaxWidth(),
                 )
-                "verification_required" ->
-                    if (eligibility.suggestedVerificationProvider == "self") {
+                "verification_required" -> {
+                    if (requiresProofOfWork(eligibility)) {
+                        PirateButton(
+                            text = "Proof-of-work required",
+                            onClick = {},
+                            enabled = false,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else if (eligibility.suggestedVerificationProvider == "self") {
                         PirateButton(
                             text = "Verify with ID",
                             onClick = onVerify,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
+                }
             }
         }
     }
@@ -996,6 +1150,201 @@ private fun RulesSection(
 }
 
 @Composable
+private fun PostEngagementRow(
+    score: Int,
+    viewerVote: Int?,
+    comments: Int,
+    isVoting: Boolean,
+    onVote: (Int) -> Unit,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        VoteControl(
+            score = score,
+            viewerVote = viewerVote,
+            enabled = !isVoting,
+            onVote = onVote,
+        )
+        Surface(
+            shape = RoundedCornerShape(PirateTokens.radius.full),
+            color = PirateTokens.colors.surfaceSubtle,
+            border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = PhosphorIcons.ChatCircle,
+                    contentDescription = null,
+                    tint = PirateTokens.colors.textSecondary,
+                )
+                Text(
+                    text = comments.toString(),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = PirateTokens.colors.textPrimary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SongPostRow(
+    post: LocalizedPostResponse,
+    communityName: String,
+    isVoting: Boolean,
+    canPlay: Boolean,
+    isBuffering: Boolean,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    onPlayPause: () -> Unit,
+    onVote: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val title = songTitle(post)
+    val body = post.translatedBody ?: post.post.body
+    val score = post.upvoteCount - post.downvoteCount
+    val comments = post.threadSnapshot?.commentCount ?: 0
+    val coverArtSrc = resolvePublicMediaSrc(post.songPresentation?.coverArtRef)
+    val duration = durationLabel(post.songPresentation?.durationMs)
+    val authorLabel = postAuthorLabel(post)
+
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        color = PirateTokens.colors.bgPage,
+        shape = RoundedCornerShape(0.dp),
+        border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                UserAvatar(label = authorLabel)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = authorLabel,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${relativeTimeLabel(post.post.createdAt)} - $communityName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SongArtwork(
+                    label = title,
+                    artworkSrc = coverArtSrc,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = PirateTokens.colors.textPrimary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    duration?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = PirateTokens.colors.textSecondary,
+                        )
+                    }
+                    body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
+                        Text(
+                            text = bodyText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Surface(
+                    modifier = Modifier.clickable(
+                        enabled = canPlay,
+                        onClick = onPlayPause,
+                    ),
+                    shape = RoundedCornerShape(PirateTokens.radius.full),
+                    color = if (canPlay) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceDisabled,
+                ) {
+                    Icon(
+                        imageVector = when {
+                            !canPlay -> PhosphorIcons.Lock
+                            isBuffering -> PhosphorIcons.MusicNotes
+                            isPlaying -> PhosphorIcons.Pause
+                            else -> PhosphorIcons.Play
+                        },
+                        contentDescription = when {
+                            !canPlay -> "Song locked"
+                            isBuffering -> "Loading song"
+                            isPlaying -> "Pause song"
+                            else -> "Play song"
+                        },
+                        tint = Color.White,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
+            PostEngagementRow(
+                score = score,
+                viewerVote = post.viewerVote,
+                comments = comments,
+                isVoting = isVoting,
+                onVote = onVote,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SongArtwork(label: String, artworkSrc: String?) {
+    Box(
+        modifier = Modifier
+            .size(76.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(PirateTokens.colors.surfaceSubtle),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (artworkSrc != null) {
+            AsyncImage(
+                model = artworkSrc,
+                contentDescription = label,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Icon(
+                imageVector = PhosphorIcons.MusicNote,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+            )
+        }
+    }
+}
+
+@Composable
 private fun CommunityPostRow(
     post: LocalizedPostResponse,
     communityName: String,
@@ -1008,9 +1357,7 @@ private fun CommunityPostRow(
     val body = post.translatedBody ?: post.post.body
     val score = post.upvoteCount - post.downvoteCount
     val comments = post.threadSnapshot?.commentCount ?: 0
-    val authorLabel = post.post.anonymousLabel
-        ?: post.post.authorUserId?.take(16)?.let { "$it.pirate" }
-        ?: "anonymous"
+    val authorLabel = postAuthorLabel(post)
 
     Surface(
         modifier = modifier.clickable(onClick = onClick),
@@ -1058,39 +1405,13 @@ private fun CommunityPostRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                VoteControl(
-                    score = score,
-                    viewerVote = post.viewerVote,
-                    enabled = !isVoting,
-                    onVote = onVote,
-                )
-                Surface(
-                    shape = RoundedCornerShape(PirateTokens.radius.full),
-                    color = PirateTokens.colors.surfaceSubtle,
-                    border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = PhosphorIcons.ChatCircle,
-                            contentDescription = null,
-                            tint = PirateTokens.colors.textSecondary,
-                        )
-                        Text(
-                            text = comments.toString(),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = PirateTokens.colors.textPrimary,
-                        )
-                    }
-                }
-            }
+            PostEngagementRow(
+                score = score,
+                viewerVote = post.viewerVote,
+                comments = comments,
+                isVoting = isVoting,
+                onVote = onVote,
+            )
         }
     }
 }

@@ -21,6 +21,7 @@ class ApiError(
     message: String,
     val status: Int,
     val retryable: Boolean = false,
+    val details: GateFailureDetails? = null,
 ) : Exception(message)
 
 private fun displayApiErrorMessage(error: ErrorResponse?, status: Int): String {
@@ -31,6 +32,9 @@ private fun displayApiErrorMessage(error: ErrorResponse?, status: Int): String {
         else -> error?.message ?: "Request failed with status $status"
     }
 }
+
+private fun String?.toAltchaHeader(): Map<String, String> =
+    if (isNullOrBlank()) emptyMap() else mapOf("X-Pirate-Altcha" to this)
 
 class ApiClient(private val sessionStore: SessionStore) {
 
@@ -52,6 +56,7 @@ class ApiClient(private val sessionStore: SessionStore) {
         body: String? = null,
         requireAuth: Boolean = true,
         optionalAuth: Boolean = false,
+        headers: Map<String, String> = emptyMap(),
     ): String {
         val response = withContext(Dispatchers.IO) {
             val url = "$baseUrl$path"
@@ -65,6 +70,9 @@ class ApiClient(private val sessionStore: SessionStore) {
             }
 
             requestBuilder.header("Content-Type", "application/json")
+            headers.forEach { (name, value) ->
+                requestBuilder.header(name, value)
+            }
 
             when {
                 method == "GET" -> { /* default */ }
@@ -96,6 +104,7 @@ class ApiClient(private val sessionStore: SessionStore) {
                 message = displayApiErrorMessage(errorResponse, response.status),
                 status = response.status,
                 retryable = errorResponse?.retryable == true,
+                details = errorResponse?.details,
             )
         }
 
@@ -119,6 +128,13 @@ class ApiClient(private val sessionStore: SessionStore) {
 
     internal suspend fun postString(path: String, body: String? = null, requireAuth: Boolean = true): String =
         request(path, "POST", body, requireAuth)
+
+    internal suspend fun postString(
+        path: String,
+        body: String? = null,
+        requireAuth: Boolean = true,
+        headers: Map<String, String> = emptyMap(),
+    ): String = request(path, "POST", body, requireAuth, headers = headers)
 
     private suspend fun patchString(path: String, body: String): String =
         request(path, "PATCH", body)
@@ -160,6 +176,7 @@ class ApiClient(private val sessionStore: SessionStore) {
                 message = displayApiErrorMessage(errorResponse, response.status),
                 status = response.status,
                 retryable = errorResponse?.retryable == true,
+                details = errorResponse?.details,
             )
         }
 
@@ -204,6 +221,7 @@ class ApiClient(private val sessionStore: SessionStore) {
                 message = displayApiErrorMessage(errorResponse, response.status),
                 status = response.status,
                 retryable = errorResponse?.retryable == true,
+                details = errorResponse?.details,
             )
         }
 
@@ -261,6 +279,15 @@ class ApiClient(private val sessionStore: SessionStore) {
     }
 
     class VerificationEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun getAltchaChallenge(scope: String, action: String): AltchaChallenge {
+            val path = api.buildQueryPath(
+                "/verification/altcha/challenge",
+                listOf("scope" to scope, "action" to action),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(AltchaChallenge.serializer(), response)
+        }
+
         suspend fun startSession(input: StartVerificationSessionRequest): VerificationSession {
             val body = api.json.encodeToString(StartVerificationSessionRequest.serializer(), input)
             val response = api.postString("/verification-sessions", body)
@@ -358,8 +385,11 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(JoinEligibility.serializer(), response)
         }
 
-        suspend fun join(communityId: String): CommunityJoinResponse {
-            val response = api.postString("/communities/$communityId/join")
+        suspend fun join(communityId: String, altchaHeader: String? = null): CommunityJoinResponse {
+            val response = api.postString(
+                "/communities/$communityId/join",
+                headers = altchaHeader.toAltchaHeader(),
+            )
             return api.json.decodeFromString(CommunityJoinResponse.serializer(), response)
         }
 
@@ -413,9 +443,17 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(PostListResponse.serializer(), response)
         }
 
-        suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse {
+        suspend fun createPost(
+            communityId: String,
+            request: CreatePostRequest,
+            altchaHeader: String? = null,
+        ): LocalizedPostResponse {
             val body = api.json.encodeToString(CreatePostRequest.serializer(), request)
-            val response = api.postString("/communities/$communityId/posts", body)
+            val response = api.postString(
+                "/communities/$communityId/posts",
+                body,
+                headers = altchaHeader.toAltchaHeader(),
+            )
             return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
         }
 
@@ -491,15 +529,31 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(DerivativeSourceListResponse.serializer(), response)
         }
 
-        suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom {
+        suspend fun createLiveRoom(
+            communityId: String,
+            request: CreateLiveRoomRequest,
+            altchaHeader: String? = null,
+        ): LiveRoom {
             val body = api.json.encodeToString(CreateLiveRoomRequest.serializer(), request)
-            val response = api.postString("/communities/$communityId/live-rooms", body)
+            val response = api.postString(
+                "/communities/$communityId/live-rooms",
+                body,
+                headers = altchaHeader.toAltchaHeader(),
+            )
             return api.json.decodeFromString(LiveRoom.serializer(), response)
         }
 
-        suspend fun publishLiveRoom(communityId: String, request: PublishLiveRoomRequest): PublishLiveRoomResponse {
+        suspend fun publishLiveRoom(
+            communityId: String,
+            request: PublishLiveRoomRequest,
+            altchaHeader: String? = null,
+        ): PublishLiveRoomResponse {
             val body = api.json.encodeToString(PublishLiveRoomRequest.serializer(), request)
-            val response = api.postString("/communities/$communityId/live-rooms/publish", body)
+            val response = api.postString(
+                "/communities/$communityId/live-rooms/publish",
+                body,
+                headers = altchaHeader.toAltchaHeader(),
+            )
             return api.json.decodeFromString(PublishLiveRoomResponse.serializer(), response)
         }
 
@@ -675,9 +729,14 @@ class ApiClient(private val sessionStore: SessionStore) {
             communityId: String,
             postId: String,
             request: CreateCommentRequest,
+            altchaHeader: String? = null,
         ) {
             val body = api.json.encodeToString(CreateCommentRequest.serializer(), request)
-            api.postString("/communities/$communityId/posts/$postId/comments", body)
+            api.postString(
+                "/communities/$communityId/posts/$postId/comments",
+                body,
+                headers = altchaHeader.toAltchaHeader(),
+            )
         }
     }
 
@@ -801,9 +860,17 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(CommentListResponse.serializer(), response)
         }
 
-        suspend fun createReply(commentId: String, request: CreateCommentRequest) {
+        suspend fun createReply(
+            commentId: String,
+            request: CreateCommentRequest,
+            altchaHeader: String? = null,
+        ) {
             val body = api.json.encodeToString(CreateCommentRequest.serializer(), request)
-            api.postString("/comments/$commentId/replies", body)
+            api.postString(
+                "/comments/$commentId/replies",
+                body,
+                headers = altchaHeader.toAltchaHeader(),
+            )
         }
 
         suspend fun vote(commentId: String, value: Int): CommentVoteResponse {

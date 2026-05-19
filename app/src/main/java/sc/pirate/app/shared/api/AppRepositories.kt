@@ -85,7 +85,7 @@ interface CommunityRepository {
     suspend fun getPublicPreview(communityId: String, locale: String? = null): CommunityPreview
     suspend fun searchPublicCommunities(query: String, limit: Int? = null): PublicCommunitySearchResponse
     suspend fun getJoinEligibility(communityId: String): JoinEligibility
-    suspend fun joinCommunity(communityId: String): CommunityJoinResponse
+    suspend fun joinCommunity(communityId: String, altchaHeader: String? = null): CommunityJoinResponse
     suspend fun followCommunity(communityId: String): CommunityFollowResponse
     suspend fun unfollowCommunity(communityId: String): CommunityFollowResponse
     suspend fun listPosts(
@@ -104,7 +104,11 @@ interface CommunityRepository {
         sort: String? = null,
         flairId: String? = null,
     ): PostListResponse
-    suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse
+    suspend fun createPost(
+        communityId: String,
+        request: CreatePostRequest,
+        altchaHeader: String? = null,
+    ): LocalizedPostResponse
     suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String
     suspend fun createArtifactUpload(
         communityId: String,
@@ -122,8 +126,16 @@ interface CommunityRepository {
         query: String? = null,
         limit: Int? = null,
     ): DerivativeSourceListResponse
-    suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom
-    suspend fun publishLiveRoom(communityId: String, request: PublishLiveRoomRequest): PublishLiveRoomResponse
+    suspend fun createLiveRoom(
+        communityId: String,
+        request: CreateLiveRoomRequest,
+        altchaHeader: String? = null,
+    ): LiveRoom
+    suspend fun publishLiveRoom(
+        communityId: String,
+        request: PublishLiveRoomRequest,
+        altchaHeader: String? = null,
+    ): PublishLiveRoomResponse
     suspend fun hostAttachLiveRoom(
         communityId: String,
         liveRoomId: String,
@@ -188,7 +200,12 @@ interface PostRepository {
         locale: String? = null,
         sort: String? = null,
     ): CommentListResponse
-    suspend fun createComment(communityId: String, postId: String, request: CreateCommentRequest)
+    suspend fun createComment(
+        communityId: String,
+        postId: String,
+        request: CreateCommentRequest,
+        altchaHeader: String? = null,
+    )
     suspend fun listReplies(
         commentId: String,
         limit: Int? = null,
@@ -203,7 +220,11 @@ interface PostRepository {
         locale: String? = null,
         sort: String? = null,
     ): CommentListResponse
-    suspend fun createReply(commentId: String, request: CreateCommentRequest)
+    suspend fun createReply(
+        commentId: String,
+        request: CreateCommentRequest,
+        altchaHeader: String? = null,
+    )
     suspend fun voteComment(commentId: String, value: Int): CommentVoteResponse
 }
 
@@ -311,8 +332,8 @@ class ApiCommunityRepository(
         return apiClient.communities.getJoinEligibility(communityId)
     }
 
-    override suspend fun joinCommunity(communityId: String): CommunityJoinResponse {
-        return apiClient.communities.join(communityId)
+    override suspend fun joinCommunity(communityId: String, altchaHeader: String?): CommunityJoinResponse {
+        return apiClient.communities.join(communityId, altchaHeader)
     }
 
     override suspend fun followCommunity(communityId: String): CommunityFollowResponse {
@@ -359,8 +380,12 @@ class ApiCommunityRepository(
         )
     }
 
-    override suspend fun createPost(communityId: String, request: CreatePostRequest): LocalizedPostResponse {
-        return apiClient.communities.createPost(communityId, request)
+    override suspend fun createPost(
+        communityId: String,
+        request: CreatePostRequest,
+        altchaHeader: String?,
+    ): LocalizedPostResponse {
+        return apiClient.communities.createPost(communityId, request, altchaHeader)
     }
 
     override suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String {
@@ -402,15 +427,20 @@ class ApiCommunityRepository(
         return apiClient.communities.listDerivativeSources(communityId, kind, query, limit)
     }
 
-    override suspend fun createLiveRoom(communityId: String, request: CreateLiveRoomRequest): LiveRoom {
-        return apiClient.communities.createLiveRoom(communityId, request)
+    override suspend fun createLiveRoom(
+        communityId: String,
+        request: CreateLiveRoomRequest,
+        altchaHeader: String?,
+    ): LiveRoom {
+        return apiClient.communities.createLiveRoom(communityId, request, altchaHeader)
     }
 
     override suspend fun publishLiveRoom(
         communityId: String,
         request: PublishLiveRoomRequest,
+        altchaHeader: String?,
     ): PublishLiveRoomResponse {
-        return apiClient.communities.publishLiveRoom(communityId, request)
+        return apiClient.communities.publishLiveRoom(communityId, request, altchaHeader)
     }
 
     override suspend fun hostAttachLiveRoom(
@@ -563,8 +593,13 @@ class ApiPostRepository(
         )
     }
 
-    override suspend fun createComment(communityId: String, postId: String, request: CreateCommentRequest) {
-        apiClient.communities.createComment(communityId, postId, request)
+    override suspend fun createComment(
+        communityId: String,
+        postId: String,
+        request: CreateCommentRequest,
+        altchaHeader: String?,
+    ) {
+        apiClient.communities.createComment(communityId, postId, request, altchaHeader)
     }
 
     override suspend fun listPublicReplies(
@@ -599,8 +634,12 @@ class ApiPostRepository(
         )
     }
 
-    override suspend fun createReply(commentId: String, request: CreateCommentRequest) {
-        apiClient.comments.createReply(commentId, request)
+    override suspend fun createReply(
+        commentId: String,
+        request: CreateCommentRequest,
+        altchaHeader: String?,
+    ) {
+        apiClient.comments.createReply(commentId, request, altchaHeader)
     }
 
     override suspend fun voteComment(commentId: String, value: Int): CommentVoteResponse {
