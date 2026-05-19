@@ -17,6 +17,8 @@ import sc.pirate.app.shared.api.ApiProfileRepository
 import sc.pirate.app.shared.api.ApiVerificationRepository
 import sc.pirate.app.shared.api.AppRepositories
 import sc.pirate.app.chat.XmtpChatService
+import sc.pirate.app.communities.KnownCommunitiesStore
+import sc.pirate.app.home.HomeFeedCache
 import sc.pirate.app.verification.VerificationCoordinator
 import sc.pirate.app.walletconnect.ReownManager
 
@@ -39,6 +41,8 @@ class PirateApp : Application(), ImageLoaderFactory {
     val sessionRefresher by lazy { SessionRefresher(this) }
     val reownManager by lazy { ReownManager(this) }
     val chatService by lazy { XmtpChatService(this) }
+    val knownCommunitiesStore by lazy { KnownCommunitiesStore(this) }
+    val homeFeedCache by lazy { HomeFeedCache() }
 
     override fun onCreate() {
         super.onCreate()

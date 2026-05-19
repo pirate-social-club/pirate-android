@@ -34,6 +34,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -62,10 +64,17 @@ import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
@@ -93,12 +102,14 @@ import sc.pirate.app.ui.adjustedVoteCount
 
 data class HomeUiState(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val loadingMore: Boolean = false,
     val feed: HomeFeedResponse? = null,
     val activeSort: String = "best",
     val topTimeRange: String = "day",
     val error: String? = null,
     val paginationError: String? = null,
+    val refreshError: String? = null,
     val followError: String? = null,
     val voteError: String? = null,
     val votingPostIds: Set<String> = emptySet(),
@@ -125,9 +136,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val feedRepository get() = app.repositories.feedRepository
     private val postRepository get() = app.repositories.postRepository
     private val communityRepository get() = app.repositories.communityRepository
+    private val homeFeedCache get() = app.homeFeedCache
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
+    private val enrichmentJobs = mutableSetOf<Job>()
 
     init {
         load()
@@ -135,6 +148,56 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun load() {
         load(sort = _state.value.activeSort, timeRange = _state.value.topTimeRange)
+    }
+
+    fun refresh() {
+        val current = _state.value
+        if (current.loading || current.refreshing || current.loadingMore) return
+        val sort = current.activeSort
+        val timeRange = current.topTimeRange
+        viewModelScope.launch {
+            _state.value = current.copy(refreshing = true, error = null, refreshError = null)
+            try {
+                val key = cacheKey(sort, timeRange)
+                val feed = feedRepository.home(
+                    sort = sort,
+                    timeRange = if (sort == "top") timeRange else null,
+                )
+                homeFeedCache.put(key, feed)
+                _state.value = _state.value.withFeed(
+                    refreshing = false,
+                    loading = false,
+                    feed = feed,
+                    activeSort = sort,
+                    topTimeRange = timeRange,
+                    voteError = null,
+                    refreshError = null,
+                    viewerUserId = app.sessionStore.get()?.user?.userId ?: _state.value.viewerUserId,
+                    liveRoomAccessById = emptyMap(),
+                    listingsByAssetId = emptyMap(),
+                    listingsByLiveRoomId = emptyMap(),
+                    purchasesByAssetId = emptyMap(),
+                    purchasesByLiveRoomId = emptyMap(),
+                )
+                loadEnrichmentInBackground(key, feed.items, replaceExisting = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    refreshing = false,
+                    error = if (_state.value.feed?.items.isNullOrEmpty()) {
+                        e.message ?: "Could not refresh home feed"
+                    } else {
+                        null
+                    },
+                    refreshError = if (_state.value.feed?.items.isNullOrEmpty()) {
+                        null
+                    } else {
+                        e.message ?: "Could not refresh home feed"
+                    },
+                )
+            }
+        }
     }
 
     fun setSort(sort: String) {
@@ -171,6 +234,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     feed = _state.value.feed?.withCommunityFollow(communityId, response.following),
                     followingCommunityIds = _state.value.followingCommunityIds - communityId,
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     feed = _state.value.feed?.withCommunityFollow(communityId, currentlyFollowing),
@@ -183,9 +248,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun load(sort: String, timeRange: String) {
         viewModelScope.launch {
+            val key = cacheKey(sort, timeRange)
+            val cached = homeFeedCache.get(key)
+            if (cached != null) {
+                _state.value = _state.value.withFeed(
+                    loading = false,
+                    feed = cached.feed,
+                    activeSort = sort,
+                    topTimeRange = timeRange,
+                    viewerUserId = app.sessionStore.get()?.user?.userId,
+                )
+                loadEnrichmentInBackground(key, cached.feed.items, replaceExisting = true)
+                if (cached.fresh) return@launch
+            }
+
             _state.value = _state.value.copy(
-                loading = true,
+                loading = cached == null,
                 error = null,
+                refreshError = null,
                 voteError = null,
                 activeSort = sort,
                 topTimeRange = timeRange,
@@ -195,26 +275,31 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     sort = sort,
                     timeRange = if (sort == "top") timeRange else null,
                 )
-                val enrichment = loadCommerceEnrichment(feed.items)
-                _state.value = HomeUiState(
+                homeFeedCache.put(key, feed)
+                _state.value = _state.value.withFeed(
                     loading = false,
                     feed = feed,
                     activeSort = sort,
                     topTimeRange = timeRange,
-                    viewerUserId = enrichment.viewerUserId,
-                    liveRoomAccessById = enrichment.liveRoomAccessById,
-                    listingsByAssetId = enrichment.listingsByAssetId,
-                    listingsByLiveRoomId = enrichment.listingsByLiveRoomId,
-                    purchasesByAssetId = enrichment.purchasesByAssetId,
-                    purchasesByLiveRoomId = enrichment.purchasesByLiveRoomId,
+                    viewerUserId = app.sessionStore.get()?.user?.userId,
                 )
+                loadEnrichmentInBackground(key, feed.items, replaceExisting = true)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                _state.value = HomeUiState(
-                    loading = false,
-                    activeSort = sort,
-                    topTimeRange = timeRange,
-                    error = e.message ?: "Could not load home feed",
-                )
+                if (cached != null) {
+                    _state.value = _state.value.copy(
+                        loading = false,
+                        refreshError = e.message ?: "Could not refresh home feed",
+                    )
+                } else {
+                    _state.value = HomeUiState(
+                        loading = false,
+                        activeSort = sort,
+                        topTimeRange = timeRange,
+                        error = e.message ?: "Could not load home feed",
+                    )
+                }
             }
         }
     }
@@ -223,7 +308,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val currentState = _state.value
         val currentFeed = currentState.feed ?: return
         val cursor = currentFeed.nextCursor ?: return
-        if (currentState.loadingMore) return
+        if (currentState.loadingMore || currentState.refreshing) return
 
         _state.value = currentState.copy(
             loadingMore = true,
@@ -237,17 +322,22 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     sort = currentState.activeSort,
                     timeRange = if (currentState.activeSort == "top") currentState.topTimeRange else null,
                 )
-                val enrichment = loadCommerceEnrichment(nextPage.items)
+                val nextFeed = _state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage)
+                homeFeedCache.put(
+                    cacheKey(currentState.activeSort, currentState.topTimeRange),
+                    nextFeed,
+                )
                 _state.value = _state.value.copy(
                     loadingMore = false,
-                    feed = _state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage),
-                    viewerUserId = enrichment.viewerUserId ?: _state.value.viewerUserId,
-                    liveRoomAccessById = _state.value.liveRoomAccessById + enrichment.liveRoomAccessById,
-                    listingsByAssetId = _state.value.listingsByAssetId + enrichment.listingsByAssetId,
-                    listingsByLiveRoomId = _state.value.listingsByLiveRoomId + enrichment.listingsByLiveRoomId,
-                    purchasesByAssetId = _state.value.purchasesByAssetId + enrichment.purchasesByAssetId,
-                    purchasesByLiveRoomId = _state.value.purchasesByLiveRoomId + enrichment.purchasesByLiveRoomId,
+                    feed = nextFeed,
                 )
+                loadEnrichmentInBackground(
+                    cacheKey(currentState.activeSort, currentState.topTimeRange),
+                    nextPage.items,
+                    replaceExisting = false,
+                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     loadingMore = false,
@@ -278,6 +368,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     feed = _state.value.feed?.withPostVote(postId, response.value),
                     votingPostIds = _state.value.votingPostIds - postId,
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     feed = _state.value.feed?.replacePostItem(previousItem),
@@ -286,6 +378,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    private suspend fun cacheKey(sort: String, timeRange: String): HomeFeedCacheKey {
+        return HomeFeedCacheKey(
+            userId = app.sessionStore.get()?.user?.userId,
+            sort = sort,
+            timeRange = if (sort == "top") timeRange else null,
+        )
+    }
+
+    private fun loadEnrichmentInBackground(
+        key: HomeFeedCacheKey,
+        items: List<HomeFeedItem>,
+        replaceExisting: Boolean,
+    ) {
+        if (replaceExisting) {
+            enrichmentJobs.forEach { it.cancel() }
+            enrichmentJobs.clear()
+        }
+        val job = viewModelScope.launch {
+            val enrichment = loadCommerceEnrichment(items)
+            val current = _state.value
+            if (cacheKey(current.activeSort, current.topTimeRange) != key) return@launch
+            _state.value = current.copy(
+                viewerUserId = enrichment.viewerUserId ?: current.viewerUserId,
+                liveRoomAccessById = current.liveRoomAccessById + enrichment.liveRoomAccessById,
+                listingsByAssetId = current.listingsByAssetId + enrichment.listingsByAssetId,
+                listingsByLiveRoomId = current.listingsByLiveRoomId + enrichment.listingsByLiveRoomId,
+                purchasesByAssetId = current.purchasesByAssetId + enrichment.purchasesByAssetId,
+                purchasesByLiveRoomId = current.purchasesByLiveRoomId + enrichment.purchasesByLiveRoomId,
+            )
+        }
+        enrichmentJobs.add(job)
+        job.invokeOnCompletion { enrichmentJobs.remove(job) }
     }
 
     private suspend fun loadCommerceEnrichment(items: List<HomeFeedItem>): CommerceEnrichment {
@@ -300,12 +426,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             .distinct()
 
         val liveRoomAccessById = mutableMapOf<String, LiveRoomAccessResponse>()
+        val requestLimiter = Semaphore(4)
 
         if (!hasSession) {
-            liveRoomRefs.forEach { (communityId, liveRoomId) ->
-                runCatching { communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId) }
-                    .getOrNull()
-                    ?.let { liveRoomAccessById[liveRoomId] = it }
+            supervisorScope {
+                liveRoomRefs.map { (communityId, liveRoomId) ->
+                    async {
+                        requestLimiter.withPermit {
+                            liveRoomId to runCatching {
+                                communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId)
+                            }.getOrNullUnlessCancelled()
+                        }
+                    }
+                }.awaitAll().forEach { (liveRoomId, access) ->
+                    if (access != null) liveRoomAccessById[liveRoomId] = access
+                }
             }
             return CommerceEnrichment(
                 liveRoomAccessById = liveRoomAccessById,
@@ -324,26 +459,44 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         val purchasesByAssetId = mutableMapOf<String, CommunityPurchase>()
         val purchasesByLiveRoomId = mutableMapOf<String, CommunityPurchase>()
 
-        communityIds.forEach { communityId ->
-            runCatching { communityRepository.listListings(communityId).items }
-                .getOrDefault(emptyList())
-                .forEach { listing ->
+        supervisorScope {
+            val commerceResults = async {
+                communityIds.map { communityId ->
+                    async {
+                        requestLimiter.withPermit {
+                            val listings = runCatching { communityRepository.listListings(communityId).items }
+                                .getOrDefaultUnlessCancelled(emptyList())
+                            val purchases = runCatching { communityRepository.listPurchases(communityId).items }
+                                .getOrDefaultUnlessCancelled(emptyList())
+                            listings to purchases
+                        }
+                    }
+                }.awaitAll()
+            }
+            val liveRoomAccessResults = async {
+                liveRoomRefs.map { (communityId, liveRoomId) ->
+                    async {
+                        requestLimiter.withPermit {
+                            liveRoomId to getLiveRoomAccessUnlessCancelled(communityId, liveRoomId)
+                        }
+                    }
+                }.awaitAll()
+            }
+
+            commerceResults.await().forEach { (listings, purchases) ->
+                listings.forEach { listing ->
                     listing.asset?.takeIf { it.isNotBlank() }?.let { listingsByAssetId[it] = listing }
                     listing.liveRoom?.takeIf { it.isNotBlank() }?.let { listingsByLiveRoomId[it] = listing }
                 }
-            runCatching { communityRepository.listPurchases(communityId).items }
-                .getOrDefault(emptyList())
-                .forEach { purchase ->
+                purchases.forEach { purchase ->
                     purchase.asset?.takeIf { it.isNotBlank() }?.let { purchasesByAssetId[it] = purchase }
                     purchase.liveRoom?.takeIf { it.isNotBlank() }?.let { purchasesByLiveRoomId[it] = purchase }
                 }
-        }
+            }
 
-        liveRoomRefs.forEach { (communityId, liveRoomId) ->
-            runCatching { communityRepository.getLiveRoomAccess(communityId, liveRoomId) }
-                .recoverCatching { communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId) }
-                .getOrNull()
-                ?.let { liveRoomAccessById[liveRoomId] = it }
+            liveRoomAccessResults.await().forEach { (liveRoomId, access) ->
+                if (access != null) liveRoomAccessById[liveRoomId] = access
+            }
         }
 
         return CommerceEnrichment(
@@ -355,7 +508,78 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             viewerUserId = session?.user?.userId,
         )
     }
+
+    private suspend fun getLiveRoomAccessUnlessCancelled(
+        communityId: String,
+        liveRoomId: String,
+    ): LiveRoomAccessResponse? {
+        return try {
+            communityRepository.getLiveRoomAccess(communityId, liveRoomId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            try {
+                communityRepository.getPublicLiveRoomAccess(communityId, liveRoomId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
 }
+
+private fun HomeUiState.withFeed(
+    loading: Boolean,
+    feed: HomeFeedResponse,
+    activeSort: String,
+    topTimeRange: String,
+    viewerUserId: String?,
+    refreshing: Boolean = false,
+    voteError: String? = null,
+    refreshError: String? = null,
+    liveRoomAccessById: Map<String, LiveRoomAccessResponse> = emptyMap(),
+    listingsByAssetId: Map<String, CommunityListing> = emptyMap(),
+    listingsByLiveRoomId: Map<String, CommunityListing> = emptyMap(),
+    purchasesByAssetId: Map<String, CommunityPurchase> = emptyMap(),
+    purchasesByLiveRoomId: Map<String, CommunityPurchase> = emptyMap(),
+): HomeUiState = copy(
+    loading = loading,
+    refreshing = refreshing,
+    loadingMore = false,
+    feed = feed,
+    activeSort = activeSort,
+    topTimeRange = topTimeRange,
+    error = null,
+    paginationError = null,
+    refreshError = refreshError,
+    followError = null,
+    voteError = voteError,
+    viewerUserId = viewerUserId,
+    liveRoomAccessById = liveRoomAccessById,
+    listingsByAssetId = listingsByAssetId,
+    listingsByLiveRoomId = listingsByLiveRoomId,
+    purchasesByAssetId = purchasesByAssetId,
+    purchasesByLiveRoomId = purchasesByLiveRoomId,
+)
+
+private fun <T> Result<T>.getOrNullUnlessCancelled(): T? =
+    fold(
+        onSuccess = { it },
+        onFailure = { error ->
+            if (error is CancellationException) throw error
+            null
+        },
+    )
+
+private fun <T> Result<T>.getOrDefaultUnlessCancelled(defaultValue: T): T =
+    fold(
+        onSuccess = { it },
+        onFailure = { error ->
+            if (error is CancellationException) throw error
+            defaultValue
+        },
+    )
 
 private fun HomeFeedResponse.appendPage(nextPage: HomeFeedResponse): HomeFeedResponse =
     copy(
@@ -527,43 +751,49 @@ fun HomeScreen(
             },
             modifier = modifier,
         ) { innerPadding ->
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = state.refreshing,
+                onRefresh = viewModel::refresh,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .background(PirateTokens.colors.bgPage),
-                horizontalAlignment = Alignment.Start,
+                    .padding(innerPadding),
             ) {
-                when {
-                    state.loading -> {
-                        item {
-                            Box(
-                                modifier = Modifier.fillParentMaxSize(),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                CircularProgressIndicator(
-                                    color = PirateTokens.colors.accentBrand,
-                                    modifier = Modifier.size(28.dp),
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(PirateTokens.colors.bgPage),
+                    horizontalAlignment = Alignment.Start,
+                ) {
+                    when {
+                        state.loading -> {
+                            item {
+                                Box(
+                                    modifier = Modifier.fillParentMaxSize(),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        color = PirateTokens.colors.accentBrand,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
+                            }
+                        }
+
+                        state.error != null -> {
+                            item {
+                                HomeCenteredState(
+                                    title = "Feed unavailable",
+                                    description = userFacingFeedError(state.error),
+                                    actionText = "Retry",
+                                    onAction = viewModel::load,
+                                    modifier = Modifier.fillParentMaxSize(),
                                 )
                             }
                         }
-                    }
 
-                    state.error != null -> {
-                        item {
-                            HomeCenteredState(
-                                title = "Feed unavailable",
-                                description = userFacingFeedError(state.error),
-                                actionText = "Retry",
-                                onAction = viewModel::load,
-                                modifier = Modifier.fillParentMaxSize(),
-                            )
-                        }
-                    }
-
-                    feed == null || feed.items.isEmpty() -> {
-                        item {
-                            HomeCenteredState(
+                        feed == null || feed.items.isEmpty() -> {
+                            item {
+                                HomeCenteredState(
                                 title = "No posts yet",
                                 description = "Join or create a community to start building your feed.",
                                 modifier = Modifier.fillParentMaxSize(),
@@ -587,6 +817,16 @@ fun HomeScreen(
                                 HomeInlineMessage(
                                     title = "More posts unavailable",
                                     description = state.paginationError.orEmpty(),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                )
+                            }
+                        }
+
+                        if (state.refreshError != null) {
+                            item {
+                                HomeInlineMessage(
+                                    title = "Refresh failed",
+                                    description = state.refreshError.orEmpty(),
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                                 )
                             }
@@ -634,6 +874,7 @@ fun HomeScreen(
                                 )
                             }
                         }
+                    }
                     }
                 }
             }
