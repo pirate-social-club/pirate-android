@@ -39,6 +39,25 @@ download if `gh run download` hangs, unzips the APK, handles debug-signature
 mismatches by uninstalling only `sc.pirate.mobile.blacksmith`, installs with adb,
 and verifies the installed package. It must not uninstall `sc.pirate.mobile`.
 
+Important package/API split:
+
+- `android-ci.yml` builds the debug "Pirate Blacksmith" app:
+  - package: `sc.pirate.mobile.blacksmith`
+  - API: `https://api-staging.pirate.sc`
+  - install helper: `rtk ./scripts/install-blacksmith-apk.sh --ref <pushed-ref> --launch`
+- `android-release-apk.yml` builds the production "Pirate" app:
+  - package: `sc.pirate.mobile`
+  - API: `https://api.pirate.sc`
+  - direct phone install path:
+
+```bash
+rtk gh workflow run android-release-apk.yml --ref <pushed-ref>
+rtk gh run watch <run-id> --exit-status
+rtk gh run download <run-id> -n release-apk -D /tmp/pirate-android-prod-release-<run-id>
+rtk /home/t42/Android/Sdk/platform-tools/adb install -r /tmp/pirate-android-prod-release-<run-id>/app-release.apk
+rtk /home/t42/Android/Sdk/platform-tools/adb shell monkey -p sc.pirate.mobile -c android.intent.category.LAUNCHER 1
+```
+
 ## Slow Machine Policy
 
 - Static review locally; build and compile verification on Blacksmith.

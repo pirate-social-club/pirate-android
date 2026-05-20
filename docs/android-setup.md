@@ -38,15 +38,37 @@ The heavier APK workflow is:
 Use the heavier workflow when a debug APK artifact is needed. Use compile-only
 for day-to-day Kotlin/Compose verification.
 
+That debug APK is the staging "Pirate Blacksmith" app:
+
+- package: `sc.pirate.mobile.blacksmith`
+- API: `https://api-staging.pirate.sc`
+- install helper: `rtk ./scripts/install-blacksmith-apk.sh --ref <pushed-ref> --launch`
+
 Production release artifacts use:
 
 - [android-release-bundle.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-release-bundle.yml)
+- [android-release-apk.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-release-apk.yml)
 - runner: `blacksmith-4vcpu-ubuntu-2404`
 - tasks: `bundleRelease`, `assembleRelease`
 
 Use this release workflow when a Play AAB or production APK artifact is needed.
 Do not create those artifacts with local Gradle during the normal
 install/screenshot/release loop.
+
+The release APK is the production "Pirate" app:
+
+- package: `sc.pirate.mobile`
+- API: `https://api.pirate.sc`
+
+Production phone install path:
+
+```bash
+rtk gh workflow run android-release-apk.yml --ref <pushed-ref>
+rtk gh run watch <run-id> --exit-status
+rtk gh run download <run-id> -n release-apk -D /tmp/pirate-android-prod-release-<run-id>
+rtk /home/t42/Android/Sdk/platform-tools/adb install -r /tmp/pirate-android-prod-release-<run-id>/app-release.apk
+rtk /home/t42/Android/Sdk/platform-tools/adb shell monkey -p sc.pirate.mobile -c android.intent.category.LAUNCHER 1
+```
 
 ## Local Requirements
 

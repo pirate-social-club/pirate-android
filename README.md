@@ -49,6 +49,17 @@ was signed by a different debug key, the script uninstalls only
 `sc.pirate.mobile.blacksmith` and reinstalls. The release package `sc.pirate.mobile`
 is not touched.
 
+This is a staging/debug app:
+
+```text
+label: Pirate Blacksmith
+package: sc.pirate.mobile.blacksmith
+API: https://api-staging.pirate.sc
+```
+
+It is expected to show staging feed data. Use the release APK workflow below
+when the production Pirate app on a phone needs the latest code.
+
 ## Play Store Bundle
 
 Google Play uploads should use the signed Android App Bundle produced by
@@ -100,6 +111,24 @@ app/build/outputs/bundle/release/app-release.aab
 When a production APK is needed for a directly attached phone, use the same
 Blacksmith release workflow and download the `release-apk` artifact. Do not
 assemble a release APK locally for the normal screenshot/install loop.
+
+Production phone install path:
+
+```bash
+rtk gh workflow run android-release-apk.yml --ref <pushed-branch-or-commit>
+rtk gh run watch <run-id> --exit-status
+rtk gh run download <run-id> -n release-apk -D /tmp/pirate-android-prod-release-<run-id>
+rtk /home/t42/Android/Sdk/platform-tools/adb install -r /tmp/pirate-android-prod-release-<run-id>/app-release.apk
+rtk /home/t42/Android/Sdk/platform-tools/adb shell monkey -p sc.pirate.mobile -c android.intent.category.LAUNCHER 1
+```
+
+This updates the production app:
+
+```text
+label: Pirate
+package: sc.pirate.mobile
+API: https://api.pirate.sc
+```
 
 ## Store Listing Assets
 

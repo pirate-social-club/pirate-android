@@ -38,6 +38,24 @@ What it does:
 
 The release package `sc.pirate.mobile` is never uninstalled by this helper.
 
+This helper is only for the staging/debug app:
+
+```text
+label: Pirate Blacksmith
+package: sc.pirate.mobile.blacksmith
+API: https://api-staging.pirate.sc
+```
+
+For the production app, use the signed release APK workflow instead:
+
+```bash
+rtk gh workflow run android-release-apk.yml --ref <pushed-ref>
+rtk gh run watch <run-id> --exit-status
+rtk gh run download <run-id> -n release-apk -D /tmp/pirate-android-prod-release-<run-id>
+rtk /home/t42/Android/Sdk/platform-tools/adb install -r /tmp/pirate-android-prod-release-<run-id>/app-release.apk
+rtk /home/t42/Android/Sdk/platform-tools/adb shell monkey -p sc.pirate.mobile -c android.intent.category.LAUNCHER 1
+```
+
 ## `androidw.sh`
 
 Emergency local Gradle wrapper for this repo. It is not the normal build path
