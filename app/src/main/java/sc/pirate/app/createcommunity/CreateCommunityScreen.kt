@@ -471,9 +471,6 @@ fun CreateCommunityScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             item {
-                CreateCommunityStepHeader(step = state.step)
-            }
-            item {
                 when (state.step) {
                     CreateCommunityStep.Basics -> CreateCommunityBasicsStep(
                         state = state,
@@ -506,46 +503,6 @@ fun CreateCommunityScreen(
 }
 
 @Composable
-private fun CreateCommunityStepHeader(step: CreateCommunityStep) {
-    val steps = listOf(
-        CreateCommunityStep.Basics to "Basics",
-        CreateCommunityStep.Access to "Access",
-        CreateCommunityStep.Review to "Review",
-    )
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        steps.forEachIndexed { index, item ->
-            val selected = item.first == step
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Surface(
-                    shape = CircleShape,
-                    color = if (selected) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceInteractive,
-                    contentColor = if (selected) PirateTokens.colors.textOnAccent else PirateTokens.colors.textSecondary,
-                    modifier = Modifier.size(28.dp),
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(text = "${index + 1}", style = MaterialTheme.typography.labelMedium)
-                    }
-                }
-                Text(
-                    text = item.second,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (selected) PirateTokens.colors.textPrimary else PirateTokens.colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun CreateCommunityBasicsStep(
     state: CreateCommunityUiState,
     onAvatarSelect: () -> Unit,
@@ -557,7 +514,7 @@ private fun CreateCommunityBasicsStep(
     onDisplayNameChange: (String) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-        FlatSection(title = "Community") {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
             OutlinedTextField(
                 value = state.displayName,
                 onValueChange = onDisplayNameChange,
@@ -842,7 +799,7 @@ private fun CreateCommunityReviewStep(state: CreateCommunityUiState) {
         null
     }
     Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
-        ReviewGroup(title = "Community") {
+        ReviewGroup {
             ReviewRow(label = "Display name", value = state.displayName.trim())
             ReviewRow(label = "Description", value = state.description.trim().ifBlank { "-" })
             ReviewRow(label = "Data region", value = createCommunityDatabaseRegionLabel(state.databaseRegion))
@@ -1154,15 +1111,17 @@ private fun MediaPickerRow(
 
 @Composable
 private fun ReviewGroup(
-    title: String,
+    title: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineSmall,
-            color = PirateTokens.colors.textPrimary,
-        )
+        title?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.headlineSmall,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
         content()
         HorizontalDivider(color = PirateTokens.colors.borderSoft)
     }
