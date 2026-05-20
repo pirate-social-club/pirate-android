@@ -85,3 +85,13 @@ jobs:
           name: release-aab
           path: app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
+
+      - name: Build release APK
+        run: ./scripts/androidw.sh --no-daemon --console=plain :app:assembleRelease
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
