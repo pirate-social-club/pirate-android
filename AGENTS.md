@@ -17,6 +17,25 @@ Blacksmith can only verify code that exists on the pushed ref. For local dirty
 work, finish the static review, commit the intended files on a branch, push that
 branch, and run `android-compile.yml` against the branch ref.
 
+For installing a Blacksmith build onto an attached Android phone, do not repeat
+the manual GitHub artifact flow. Use the install helper:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --ref <pushed-branch> --launch
+```
+
+If a successful `android-ci.yml` run already exists:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --run-id <github-run-id> --launch
+```
+
+The helper triggers or uses `.github/workflows/android-ci.yml`, waits for the
+Blacksmith run, downloads the `debug-apk` artifact, falls back to direct artifact
+download if `gh run download` hangs, unzips the APK, handles debug-signature
+mismatches by uninstalling only `sc.pirate.app.blacksmith`, installs with adb,
+and verifies the installed package. It must not uninstall `sc.pirate.app`.
+
 Use local Gradle only as a fallback when remote CI is not practical. If local
 Gradle is unavoidable, use the repo wrapper:
 

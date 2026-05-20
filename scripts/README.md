@@ -2,6 +2,42 @@
 
 Repo-level helper scripts.
 
+## `install-blacksmith-apk.sh`
+
+One-command path for installing the Blacksmith debug APK on an attached phone.
+
+Build and install from the current pushed branch:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --launch
+```
+
+Build and install from a specific pushed branch:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --ref codex/my-branch --launch
+```
+
+Install from an existing successful `android-ci.yml` run:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --run-id 26142550816 --launch
+```
+
+What it does:
+
+- triggers `.github/workflows/android-ci.yml` when no `--run-id` is provided
+- waits for the Blacksmith run to pass
+- downloads the `debug-apk` artifact
+- falls back to a direct GitHub artifact download if `gh run download` hangs
+- unzips the APK into `/tmp/pirate-android-blacksmith-<run-id>`
+- selects the single attached adb device, or uses `--device <serial>`
+- installs `sc.pirate.app.blacksmith`
+- handles debug-key mismatch by uninstalling only `sc.pirate.app.blacksmith`
+- verifies the installed version and optionally launches the app
+
+The release package `sc.pirate.app` is never uninstalled by this helper.
+
 ## `androidw.sh`
 
 Canonical Android Gradle entry point for this repo.

@@ -13,6 +13,34 @@ rtk gh workflow run android-compile.yml --ref main
 The workflow runs `.github/workflows/android-compile.yml` on `blacksmith-4vcpu-ubuntu-2404`
 and checks `:app:compileDebugKotlin`.
 
+## Install a Blacksmith Build on a Phone
+
+Use this for the normal "build on Blacksmith and install the new app on my
+attached phone" loop:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --ref <pushed-branch> --launch
+```
+
+From the current pushed branch:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --launch
+```
+
+From an existing successful Blacksmith run:
+
+```bash
+rtk ./scripts/install-blacksmith-apk.sh --run-id <github-run-id> --launch
+```
+
+This script runs `.github/workflows/android-ci.yml`, waits for Blacksmith,
+downloads the `debug-apk` artifact, unzips it, installs it with adb, and verifies
+the installed `sc.pirate.app.blacksmith` package. If the old Blacksmith install
+was signed by a different debug key, the script uninstalls only
+`sc.pirate.app.blacksmith` and reinstalls. The release package `sc.pirate.app`
+is not touched.
+
 Use the repo wrapper from this directory only when remote CI is not practical and a
 local fallback is unavoidable:
 
