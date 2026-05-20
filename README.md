@@ -36,9 +36,9 @@ rtk ./scripts/install-blacksmith-apk.sh --run-id <github-run-id> --launch
 
 This script runs `.github/workflows/android-ci.yml`, waits for Blacksmith,
 downloads the `debug-apk` artifact, unzips it, installs it with adb, and verifies
-the installed `sc.pirate.app.blacksmith` package. If the old Blacksmith install
+the installed `sc.pirate.mobile.blacksmith` package. If the old Blacksmith install
 was signed by a different debug key, the script uninstalls only
-`sc.pirate.app.blacksmith` and reinstalls. The release package `sc.pirate.app`
+`sc.pirate.mobile.blacksmith` and reinstalls. The release package `sc.pirate.mobile`
 is not touched.
 
 Use the repo wrapper from this directory only when remote CI is not practical and a

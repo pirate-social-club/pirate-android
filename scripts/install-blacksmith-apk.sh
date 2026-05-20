@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKFLOW="android-ci.yml"
 ARTIFACT_NAME="debug-apk"
-PACKAGE_NAME="sc.pirate.app.blacksmith"
+PACKAGE_NAME="sc.pirate.mobile.blacksmith"
 RUN_ID=""
 REF=""
 DEVICE_SERIAL=""
@@ -36,8 +36,8 @@ Options:
 Notes:
   Blacksmith debug APKs may be signed with a different CI debug key than the
   package already on the phone. By default, this script handles that by
-  uninstalling only sc.pirate.app.blacksmith and then reinstalling. The release
-  package sc.pirate.app is not touched.
+  uninstalling only sc.pirate.mobile.blacksmith and then reinstalling. The release
+  package sc.pirate.mobile is not touched.
 USAGE
 }
 

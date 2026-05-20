@@ -33,8 +33,8 @@ rtk ./scripts/install-blacksmith-apk.sh --run-id <github-run-id> --launch
 The helper triggers or uses `.github/workflows/android-ci.yml`, waits for the
 Blacksmith run, downloads the `debug-apk` artifact, falls back to direct artifact
 download if `gh run download` hangs, unzips the APK, handles debug-signature
-mismatches by uninstalling only `sc.pirate.app.blacksmith`, installs with adb,
-and verifies the installed package. It must not uninstall `sc.pirate.app`.
+mismatches by uninstalling only `sc.pirate.mobile.blacksmith`, installs with adb,
+and verifies the installed package. It must not uninstall `sc.pirate.mobile`.
 
 Use local Gradle only as a fallback when remote CI is not practical. If local
 Gradle is unavoidable, use the repo wrapper:

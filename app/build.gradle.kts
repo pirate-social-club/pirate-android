@@ -60,7 +60,7 @@ android {
   }
 
   defaultConfig {
-    applicationId = "sc.pirate.app"
+    applicationId = "sc.pirate.mobile"
     minSdk = 28
     targetSdk = 36
     versionCode = 9

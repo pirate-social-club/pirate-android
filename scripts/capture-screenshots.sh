@@ -316,7 +316,7 @@ install_apk() {
 launch_app() {
   log_info "Launching app..."
   $ANDROID_SDK_ROOT/platform-tools/adb -s "$EMULATOR_DEVICE" shell am start \
-    -n sc.pirate.app/.MainActivity \
+    -n sc.pirate.mobile/.MainActivity \
     -a android.intent.action.MAIN \
     -c android.intent.category.LAUNCHER
   sleep 3

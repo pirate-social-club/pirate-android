@@ -32,11 +32,11 @@ What it does:
 - falls back to a direct GitHub artifact download if `gh run download` hangs
 - unzips the APK into `/tmp/pirate-android-blacksmith-<run-id>`
 - selects the single attached adb device, or uses `--device <serial>`
-- installs `sc.pirate.app.blacksmith`
-- handles debug-key mismatch by uninstalling only `sc.pirate.app.blacksmith`
+- installs `sc.pirate.mobile.blacksmith`
+- handles debug-key mismatch by uninstalling only `sc.pirate.mobile.blacksmith`
 - verifies the installed version and optionally launches the app
 
-The release package `sc.pirate.app` is never uninstalled by this helper.
+The release package `sc.pirate.mobile` is never uninstalled by this helper.
 
 ## `androidw.sh`
 

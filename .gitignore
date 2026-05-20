@@ -12,3 +12,4 @@
 *.apk
 *.aab
 app/build/
+/play-upload/
