@@ -6,8 +6,9 @@ Kotlin + Jetpack Compose Android client for Pirate.
 
 Use Blacksmith-backed GitHub Actions for Android builds and compile
 verification. This is the normal path for agents and local development on this
-workstation; do not run local Gradle compile/test/assemble/bundle tasks unless
-you explicitly choose an emergency local fallback.
+workstation. Do not run local Gradle compile/test/assemble/bundle/build tasks
+unless the user explicitly asks for a local fallback after being told Blacksmith
+is the normal path.
 
 ```bash
 rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
@@ -53,7 +54,10 @@ is not touched.
 Google Play uploads should use the signed Android App Bundle produced by
 Blacksmith CI, not a local Gradle build.
 
-Release signing reads local `signing.properties`:
+Release signing in CI reads GitHub secrets and writes a temporary
+`signing.properties` file on the Blacksmith runner. A developer-owned local
+`signing.properties` file is only for an explicitly requested emergency local
+fallback and must not be treated as the normal release path:
 
 ```properties
 storeFile=/absolute/path/to/upload-key.jks
@@ -64,7 +68,7 @@ keyPassword=...
 
 `signing.properties` is local-only and must not be committed.
 
-CI builds the same Play artifact on Blacksmith runners through:
+CI builds Play/release artifacts on Blacksmith runners through:
 
 ```text
 .github/workflows/android-release-bundle.yml
@@ -92,6 +96,10 @@ The workflow uploads a `release-aab` artifact containing:
 ```text
 app/build/outputs/bundle/release/app-release.aab
 ```
+
+When a production APK is needed for a directly attached phone, use the same
+Blacksmith release workflow and download the `release-apk` artifact. Do not
+assemble a release APK locally for the normal screenshot/install loop.
 
 ## Store Listing Assets
 

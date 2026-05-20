@@ -33,9 +33,20 @@ The heavier APK workflow is:
 
 - [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml)
 - runner: `blacksmith-4vcpu-ubuntu-2404`
-- tasks: `assembleDebug`, `assembleRelease`
+- task: `assembleDebug`
 
-Use the heavier workflow when an APK artifact or release build validation is needed. Use compile-only for day-to-day Kotlin/Compose verification.
+Use the heavier workflow when a debug APK artifact is needed. Use compile-only
+for day-to-day Kotlin/Compose verification.
+
+Production release artifacts use:
+
+- [android-release-bundle.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-release-bundle.yml)
+- runner: `blacksmith-4vcpu-ubuntu-2404`
+- tasks: `bundleRelease`, `assembleRelease`
+
+Use this release workflow when a Play AAB or production APK artifact is needed.
+Do not create those artifacts with local Gradle during the normal
+install/screenshot/release loop.
 
 ## Local Requirements
 

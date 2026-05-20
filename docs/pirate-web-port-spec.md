@@ -55,7 +55,7 @@ The current Android app is not yet a real native implementation of the Pirate pr
    Web community join handles gated membership, eligibility refresh, verification retry, and commerce state. Android now has verification groundwork, but community flow still does not cover those product rules.
 
 6. Verification is intentionally narrow on this machine.
-   The local SDK is configured through `local.properties`; use the wrapper and single-worker mode for Kotlin compile checks.
+   Keep local checks static and use Blacksmith-backed GitHub Actions for Kotlin compile checks and Android artifacts.
 
 ## Goal
 
@@ -240,7 +240,8 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 Default Android verification should use Blacksmith-backed GitHub Actions:
 
 - compile-only: [android-compile.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-compile.yml), `:app:compileDebugKotlin`
-- artifact validation: [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml), `assembleDebug` and `assembleRelease`
+- debug APK artifact validation: [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml), `assembleDebug`
+- release AAB/APK artifact validation: [android-release-bundle.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-release-bundle.yml), `bundleRelease` and `assembleRelease`
 
 Do not run local Gradle compile, test, assemble, bundle, or build tasks as
 routine verification. For local dirty work, commit and push the intended branch,
