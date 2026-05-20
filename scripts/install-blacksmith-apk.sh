@@ -42,7 +42,7 @@ USAGE
 }
 
 log() {
-  printf '[blacksmith-install] %s\n' "$*"
+  printf '[blacksmith-install] %s\n' "$*" >&2
 }
 
 die() {
