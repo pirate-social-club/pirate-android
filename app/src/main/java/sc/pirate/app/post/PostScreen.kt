@@ -90,6 +90,7 @@ import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.song.SongPlaybackState
+import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
@@ -1604,98 +1605,14 @@ private fun ThreadSongSummary(
     error: String?,
     onPlayPause: () -> Unit,
 ) {
-    val title = songTitle(postResponse)
-    val coverArtSrc = resolvePublicMediaSrc(postResponse.songPresentation?.coverArtRef)
-    val duration = durationLabel(postResponse.songPresentation?.durationMs)
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = PirateTokens.colors.surfaceSubtle,
-        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(84.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(PirateTokens.colors.bgElevated),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (coverArtSrc != null) {
-                        AsyncImage(
-                            model = coverArtSrc,
-                            contentDescription = title,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    } else {
-                        Icon(
-                            imageVector = PhosphorIcons.MusicNote,
-                            contentDescription = null,
-                            tint = PirateTokens.colors.textSecondary,
-                        )
-                    }
-                }
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    duration?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = PirateTokens.colors.textSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Surface(
-                    modifier = Modifier.clickable(
-                        enabled = canPlay,
-                        onClick = onPlayPause,
-                    ),
-                    shape = RoundedCornerShape(PirateTokens.radius.full),
-                    color = if (canPlay) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceDisabled,
-                ) {
-                    Icon(
-                        imageVector = when {
-                            !canPlay -> PhosphorIcons.Lock
-                            isBuffering -> PhosphorIcons.MusicNotes
-                            isPlaying -> PhosphorIcons.Pause
-                            else -> PhosphorIcons.Play
-                        },
-                        contentDescription = when {
-                            !canPlay -> "Song locked"
-                            isBuffering -> "Loading song"
-                            isPlaying -> "Pause song"
-                            else -> "Play song"
-                        },
-                        tint = Color.White,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
-            }
-            error?.let {
-                FormNote(message = it, tone = FormTone.Error)
-            }
-        }
-    }
+    SongSummaryCard(
+        post = postResponse,
+        canPlay = canPlay,
+        isBuffering = isBuffering,
+        isPlaying = isPlaying,
+        error = error,
+        onPlayPause = onPlayPause,
+    )
 }
 
 private fun songTitle(post: LocalizedPostResponse): String =

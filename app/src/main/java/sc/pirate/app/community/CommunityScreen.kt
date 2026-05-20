@@ -80,7 +80,9 @@ import sc.pirate.app.api.model.MembershipGateSummary
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.song.SongPlaybackState
+import sc.pirate.app.song.SongSummaryRow
 import sc.pirate.app.song.resolveSongAudioUrl
+import sc.pirate.app.song.songDisplayTitle
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.ButtonVariant
@@ -953,13 +955,6 @@ private fun referenceLinkText(link: CommunityReferenceLink): String {
     return "$label: ${link.url}"
 }
 
-private fun songTitle(post: LocalizedPostResponse): String =
-    post.songPresentation?.title
-        ?: post.post.songTitle
-        ?: post.translatedTitle
-        ?: post.post.title
-        ?: "Untitled song"
-
 private fun durationLabel(durationMs: Long?): String? {
     val totalSeconds = durationMs?.takeIf { it > 0 }?.div(1000) ?: return null
     val minutes = totalSeconds / 60
@@ -1367,12 +1362,10 @@ private fun SongPostRow(
     onVote: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val title = songTitle(post)
+    val title = songDisplayTitle(post)
     val body = post.translatedBody ?: post.post.body
     val score = post.upvoteCount - post.downvoteCount
     val comments = post.threadSnapshot?.commentCount ?: 0
-    val coverArtSrc = resolvePublicMediaSrc(post.songPresentation?.coverArtRef)
-    val duration = durationLabel(post.songPresentation?.durationMs)
     val authorLabel = postAuthorLabel(post)
 
     Surface(
@@ -1386,68 +1379,18 @@ private fun SongPostRow(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             CommunityPostByline(authorLabel = authorLabel, timestampLabel = relativeTimeLabel(post.post.createdAt))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                SongArtwork(
-                    label = title,
-                    artworkSrc = coverArtSrc,
-                )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    duration?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = PirateTokens.colors.textSecondary,
-                        )
-                    }
-                    body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
-                        Text(
-                            text = bodyText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = PirateTokens.colors.textSecondary,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                Surface(
-                    modifier = Modifier.clickable(
-                        enabled = canPlay,
-                        onClick = onPlayPause,
-                    ),
-                    shape = RoundedCornerShape(PirateTokens.radius.full),
-                    color = if (canPlay) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceDisabled,
-                ) {
-                    Icon(
-                        imageVector = when {
-                            !canPlay -> PhosphorIcons.Lock
-                            isBuffering -> PhosphorIcons.MusicNotes
-                            isPlaying -> PhosphorIcons.Pause
-                            else -> PhosphorIcons.Play
-                        },
-                        contentDescription = when {
-                            !canPlay -> "Song locked"
-                            isBuffering -> "Loading song"
-                            isPlaying -> "Pause song"
-                            else -> "Play song"
-                        },
-                        tint = Color.White,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
-            }
+            SongSummaryRow(
+                post = post,
+                canPlay = canPlay,
+                isBuffering = isBuffering,
+                isPlaying = isPlaying,
+                onPlayPause = onPlayPause,
+                body = body?.takeIf { it != title },
+                artworkSize = 76.dp,
+                titleStyle = MaterialTheme.typography.titleMedium,
+                durationStyle = MaterialTheme.typography.bodySmall,
+                bodyStyle = MaterialTheme.typography.bodySmall,
+            )
             PostEngagementRow(
                 score = score,
                 viewerVote = post.viewerVote,
@@ -1569,32 +1512,6 @@ private fun VideoPostRow(
                 comments = comments,
                 isVoting = isVoting,
                 onVote = onVote,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SongArtwork(label: String, artworkSrc: String?) {
-    Box(
-        modifier = Modifier
-            .size(76.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(PirateTokens.colors.surfaceSubtle),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (artworkSrc != null) {
-            AsyncImage(
-                model = artworkSrc,
-                contentDescription = label,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        } else {
-            Icon(
-                imageVector = PhosphorIcons.MusicNote,
-                contentDescription = null,
-                tint = PirateTokens.colors.textSecondary,
             )
         }
     }

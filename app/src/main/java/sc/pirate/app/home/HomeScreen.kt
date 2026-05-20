@@ -88,6 +88,7 @@ import sc.pirate.app.api.model.CommunityPurchase
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
 import sc.pirate.app.api.model.LiveRoomAccessResponse
+import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.PostEmbed
 import sc.pirate.app.live.LiveRoomPresentation
 import sc.pirate.app.live.LiveRoomPresentationInput
@@ -96,6 +97,9 @@ import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.song.SongPlaybackState
+import sc.pirate.app.song.SongSummaryCard
+import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
@@ -143,6 +147,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _state = MutableStateFlow(HomeUiState())
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
+    val playbackState: StateFlow<SongPlaybackState> = app.songPlaybackController.state
     private val enrichmentJobs = mutableSetOf<Job>()
 
     init {
@@ -385,6 +390,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun toggleSongPlayback(post: LocalizedPostResponse) {
+        app.songPlaybackController.toggle(post)
     }
 
     private suspend fun cacheKey(sort: String, timeRange: String): HomeFeedCacheKey {
@@ -680,6 +689,7 @@ fun HomeScreen(
 ) {
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
+    val playbackState by viewModel.playbackState.collectAsState()
     val feed = state.feed
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
@@ -855,6 +865,7 @@ fun HomeScreen(
                             HomePostCard(
                                 item = item,
                                 isVoting = isVoting,
+                                songPlaybackState = playbackState,
                                 liveRoomAccess = post.anchorLiveRoom?.let { state.liveRoomAccessById[it] },
                                 liveRoomListing = post.anchorLiveRoom?.let { state.listingsByLiveRoomId[it] },
                                 liveRoomPurchase = post.anchorLiveRoom?.let { state.purchasesByLiveRoomId[it] },
@@ -863,6 +874,7 @@ fun HomeScreen(
                                 onOpenCommunity = { onNavigateToCommunity(item.homeCommunityId()) },
                                 onOpenMedia = { mediaPreview = ActiveMediaPreview(item, it) },
                                 onOpenActions = { actionItem = item },
+                                onToggleSongPlayback = { viewModel.toggleSongPlayback(item.post) },
                                 onVote = { value ->
                                     if (hasSession) {
                                         viewModel.votePost(post.postId, value)
@@ -1291,6 +1303,7 @@ private fun HomeInlineMessage(
 private fun HomePostCard(
     item: HomeFeedItem,
     isVoting: Boolean,
+    songPlaybackState: SongPlaybackState,
     liveRoomAccess: LiveRoomAccessResponse?,
     liveRoomListing: CommunityListing?,
     liveRoomPurchase: CommunityPurchase?,
@@ -1299,6 +1312,7 @@ private fun HomePostCard(
     onOpenCommunity: () -> Unit,
     onOpenMedia: (MediaPreview) -> Unit,
     onOpenActions: () -> Unit,
+    onToggleSongPlayback: () -> Unit,
     onVote: (Int) -> Unit,
     onComment: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1316,7 +1330,7 @@ private fun HomePostCard(
     val comments = postResponse.commentCount ?: postResponse.threadSnapshot?.commentCount ?: 0
     val score = postResponse.upvoteCount - postResponse.downvoteCount
     val communityLabel = item.communityIdentityLabel()
-    val mediaPreview = item.primaryMediaPreview(title)
+    val mediaPreview = if (post.postType == "song") null else item.primaryMediaPreview(title)
     val xEmbed = post.primaryXEmbed()
 
     Surface(
@@ -1385,7 +1399,7 @@ private fun HomePostCard(
             )
 
             body
-                ?.takeIf { it.isNotBlank() && it != post.title && it != title }
+                ?.takeIf { post.postType != "song" && it.isNotBlank() && it != post.title && it != title }
                 ?.let { bodyText ->
                     Text(
                         text = bodyText,
@@ -1414,6 +1428,19 @@ private fun HomePostCard(
                         ),
                     ),
                     onOpenPost = onOpenPost,
+                )
+            }
+
+            if (post.postType == "song" && post.anchorLiveRoom == null) {
+                val postIsCurrent = songPlaybackState.postId == post.postId
+                SongSummaryCard(
+                    post = postResponse,
+                    canPlay = resolveSongAudioUrl(postResponse) != null,
+                    isBuffering = postIsCurrent && songPlaybackState.isBuffering,
+                    isPlaying = postIsCurrent && songPlaybackState.isPlaying,
+                    error = songPlaybackState.error.takeIf { postIsCurrent },
+                    onPlayPause = onToggleSongPlayback,
+                    body = body,
                 )
             }
 
