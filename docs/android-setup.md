@@ -1,14 +1,19 @@
 # Pirate Android Setup
 
-Use remote Android builds by default. This laptop has repeatedly frozen during local Gradle work.
+Use remote Android builds. This laptop has repeatedly frozen during local
+Gradle work, so Blacksmith is the single normal build and compile verification
+path.
 
 ## Policy
 
 - Prefer static review and narrow edits first.
-- Use Blacksmith-backed GitHub Actions as the main compile/build path.
-- Avoid local Gradle builds unless the check is urgent, narrow, and the machine has low swap pressure.
-- Use [scripts/androidw.sh](/home/t42/Documents/pirate-workspace/android/scripts/androidw.sh) for local Gradle tasks only when remote CI is not practical.
-- Batch edits before compiling. Do not compile after every small change.
+- Use Blacksmith-backed GitHub Actions for Android compile/build verification.
+- Do not run local Gradle compile, test, assemble, bundle, or build tasks as
+  routine verification.
+- For local dirty work, finish static review, commit and push a branch, then run
+  Blacksmith against that ref.
+- Local Gradle is an emergency fallback only when the user explicitly asks for a
+  local fallback after being told Blacksmith is the normal path.
 
 ## Remote Build Policy
 
@@ -21,7 +26,7 @@ Primary verification workflow:
 This workflow runs on Android-relevant pushes and pull requests, and can also be started manually:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref main
+rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
 ```
 
 The heavier APK workflow is:
@@ -99,36 +104,21 @@ Current auth flow:
 
 If `PRIVY_APP_ID` or `PRIVY_APP_CLIENT_ID` is explicitly set blank, auth is intentionally disabled for the build. Public feed data should still load because the default API target is production.
 
-## Smallest Local Check
+## Compile Verification
 
-Use the Blacksmith compile workflow before local Gradle:
-
-```bash
-rtk gh workflow run android-compile.yml --ref main
-```
-
-Only run the local fallback if remote CI is not practical and the machine is healthy enough. Check `free -h` first; do not run local Gradle when swap is heavily used. When local validation is unavoidable, prefer:
+Use the Blacksmith compile workflow:
 
 ```bash
-rtk timeout 240 env \
-  PIRATE_ANDROID_SLOW=1 \
-  PIRATE_ANDROID_MAX_WORKERS=1 \
-  GRADLE_OPTS="-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low -Dorg.gradle.vfs.watch=false" \
-  ./scripts/androidw.sh --no-daemon --console=plain --offline :app:compileDebugKotlin
+rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
 ```
 
-Do not escalate immediately to larger Android build tasks unless the Kotlin compile check is insufficient. Use Blacksmith for larger validation instead of a local build. If `--offline` fails because dependencies are missing, run one online wrapper command only after confirming the machine can tolerate it.
+Blacksmith can only build pushed code. If changes are local, commit the intended
+files on a branch, push the branch, and run the workflow against that branch.
+Do not run a local Gradle check because dependencies are missing locally.
 
 ## Previous Failure In This Workspace
 
-Earlier local compile checks failed before Kotlin compilation because Android SDK configuration was missing.
-
-This workspace now has `local.properties` with `sdk.dir=/home/t42/Android/Sdk`. Use the wrapper command above for narrow local checks.
-
-Latest narrow check:
-
-```bash
-rtk timeout 180 env PIRATE_ANDROID_SLOW=1 PIRATE_ANDROID_MAX_WORKERS=1 ./scripts/androidw.sh --no-daemon --console=plain :app:compileDebugKotlin
-```
-
-Result: passed. Remaining output is limited to `Icons.Filled.ArrowBack` deprecation warnings.
+Earlier local compile checks repeatedly failed or risked freezing the
+workstation because Gradle dependencies, SDK state, and daemon behavior varied
+between sessions. Do not use those local checks as precedent. Use Blacksmith for
+Android compile/build verification.

@@ -62,6 +62,7 @@ private const val TAG = "PirateNavHost"
 private const val DERIVATIVE_SOURCE_RESULT_UNSET = "__unset__"
 private const val DERIVATIVE_SOURCE_INITIAL_KEY = "initial_derivative_source_refs"
 private const val DERIVATIVE_SOURCE_SELECTED_KEY = "selected_derivative_source_refs"
+private const val CREATE_COMMUNITY_AGE_VERIFIED_KEY = "create_community_age_verified"
 
 @Composable
 fun PirateNavHost(
@@ -567,12 +568,20 @@ fun PirateNavHost(
             }
         }
 
-        composable(PirateRoute.CreateCommunity.route) {
+        composable(PirateRoute.CreateCommunity.route) { backStackEntry ->
             AuthGate(hasSession, navController) {
+                val ageVerificationCompleted by backStackEntry.savedStateHandle
+                    .getStateFlow(CREATE_COMMUNITY_AGE_VERIFIED_KEY, false)
+                    .collectAsState()
                 CreateCommunityScreen(
                     onBack = { navController.popBackStack() },
-                    onVerifyWithId = {
-                        navController.navigate(PirateRoute.VerifySelf.buildRoute("community_creation"))
+                    onVerifyAge = {
+                        navController.navigate(
+                            PirateRoute.VerifySelf.buildRoute(
+                                intent = "community_creation",
+                                capabilities = listOf("age_over_18"),
+                            ),
+                        )
                     },
                     onCreated = { communityId ->
                         navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace")) {
@@ -580,6 +589,10 @@ fun PirateNavHost(
                                 inclusive = true
                             }
                         }
+                    },
+                    ageVerificationCompleted = ageVerificationCompleted,
+                    onAgeVerificationConsumed = {
+                        backStackEntry.savedStateHandle.set(CREATE_COMMUNITY_AGE_VERIFIED_KEY, false)
                     },
                 )
             }
@@ -636,10 +649,19 @@ fun PirateNavHost(
                 SelfVerificationScreen(
                     verificationIntent = intent,
                     requestedCapabilities = requestedCapabilities,
-                    onVerified = if (intent == "post_access_18_plus") {
-                        { navController.popBackStack() }
-                    } else {
-                        null
+                    onVerified = when {
+                        intent == "post_access_18_plus" -> {
+                            { navController.popBackStack() }
+                        }
+                        intent == "community_creation" && requestedCapabilities.contains("age_over_18") -> {
+                            {
+                                navController.previousBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set(CREATE_COMMUNITY_AGE_VERIFIED_KEY, true)
+                                navController.popBackStack()
+                            }
+                        }
+                        else -> null
                     },
                     onBack = { navController.popBackStack() },
                 )

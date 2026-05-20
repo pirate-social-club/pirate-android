@@ -147,7 +147,8 @@ Tasks:
 - add Android App Links/deep-link callback constants in one place - done for verification callbacks
 - add route constants for valid settings and moderation sections - done
 - document API contract gaps per Phase 1 route
-- avoid local full builds on this machine; use the wrapper single-worker Kotlin compile when validation is needed
+- avoid local Android Gradle builds on this machine; commit and push, then use
+  Blacksmith when compile/build validation is needed
 
 Acceptance:
 
@@ -213,25 +214,18 @@ Acceptance:
 
 ## Build And Test Policy
 
-This machine is slow. Keep checks narrow and prefer Blacksmith-backed CI for Android verification.
+This machine is slow. Keep checks static locally and use Blacksmith-backed CI
+for Android compile/build verification.
 
-Default compile check:
-
-```bash
-rtk gh workflow run android-compile.yml --ref main
-```
-
-Local fallback only when remote CI is not practical and swap pressure is low:
+Compile check:
 
 ```bash
-rtk timeout 240 env \
-  PIRATE_ANDROID_SLOW=1 \
-  PIRATE_ANDROID_MAX_WORKERS=1 \
-  GRADLE_OPTS="-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low -Dorg.gradle.vfs.watch=false" \
-  ./scripts/androidw.sh --no-daemon --console=plain --offline :app:compileDebugKotlin
+rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
 ```
 
-Do not use repeated full local Gradle builds during spec or static review work. Batch edits before compiling, and use CI/Blacksmith for heavier validation.
+Do not run local Gradle compile, test, assemble, bundle, or build tasks during
+spec or static review work. Commit and push the intended branch, then verify on
+Blacksmith.
 
 Minimum future test targets:
 

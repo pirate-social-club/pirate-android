@@ -14,10 +14,10 @@ Related docs:
 
 ## Build Policy
 
-- Do not use frequent local Android builds on this machine.
+- Do not use local Android Gradle builds on this machine for routine verification.
 - Prefer static review and narrow code changes first.
-- Use Blacksmith-backed GitHub Actions as the default Android compile/build path.
-- Keep any local verification to the smallest possible check.
+- Use Blacksmith-backed GitHub Actions as the Android compile/build path.
+- Commit and push the intended branch, then verify that pushed ref on Blacksmith.
 
 ## Exit Criteria
 
@@ -260,35 +260,22 @@ Acceptance:
 
 ### 10. Add Android build setup documentation
 
-Problem:
+Policy:
 
-- compile verification currently fails in this environment because Android SDK configuration is missing
+- Android compile/build verification uses Blacksmith-backed CI. Do not use
+  local Gradle checks as the normal path on this workstation.
 
-Previously observed failure:
-
-- Direct `./gradlew` compile failed because `sdk.dir` or `ANDROID_HOME` was not configured.
-
-Default compile verification should use Blacksmith-backed CI:
+Compile verification:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref main
-```
-
-Local fallback only when remote CI is not practical:
-
-```bash
-rtk timeout 240 env \
-  PIRATE_ANDROID_SLOW=1 \
-  PIRATE_ANDROID_MAX_WORKERS=1 \
-  GRADLE_OPTS="-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low -Dorg.gradle.vfs.watch=false" \
-  ./scripts/androidw.sh --no-daemon --console=plain --offline :app:compileDebugKotlin
+rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
 ```
 
 Tasks:
 
 - add a short Android setup doc covering SDK requirements and `local.properties`
-- list the Blacksmith compile workflow as the default verification command
-- document the local fallback for cases where remote CI is not practical
+- list the Blacksmith compile workflow as the Android verification command
+- document that local Gradle is not a routine build path
 
 Acceptance:
 

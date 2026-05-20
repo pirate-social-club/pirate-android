@@ -208,22 +208,15 @@ Still pending:
 
 ## Build Policy
 
-Use Blacksmith-backed GitHub Actions as the default Android verification path. The compile-only workflow is [android-compile.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-compile.yml), runs on `blacksmith-4vcpu-ubuntu-2404`, and checks `:app:compileDebugKotlin`.
+Use Blacksmith-backed GitHub Actions as the Android verification path. The compile-only workflow is [android-compile.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-compile.yml), runs on `blacksmith-4vcpu-ubuntu-2404`, and checks `:app:compileDebugKotlin`.
 
 Manual trigger:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref main
+rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
 ```
 
-Keep local validation narrow on this machine. Only run local Gradle when remote CI is not practical and swap pressure is low. When SDK config exists, use:
-
-```bash
-rtk timeout 240 env \
-  PIRATE_ANDROID_SLOW=1 \
-  PIRATE_ANDROID_MAX_WORKERS=1 \
-  GRADLE_OPTS="-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low -Dorg.gradle.vfs.watch=false" \
-  ./scripts/androidw.sh --no-daemon --console=plain --offline :app:compileDebugKotlin
-```
-
-Use heavier builds only through Blacksmith CI when a feature slice is ready for artifact validation.
+Do not run local Gradle compile, test, assemble, bundle, or build tasks as
+routine verification. For local dirty work, commit and push the intended branch,
+then run Blacksmith against that ref. Use artifact validation through Blacksmith
+CI when a feature slice is ready.

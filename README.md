@@ -4,14 +4,21 @@ Kotlin + Jetpack Compose Android client for Pirate.
 
 ## Build
 
-Use the Blacksmith-backed compile workflow by default:
+Use Blacksmith-backed GitHub Actions for Android builds and compile
+verification. This is the normal path for agents and local development on this
+workstation; do not run local Gradle compile/test/assemble/bundle tasks unless
+you explicitly choose an emergency local fallback.
 
 ```bash
-rtk gh workflow run android-compile.yml --ref main
+rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
 ```
 
 The workflow runs `.github/workflows/android-compile.yml` on `blacksmith-4vcpu-ubuntu-2404`
 and checks `:app:compileDebugKotlin`.
+
+For unpushed local changes: finish static review, commit the intended files on a
+branch, push the branch, then run the workflow against that ref. Blacksmith can
+only build code that exists on GitHub.
 
 ## Install a Blacksmith Build on a Phone
 
@@ -41,34 +48,10 @@ was signed by a different debug key, the script uninstalls only
 `sc.pirate.mobile.blacksmith` and reinstalls. The release package `sc.pirate.mobile`
 is not touched.
 
-Use the repo wrapper from this directory only when remote CI is not practical and a
-local fallback is unavoidable:
-
-```bash
-rtk timeout 240 env \
-  PIRATE_ANDROID_SLOW=1 \
-  PIRATE_ANDROID_MAX_WORKERS=1 \
-  GRADLE_OPTS="-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low -Dorg.gradle.vfs.watch=false" \
-  ./scripts/androidw.sh --no-daemon --console=plain --offline :app:compileDebugKotlin
-```
-
 ## Play Store Bundle
 
-Google Play uploads should use the signed Android App Bundle, not an APK:
-
-```bash
-rtk timeout 600 env \
-  PIRATE_ANDROID_SLOW=1 \
-  PIRATE_ANDROID_MAX_WORKERS=1 \
-  GRADLE_OPTS="-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low -Dorg.gradle.vfs.watch=false" \
-  ./scripts/androidw.sh --no-daemon --console=plain :app:bundleRelease
-```
-
-Bundle output:
-
-```text
-app/build/outputs/bundle/release/app-release.aab
-```
+Google Play uploads should use the signed Android App Bundle produced by
+Blacksmith CI, not a local Gradle build.
 
 Release signing reads local `signing.properties`:
 
@@ -121,8 +104,10 @@ fastlane/metadata/android/en-US/
 The legacy screenshot capture helper has been ported:
 
 ```bash
-./scripts/capture-screenshots.sh --build --type phone
-./scripts/capture-screenshots.sh --build --type tablet
+./scripts/capture-screenshots.sh --type phone
+./scripts/capture-screenshots.sh --type tablet
 ```
 
-The script writes to `fastlane/metadata/android/en-US/images`.
+The script writes to `fastlane/metadata/android/en-US/images`. Avoid the
+helper's local `--build` mode on this workstation; install a Blacksmith APK
+first when screenshots need a fresh build.

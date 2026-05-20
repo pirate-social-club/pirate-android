@@ -185,15 +185,59 @@ data class HandlePolicyInput(
 )
 
 @Serializable
+data class GateAtom(
+    val type: String,
+    val provider: String? = null,
+    @SerialName("minimum_age") val minimumAge: Int? = null,
+    val allowed: List<String>? = null,
+    @SerialName("minimum_score") val minimumScore: Int? = null,
+    @SerialName("chain_namespace") val chainNamespace: String? = null,
+    @SerialName("contract_address") val contractAddress: String? = null,
+    @SerialName("min_quantity") val minQuantity: Int? = null,
+    val match: JsonObject? = null,
+)
+
+@Serializable
+data class GateExpression(
+    val op: String,
+    val children: List<GateExpression>? = null,
+    val gate: GateAtom? = null,
+)
+
+@Serializable
+data class GatePolicy(
+    val version: Int = 1,
+    val expression: GateExpression,
+)
+
+@Serializable
+data class CreateCommunityRuleInput(
+    val title: String,
+    val body: String? = null,
+    @SerialName("report_reason") val reportReason: String? = null,
+    val position: Int = 0,
+)
+
+@Serializable
+data class CreateCommunityBootstrapInput(
+    val rules: List<CreateCommunityRuleInput> = emptyList(),
+)
+
+@Serializable
 data class CreateCommunityRequest(
     @SerialName("display_name") val displayName: String,
     val description: String? = null,
     @SerialName("database_region") val databaseRegion: String? = "auto",
+    @SerialName("avatar_ref") val avatarRef: String? = null,
+    @SerialName("banner_ref") val bannerRef: String? = null,
     @SerialName("membership_mode") val membershipMode: String,
     @SerialName("governance_mode") val governanceMode: String = "centralized",
     @SerialName("default_age_gate_policy") val defaultAgeGatePolicy: String = "none",
     @SerialName("allow_anonymous_identity") val allowAnonymousIdentity: Boolean = false,
+    @SerialName("anonymous_identity_scope") val anonymousIdentityScope: String? = null,
+    @SerialName("gate_policy") val gatePolicy: GatePolicy? = null,
     @SerialName("handle_policy") val handlePolicy: HandlePolicyInput = HandlePolicyInput(),
+    @SerialName("community_bootstrap") val communityBootstrap: CreateCommunityBootstrapInput? = null,
 )
 
 @Serializable

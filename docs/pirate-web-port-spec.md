@@ -242,7 +242,9 @@ Default Android verification should use Blacksmith-backed GitHub Actions:
 - compile-only: [android-compile.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-compile.yml), `:app:compileDebugKotlin`
 - artifact validation: [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml), `assembleDebug` and `assembleRelease`
 
-Local compile should be a fallback only. If local Gradle is unavoidable, use [scripts/androidw.sh](/home/t42/Documents/pirate-workspace/android/scripts/androidw.sh) in offline, low-priority, no-daemon, single-worker mode after checking memory and swap health. Batch edits before compiling.
+Do not run local Gradle compile, test, assemble, bundle, or build tasks as
+routine verification. For local dirty work, commit and push the intended branch,
+then run Blacksmith against that ref.
 
 ### Highest-Risk Areas For Another Reviewer
 
@@ -461,10 +463,10 @@ For another AI or engineer auditing this project, use this order:
 
 ### Phase 0: Stabilize Android Foundation
 
-- configure local Android build requirements in repo docs
-- keep local Android builds sparse because this machine is resource-constrained
-- prefer remote GitHub Actions or Blacksmith validation when an actual Android build is needed
-- add compile and test instructions that actually run
+- document Blacksmith as the Android compile/build path
+- avoid local Android Gradle builds because this machine is resource-constrained
+- use pushed refs for Blacksmith validation when an actual Android build is needed
+- add compile instructions that run through Blacksmith
 - replace placeholder routes that misrepresent product behavior
 - introduce a real route table matching the spec above
 - decide contract generation or contract sync workflow
