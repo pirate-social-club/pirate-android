@@ -137,6 +137,10 @@ private data class CommerceEnrichment(
     val viewerUserId: String? = null,
 )
 
+private data class FeedPostHydration(
+    val postsById: Map<String, LocalizedPostResponse> = emptyMap(),
+)
+
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<PirateApp>()
     private val feedRepository get() = app.repositories.feedRepository
@@ -423,10 +427,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             enrichmentJobs.clear()
         }
         val job = viewModelScope.launch {
-            val enrichment = loadCommerceEnrichment(items)
+            val (enrichment, hydration) = supervisorScope {
+                val commerceDeferred = async { loadCommerceEnrichment(items) }
+                val hydrationDeferred = async { loadFeedPostHydration(items) }
+                commerceDeferred.await() to hydrationDeferred.await()
+            }
             val current = _state.value
             if (cacheKey(current.activeSort, current.topTimeRange) != key) return@launch
+            val hydratedFeed = current.feed?.withHydratedPosts(hydration.postsById)
+            if (hydratedFeed != null && hydration.postsById.isNotEmpty()) {
+                homeFeedCache.put(key, hydratedFeed)
+                cacheFeedItems(hydratedFeed.items)
+            }
             _state.value = current.copy(
+                feed = hydratedFeed ?: current.feed,
                 viewerUserId = enrichment.viewerUserId ?: current.viewerUserId,
                 liveRoomAccessById = current.liveRoomAccessById + enrichment.liveRoomAccessById,
                 listingsByAssetId = current.listingsByAssetId + enrichment.listingsByAssetId,
@@ -437,6 +451,36 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
         enrichmentJobs.add(job)
         job.invokeOnCompletion { enrichmentJobs.remove(job) }
+    }
+
+    private suspend fun loadFeedPostHydration(items: List<HomeFeedItem>): FeedPostHydration {
+        val candidates = items
+            .filter { item -> item.needsPlayableAssetHydration() }
+            .distinctBy { it.post.post.postId }
+        if (candidates.isEmpty()) return FeedPostHydration()
+
+        val hasSession = app.sessionStore.get() != null
+        val requestLimiter = Semaphore(4)
+        val hydratedPosts = supervisorScope {
+            candidates.map { item ->
+                async {
+                    requestLimiter.withPermit {
+                        val postId = item.post.post.postId
+                        postId to runCatching {
+                            if (hasSession) {
+                                postRepository.getPost(postId)
+                            } else {
+                                postRepository.getPublicPost(postId)
+                            }
+                        }.getOrNullUnlessCancelled()
+                    }
+                }
+            }.awaitAll()
+        }.mapNotNull { (postId, post) ->
+            post?.let { postId to it }
+        }.toMap()
+
+        return FeedPostHydration(postsById = hydratedPosts)
     }
 
     private suspend fun loadCommerceEnrichment(items: List<HomeFeedItem>): CommerceEnrichment {
@@ -611,6 +655,35 @@ private fun HomeFeedResponse.appendPage(nextPage: HomeFeedResponse): HomeFeedRes
         items = (items + nextPage.items).distinctBy { it.post.post.postId },
         nextCursor = nextPage.nextCursor,
         topCommunities = if (topCommunities.isNotEmpty()) topCommunities else nextPage.topCommunities,
+    )
+
+private fun HomeFeedItem.needsPlayableAssetHydration(): Boolean {
+    val post = post.post
+    if (post.postType != "song") return false
+    return post.mediaRefs.isEmpty() || this.post.songPresentation == null
+}
+
+private fun HomeFeedResponse.withHydratedPosts(
+    hydratedPostsById: Map<String, LocalizedPostResponse>,
+): HomeFeedResponse {
+    if (hydratedPostsById.isEmpty()) return this
+    return copy(
+        items = items.map { item ->
+            val hydrated = hydratedPostsById[item.post.post.postId] ?: return@map item
+            item.copy(post = item.post.mergePlayableAssetHydration(hydrated))
+        },
+    )
+}
+
+private fun LocalizedPostResponse.mergePlayableAssetHydration(
+    hydrated: LocalizedPostResponse,
+): LocalizedPostResponse =
+    hydrated.copy(
+        commentCount = commentCount ?: hydrated.commentCount,
+        upvoteCount = upvoteCount,
+        downvoteCount = downvoteCount,
+        likeCount = likeCount,
+        viewerVote = viewerVote,
     )
 
 private fun HomeFeedResponse.withPostVote(postId: String, value: Int): HomeFeedResponse =
