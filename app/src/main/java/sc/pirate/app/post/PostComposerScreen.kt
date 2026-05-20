@@ -773,7 +773,7 @@ fun PostComposerScreen(
         PostComposerStep.Publish -> "Publish"
     }
     val pageTitle = when (state.step) {
-        PostComposerStep.Write -> "Post to ${state.communityLabel()}"
+        PostComposerStep.Write -> "Create post"
         PostComposerStep.Settings -> "Post settings"
         PostComposerStep.Publish -> "Preview"
     }
