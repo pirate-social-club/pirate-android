@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -903,8 +904,63 @@ private fun HomeFeedItem.homeCommunityId(): String =
 private fun HomeFeedItem.communityRouteLabel(): String =
     formatCommunityRouteLabel(
         communityId = homeCommunityId(),
-        routeSlug = community.routeSlug ?: community.displayName,
+        routeSlug = community.routeSlug,
     )
+
+private data class HomeFeedCommunityIdentityLabel(
+    val text: String,
+    val isUnverified: Boolean,
+)
+
+private fun HomeFeedItem.communityIdentityLabel(): HomeFeedCommunityIdentityLabel {
+    val routeSlug = community.routeSlug?.trim()
+    if (!routeSlug.isNullOrBlank()) {
+        return HomeFeedCommunityIdentityLabel(
+            text = formatCommunityRouteLabel(
+                communityId = homeCommunityId(),
+                routeSlug = routeSlug,
+            ),
+            isUnverified = false,
+        )
+    }
+
+    return HomeFeedCommunityIdentityLabel(
+        text = community.displayName.trim().takeIf { it.isNotBlank() }
+            ?: communityRouteLabel(),
+        isUnverified = true,
+    )
+}
+
+@Composable
+private fun CommunityIdentityLabel(
+    label: HomeFeedCommunityIdentityLabel,
+    color: Color,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label.text,
+            style = style,
+            color = color,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (label.isUnverified) {
+            Icon(
+                imageVector = PhosphorIcons.WarningCircle,
+                contentDescription = "Unverified community",
+                tint = PirateTokens.colors.accentWarning,
+                modifier = Modifier.size(15.dp),
+            )
+        }
+    }
+}
 
 private fun userFacingFeedError(error: String?): String {
     val message = error?.takeIf { it.isNotBlank() } ?: return "Could not load the home feed."
@@ -926,7 +982,7 @@ private fun MediaPreviewDialog(
 ) {
     val postResponse = item.post
     val post = postResponse.post
-    val routeLabel = item.communityRouteLabel()
+    val communityLabel = item.communityIdentityLabel()
     val authorLabel = post.anonymousLabel
         ?: post.authorUserId?.take(8)?.let { "u/$it" }
         ?: "anonymous"
@@ -984,12 +1040,10 @@ private fun MediaPreviewDialog(
                             ),
                             size = 24,
                         )
-                        Text(
-                            text = routeLabel,
+                        CommunityIdentityLabel(
+                            label = communityLabel,
                             style = MaterialTheme.typography.titleMedium,
                             color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -1261,7 +1315,7 @@ private fun HomePostCard(
         ?: post.caption
     val comments = postResponse.commentCount ?: postResponse.threadSnapshot?.commentCount ?: 0
     val score = postResponse.upvoteCount - postResponse.downvoteCount
-    val routeLabel = item.communityRouteLabel()
+    val communityLabel = item.communityIdentityLabel()
     val mediaPreview = item.primaryMediaPreview(title)
     val xEmbed = post.primaryXEmbed()
 
@@ -1292,16 +1346,17 @@ private fun HomePostCard(
                 )
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = routeLabel,
+                        CommunityIdentityLabel(
+                            label = communityLabel,
                             style = MaterialTheme.typography.labelLarge,
                             color = PirateTokens.colors.textPrimary,
-                            modifier = Modifier.clickable(onClick = onOpenCommunity),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .clickable(onClick = onOpenCommunity),
                         )
                         Text(
                             text = "· ${relativeTimeLabel(post.createdAt)}",

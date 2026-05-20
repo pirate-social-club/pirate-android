@@ -18,12 +18,9 @@ private fun formatCommunityRouteSegment(value: String): String {
     val trimmedInput = value.trim()
     val trimmed = if (trimmedInput.lowercase().startsWith("c/")) trimmedInput.drop(2) else trimmedInput
     if (trimmed.isBlank()) return "community"
+    val displaySegment = trimmed.removePrefix("@")
 
-    return if (trimmed.startsWith("@")) {
-        "@${decodePunycodeLabel(trimmed.drop(1))}"
-    } else {
-        decodePunycodeLabel(trimmed)
-    }
+    return decodePunycodeLabel(displaySegment)
 }
 
 private fun decodePunycodeLabel(value: String): String {

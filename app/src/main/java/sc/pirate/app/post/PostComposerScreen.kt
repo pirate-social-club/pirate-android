@@ -70,6 +70,7 @@ import sc.pirate.app.api.model.SongArtifactUpload
 import sc.pirate.app.api.model.SongArtifactUploadRef
 import sc.pirate.app.api.model.SongPreviewWindow
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
+import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ButtonVariant
@@ -85,6 +86,7 @@ data class PostComposerUiState(
     val step: PostComposerStep = PostComposerStep.Write,
     val selectedCommunityId: String? = null,
     val selectedCommunityName: String? = null,
+    val selectedCommunityRouteSlug: String? = null,
     val title: String = "",
     val body: String = "",
     val linkUrl: String = "",
@@ -137,6 +139,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         _state.value = current.copy(
             selectedCommunityId = id,
             selectedCommunityName = knownCommunity?.displayName,
+            selectedCommunityRouteSlug = knownCommunity?.routeSlug,
             eligibility = null,
             hasCommunityPostingRole = true,
             loadingEligibility = false,
@@ -182,6 +185,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 }
                 _state.value = _state.value.copy(
                     selectedCommunityName = preview?.displayName ?: _state.value.selectedCommunityName,
+                    selectedCommunityRouteSlug = preview?.routeSlug ?: _state.value.selectedCommunityRouteSlug,
                     eligibility = eligibility,
                     viewerUserId = viewerUserId,
                     publicHandle = profile?.displayPirateHandle() ?: _state.value.publicHandle,
@@ -461,7 +465,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     ): LocalizedPostResponse =
         powGate.execute(
             scope = "post_create",
-            action = "community:$communityId",
+            action = communityAltchaAction(communityId),
             onSolvingProofOfWorkChanged = ::setSolvingProofOfWork,
         ) { altchaHeader ->
             communityRepository.createPost(
@@ -500,7 +504,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     ): LiveRoom =
         powGate.execute(
             scope = "post_create",
-            action = "community:$communityId",
+            action = communityAltchaAction(communityId),
             onSolvingProofOfWorkChanged = ::setSolvingProofOfWork,
         ) { altchaHeader ->
             if (current.live.accessMode == LiveAccessMode.Paid) {
@@ -1673,9 +1677,19 @@ private fun PostComposerSettingsContent(
 }
 
 private fun PostComposerUiState.communityLabel(): String =
-    selectedCommunityName?.takeIf { it.isNotBlank() }
-        ?: selectedCommunityId?.takeIf { it.isNotBlank() }?.let { "Selected community" }
+    selectedCommunityId?.takeIf { it.isNotBlank() }?.let { communityId ->
+        formatCommunityRouteLabel(
+            communityId = communityId,
+            routeSlug = selectedCommunityRouteSlug,
+        )
+    } ?: selectedCommunityName?.takeIf { it.isNotBlank() }
         ?: "Community"
+
+private fun communityAltchaAction(communityId: String): String {
+    val trimmed = communityId.trim()
+    val publicCommunityId = if (trimmed.startsWith("com_")) trimmed else "com_$trimmed"
+    return "community:$publicCommunityId"
+}
 
 @Composable
 private fun ComposerSettingsOptionRow(

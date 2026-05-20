@@ -27,6 +27,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -60,6 +61,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -81,6 +83,7 @@ import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
+import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.EmptyFeedState
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
@@ -107,6 +110,7 @@ data class CommunityUiState(
     val loading: Boolean = true,
     val postsLoadingMore: Boolean = false,
     val joinLoading: Boolean = false,
+    val solvingProofOfWork: Boolean = false,
     val followLoading: Boolean = false,
     val error: String? = null,
     val postsPaginationError: String? = null,
@@ -129,6 +133,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
 
     private var currentCommunityId: String? = null
     private var currentHasSession: Boolean = false
+    private var joinJob: Job? = null
 
     fun loadCommunity(communityId: String, hasSession: Boolean, sort: String = _state.value.activeSort) {
         currentCommunityId = communityId
@@ -266,12 +271,16 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun joinCommunity() {
         val communityId = currentCommunityId ?: return
-        viewModelScope.launch {
+        joinJob?.cancel()
+        joinJob = viewModelScope.launch {
             _state.value = _state.value.copy(joinLoading = true, joinError = null)
             try {
                 val joinResult = powGate.execute(
                     scope = "community_join",
-                    action = "community:$communityId",
+                    action = communityAltchaAction(communityId),
+                    onSolvingProofOfWorkChanged = { solving ->
+                        _state.value = _state.value.copy(solvingProofOfWork = solving)
+                    },
                 ) { altchaHeader ->
                     communityRepository.joinCommunity(communityId, altchaHeader)
                 }
@@ -293,15 +302,32 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     eligibility = communityRepository.getJoinEligibility(communityId),
                     preview = nextPreview,
                     joinLoading = false,
+                    solvingProofOfWork = false,
                 )
             } catch (e: Exception) {
-                if (e is CancellationException) throw e
+                if (e is CancellationException) {
+                    _state.value = _state.value.copy(
+                        joinLoading = false,
+                        solvingProofOfWork = false,
+                    )
+                    throw e
+                }
                 _state.value = _state.value.copy(
                     joinLoading = false,
+                    solvingProofOfWork = false,
                     joinError = e.message ?: "Could not join community",
                 )
             }
         }
+    }
+
+    fun cancelJoin() {
+        joinJob?.cancel()
+        joinJob = null
+        _state.value = _state.value.copy(
+            joinLoading = false,
+            solvingProofOfWork = false,
+        )
     }
 
     fun toggleFollow() {
@@ -603,6 +629,7 @@ fun CommunityScreen(
                                 isFollowing = preview?.viewerFollowing == true,
                                 isMember = viewerIsMember,
                                 joinLoading = state.joinLoading,
+                                solvingProofOfWork = state.solvingProofOfWork,
                                 followError = state.followError,
                                 joinError = state.joinError,
                                 onJoin = viewModel::joinCommunity,
@@ -775,6 +802,41 @@ fun CommunityScreen(
                     }
                 }
             }
+
+            if (state.solvingProofOfWork) {
+                ModalBottomSheet(
+                    onDismissRequest = viewModel::cancelJoin,
+                    containerColor = PirateTokens.colors.bgElevated,
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "Verifying access",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = PirateTokens.colors.textPrimary,
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Solving proof-of-work for this community.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                        )
+                        Spacer(modifier = Modifier.height(18.dp))
+                        PirateButton(
+                            text = "Cancel",
+                            onClick = viewModel::cancelJoin,
+                            variant = ButtonVariant.Outline,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -808,10 +870,10 @@ private fun sameUserId(left: String?, right: String?): Boolean {
 private fun communityStatusText(eligibility: JoinEligibility): String =
     when (eligibility.status) {
         "already_joined" -> ""
-        "joinable" -> "Join to post and reply here."
+        "joinable" -> ""
         "requestable" -> "Membership requires a request."
         "verification_required" -> if (requiresProofOfWork(eligibility)) {
-            "Proof-of-work required to join."
+            ""
         } else {
             val provider = eligibility.suggestedVerificationProvider ?: eligibility.humanVerificationLane
             "Verification required with ${verificationProviderLabel(provider)}."
@@ -872,6 +934,12 @@ private fun countryCodeToName(value: String): String {
 private fun requiresProofOfWork(eligibility: JoinEligibility?): Boolean =
     eligibility?.missingCapabilities?.contains("altcha_pow") == true ||
         eligibility?.membershipGateSummaries?.any { it.gateType == "altcha_pow" } == true
+
+private fun communityAltchaAction(communityId: String): String {
+    val trimmed = communityId.trim()
+    val publicCommunityId = if (trimmed.startsWith("com_")) trimmed else "com_$trimmed"
+    return "community:$publicCommunityId"
+}
 
 private fun isSelfCapability(capability: String): Boolean =
     capability == "unique_human" ||
@@ -953,61 +1021,61 @@ private fun CommunityHeaderActions(
     isFollowing: Boolean,
     isMember: Boolean,
     joinLoading: Boolean,
+    solvingProofOfWork: Boolean,
     onJoin: () -> Unit,
     onToggleFollow: () -> Unit,
     onVerify: () -> Unit,
 ) {
-    Column(
+    val primaryActionLabel = when (eligibility?.status) {
+        "joinable", "verification_required" -> "Join"
+        "requestable" -> "Request to join"
+        else -> null
+    }
+    val showPrimaryAction = !canCreatePost && primaryActionLabel != null
+    val showFollowAction = hasSession && !isMember
+
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         if (isMember) {
             PirateButton(
                 text = "Joined",
                 onClick = {},
                 enabled = false,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
             )
-        } else if (hasSession) {
+            return@Row
+        }
+
+        if (showPrimaryAction) {
+            if (eligibility?.status == "verification_required" && !requiresProofOfWork(eligibility)) {
+                if (eligibility.suggestedVerificationProvider == "self") {
+                    PirateButton(
+                        text = "Verify with ID",
+                        onClick = onVerify,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            } else {
+                PirateButton(
+                    text = if (solvingProofOfWork) "Solving proof..." else primaryActionLabel.orEmpty(),
+                    onClick = onJoin,
+                    loading = joinLoading || solvingProofOfWork,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        if (showFollowAction) {
             PirateButton(
                 text = if (isFollowing) "Following" else "Follow",
                 onClick = onToggleFollow,
                 loading = followLoading,
-                modifier = Modifier.fillMaxWidth(),
+                variant = ButtonVariant.Outline,
+                modifier = Modifier.weight(1f),
             )
-        }
-
-        if (!canCreatePost) {
-            when (eligibility?.status) {
-                "joinable" -> PirateButton(
-                    text = "Join",
-                    onClick = onJoin,
-                    loading = joinLoading,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                "requestable" -> PirateButton(
-                    text = "Request to join",
-                    onClick = onJoin,
-                    loading = joinLoading,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                "verification_required" -> {
-                    if (requiresProofOfWork(eligibility)) {
-                        PirateButton(
-                            text = "Proof-of-work required",
-                            onClick = {},
-                            enabled = false,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    } else if (eligibility.suggestedVerificationProvider == "self") {
-                        PirateButton(
-                            text = "Verify with ID",
-                            onClick = onVerify,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            }
         }
     }
 }
@@ -1053,6 +1121,7 @@ private fun CommunityHero(
     isFollowing: Boolean,
     isMember: Boolean,
     joinLoading: Boolean,
+    solvingProofOfWork: Boolean,
     followError: String?,
     joinError: String?,
     onJoin: () -> Unit,
@@ -1129,6 +1198,7 @@ private fun CommunityHero(
                 isFollowing = isFollowing,
                 isMember = isMember,
                 joinLoading = joinLoading,
+                solvingProofOfWork = solvingProofOfWork,
                 onJoin = onJoin,
                 onToggleFollow = onToggleFollow,
                 onVerify = onVerify,
@@ -1150,7 +1220,7 @@ private fun CommunityHero(
 private fun CommunityMeta(text: String) {
     Text(
         text = text,
-        style = MaterialTheme.typography.labelMedium,
+        style = MaterialTheme.typography.bodyMedium,
         color = PirateTokens.colors.textSecondary,
     )
 }

@@ -381,6 +381,7 @@ data class AltchaChallengeParameters(
     val cost: Int,
     val keyLength: Int,
     val keyPrefix: String,
+    val keySignature: String? = null,
     val expiresAt: Long? = null,
     val data: Map<String, String?>? = null,
 )
@@ -588,15 +589,21 @@ data class PublicCommunitySearchResponse(
 
 @Serializable
 data class PostVoteResponse(
-    @SerialName("post_id") val postId: String,
+    @SerialName("post") private val contractPostId: String? = null,
+    @SerialName("post_id") private val legacyPostId: String? = null,
     val value: Int,
-)
+) {
+    val postId: String get() = contractPostId ?: legacyPostId.orEmpty()
+}
 
 @Serializable
 data class CommentVoteResponse(
-    @SerialName("comment_id") val commentId: String,
+    @SerialName("comment") private val contractCommentId: String? = null,
+    @SerialName("comment_id") private val legacyCommentId: String? = null,
     val value: Int,
-)
+) {
+    val commentId: String get() = contractCommentId ?: legacyCommentId.orEmpty()
+}
 
 @Serializable
 data class Comment(
