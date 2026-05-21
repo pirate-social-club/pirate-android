@@ -51,8 +51,8 @@ For the production app, use the signed release APK workflow instead:
 ```bash
 rtk gh workflow run android-release-apk.yml --ref <pushed-ref>
 rtk gh run watch <run-id> --exit-status
-rtk gh run download <run-id> -n release-apk -D /tmp/pirate-android-prod-release-<run-id>
-rtk /home/t42/Android/Sdk/platform-tools/adb install -r /tmp/pirate-android-prod-release-<run-id>/app-release.apk
+rtk gh run download <run-id> -n release-apk -D play-upload/<run-id>
+rtk /home/t42/Android/Sdk/platform-tools/adb install -r play-upload/<run-id>/app-release.apk
 rtk /home/t42/Android/Sdk/platform-tools/adb shell monkey -p sc.pirate.mobile -c android.intent.category.LAUNCHER 1
 ```
 
