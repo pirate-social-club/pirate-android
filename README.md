@@ -108,6 +108,14 @@ The workflow uploads a `release-aab` artifact containing:
 app/build/outputs/bundle/release/app-release.aab
 ```
 
+Play Console AAB download path:
+
+```bash
+rtk gh workflow run android-release-bundle.yml --ref <pushed-branch-or-commit>
+rtk gh run watch <run-id> --exit-status
+rtk gh run download <run-id> -n release-aab -D /tmp/pirate-android-prod-release-<run-id>
+```
+
 When a production APK is needed for a directly attached phone, use the same
 Blacksmith release workflow and download the `release-apk` artifact. Do not
 assemble a release APK locally for the normal screenshot/install loop.

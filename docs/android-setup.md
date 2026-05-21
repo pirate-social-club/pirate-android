@@ -55,6 +55,14 @@ Use this release workflow when a Play AAB or production APK artifact is needed.
 Do not create those artifacts with local Gradle during the normal
 install/screenshot/release loop.
 
+Play Console AAB download path:
+
+```bash
+rtk gh workflow run android-release-bundle.yml --ref <pushed-ref>
+rtk gh run watch <run-id> --exit-status
+rtk gh run download <run-id> -n release-aab -D /tmp/pirate-android-prod-release-<run-id>
+```
+
 The release APK is the production "Pirate" app:
 
 - package: `sc.pirate.mobile`
