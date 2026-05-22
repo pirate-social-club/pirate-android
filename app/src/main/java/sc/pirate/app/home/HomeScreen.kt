@@ -23,12 +23,15 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -101,6 +104,7 @@ import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.VoteControl
@@ -118,7 +122,10 @@ data class HomeUiState(
     val refreshError: String? = null,
     val followError: String? = null,
     val voteError: String? = null,
+    val reportError: String? = null,
+    val reportNotice: String? = null,
     val votingPostIds: Set<String> = emptySet(),
+    val reportingPostIds: Set<String> = emptySet(),
     val followingCommunityIds: Set<String> = emptySet(),
     val viewerUserId: String? = null,
     val liveRoomAccessById: Map<String, LiveRoomAccessResponse> = emptyMap(),
@@ -391,6 +398,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     feed = _state.value.feed?.replacePostItem(previousItem),
                     voteError = e.message ?: "Could not update vote",
                     votingPostIds = _state.value.votingPostIds - postId,
+                )
+            }
+        }
+    }
+
+    fun reportPost(item: HomeFeedItem, draft: PostReportDraft) {
+        val postId = item.post.post.postId
+        val communityId = item.homeCommunityId()
+        val currentState = _state.value
+        if (postId in currentState.reportingPostIds) return
+
+        _state.value = currentState.copy(
+            reportError = null,
+            reportNotice = null,
+            reportingPostIds = currentState.reportingPostIds + postId,
+        )
+
+        viewModelScope.launch {
+            try {
+                postRepository.reportPost(
+                    communityId = communityId,
+                    postId = postId,
+                    request = buildPostReportRequest(draft),
+                )
+                _state.value = _state.value.copy(
+                    reportNotice = "Report sent. Thank you for helping keep Pirate safe.",
+                    reportingPostIds = _state.value.reportingPostIds - postId,
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportError = e.message ?: "Could not send report",
+                    reportingPostIds = _state.value.reportingPostIds - postId,
                 )
             }
         }
@@ -767,6 +808,7 @@ fun HomeScreen(
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
     var actionItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+    var reportItem by remember { mutableStateOf<HomeFeedItem?>(null) }
 
     authPromptAction?.let {
         signInDrawer { authPromptAction = null }
@@ -811,6 +853,26 @@ fun HomeScreen(
                 } else {
                     authPromptAction = "Following communities"
                 }
+            },
+            onReportPost = {
+                actionItem = null
+                if (hasSession) {
+                    reportItem = item
+                } else {
+                    authPromptAction = "Reporting posts"
+                }
+            },
+        )
+    }
+
+    reportItem?.let { item ->
+        val postId = item.post.post.postId
+        PostReportSheet(
+            submitting = postId in state.reportingPostIds,
+            onDismiss = { reportItem = null },
+            onSubmit = { draft ->
+                viewModel.reportPost(item, draft)
+                reportItem = null
             },
         )
     }
@@ -927,6 +989,26 @@ fun HomeScreen(
                                 HomeInlineMessage(
                                     title = "Refresh failed",
                                     description = state.refreshError.orEmpty(),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                )
+                            }
+                        }
+
+                        if (state.reportNotice != null) {
+                            item {
+                                HomeInlineMessage(
+                                    title = "Report sent",
+                                    description = state.reportNotice.orEmpty(),
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                )
+                            }
+                        }
+
+                        if (state.reportError != null) {
+                            item {
+                                HomeInlineMessage(
+                                    title = "Report failed",
+                                    description = state.reportError.orEmpty(),
                                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                                 )
                             }
@@ -1229,6 +1311,7 @@ private fun PostActionSheet(
     followLoading: Boolean,
     onDismiss: () -> Unit,
     onToggleFollow: () -> Unit,
+    onReportPost: () -> Unit,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1238,6 +1321,7 @@ private fun PostActionSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -1256,11 +1340,118 @@ private fun PostActionSheet(
             SheetActionRow(
                 label = "Report post",
                 icon = PhosphorIcons.Flag,
-                enabled = false,
-                onClick = {},
+                onClick = onReportPost,
             )
             Spacer(modifier = Modifier.size(16.dp))
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun PostReportSheet(
+    submitting: Boolean,
+    onDismiss: () -> Unit,
+    onSubmit: (PostReportDraft) -> Unit,
+) {
+    var reason by rememberSaveable { mutableStateOf(PostReportReason.ChildSafety) }
+    var note by rememberSaveable { mutableStateOf("") }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Report post",
+                style = MaterialTheme.typography.titleLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+            Text(
+                text = "Choose the closest reason. For child safety concerns, report where it appears; do not send or upload suspected CSAM.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.textSecondary,
+            )
+
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                PostReportReason.values().forEach { option ->
+                    ReportReasonRow(
+                        label = option.label,
+                        selected = option == reason,
+                        enabled = !submitting,
+                        onClick = { reason = option },
+                    )
+                }
+            }
+
+            OutlinedTextField(
+                value = note,
+                onValueChange = { note = it.take(500) },
+                enabled = !submitting,
+                label = { Text("Optional note") },
+                minLines = 2,
+                maxLines = 4,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                PirateButton(
+                    text = "Cancel",
+                    onClick = onDismiss,
+                    enabled = !submitting,
+                    variant = ButtonVariant.Outline,
+                    modifier = Modifier.weight(1f),
+                )
+                PirateButton(
+                    text = "Submit",
+                    onClick = { onSubmit(PostReportDraft(reason = reason, note = note)) },
+                    enabled = !submitting,
+                    loading = submitting,
+                    leadingIcon = PhosphorIcons.Flag,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ReportReasonRow(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = if (selected) PhosphorIcons.CheckCircle else PhosphorIcons.Flag,
+            contentDescription = null,
+            tint = if (selected) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) PirateTokens.colors.textPrimary else PirateTokens.colors.textSecondary.copy(alpha = 0.5f),
+        )
     }
 }
 

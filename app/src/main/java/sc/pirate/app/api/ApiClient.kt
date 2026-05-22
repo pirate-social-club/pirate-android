@@ -457,6 +457,15 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
         }
 
+        suspend fun reportPost(
+            communityId: String,
+            postId: String,
+            request: CreateUserReportRequest,
+        ) {
+            val body = api.json.encodeToString(CreateUserReportRequest.serializer(), request)
+            api.postString("/communities/$communityId/posts/$postId/reports", body)
+        }
+
         suspend fun uploadMedia(
             kind: String,
             bytes: ByteArray,

@@ -3,6 +3,7 @@ package sc.pirate.app.shared.api
 import sc.pirate.app.api.ApiClient
 import sc.pirate.app.api.CompleteVerificationSessionRequest
 import sc.pirate.app.api.CreateCommentRequest
+import sc.pirate.app.api.CreateUserReportRequest
 import sc.pirate.app.api.ProfileUpdateInput
 import sc.pirate.app.api.RenameHandleResponse
 import sc.pirate.app.api.SessionExchangeProof
@@ -205,6 +206,11 @@ interface PostRepository {
         postId: String,
         request: CreateCommentRequest,
         altchaHeader: String? = null,
+    )
+    suspend fun reportPost(
+        communityId: String,
+        postId: String,
+        request: CreateUserReportRequest,
     )
     suspend fun listReplies(
         commentId: String,
@@ -600,6 +606,14 @@ class ApiPostRepository(
         altchaHeader: String?,
     ) {
         apiClient.communities.createComment(communityId, postId, request, altchaHeader)
+    }
+
+    override suspend fun reportPost(
+        communityId: String,
+        postId: String,
+        request: CreateUserReportRequest,
+    ) {
+        apiClient.communities.reportPost(communityId, postId, request)
     }
 
     override suspend fun listPublicReplies(
