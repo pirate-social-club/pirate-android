@@ -1,6 +1,8 @@
 package sc.pirate.app.post
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
@@ -54,6 +56,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody
+import okio.BufferedSink
 import sc.pirate.app.api.PoWGate
 import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.CreateSongArtifactBundleRequest
@@ -62,7 +67,7 @@ import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LiveRoom
-import sc.pirate.app.api.model.LocalizedPostResponse
+import sc.pirate.app.api.model.Post
 import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.SongArtifactBundle
@@ -79,6 +84,8 @@ import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.VoteControl
+import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.util.UUID
 
 data class PostComposerUiState(
@@ -116,6 +123,21 @@ data class PostComposerUiState(
     val error: String? = null,
     val submitted: Boolean = false,
     val createdPostId: String? = null,
+)
+
+private data class UploadedPosterFrame(
+    val mediaRef: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val width: Int,
+    val height: Int,
+    val frameMs: Long,
+)
+
+private data class VideoMediaMetadata(
+    val width: Int?,
+    val height: Int?,
+    val durationMs: Long?,
 )
 
 enum class PostComposerIdentityMode(val apiValue: String) {
@@ -440,7 +462,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                                 visibility = "public",
                             ),
                         )
-                        createdPost.post.postId
+                        createdPost.postId
                     }
                 }
                 _state.value = _state.value.copy(
@@ -462,7 +484,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     private suspend fun createPostWithProofOfWork(
         communityId: String,
         request: CreatePostRequest,
-    ): LocalizedPostResponse =
+    ): Post =
         powGate.execute(
             scope = "post_create",
             action = communityAltchaAction(communityId),
@@ -584,7 +606,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             ),
         )
         if (isLocked) {
-            val assetId = postResponse.post.assetId
+            val assetId = postResponse.assetId
                 ?: throw IllegalStateException("Song published but asset not created.")
             val listingRequest = buildSongListingRequest(
                 assetId = assetId,
@@ -594,7 +616,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             ) ?: throw IllegalStateException("Invalid song price.")
             communityRepository.createListing(communityId, listingRequest)
         }
-        return postResponse.post.postId
+        return postResponse.postId
     }
 
     private suspend fun uploadPostMediaRef(communityId: String, current: PostComposerUiState): PostMediaRef {
@@ -603,11 +625,22 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         )
         return if (current.postType == PostComposerMode.Video) {
             val upload = uploadVideoArtifact(communityId, uri)
+            val metadata = uri.videoMetadata()
+            val poster = uri.uploadVideoPosterFrame()
             PostMediaRef(
                 storageRef = upload.storageRef,
                 mimeType = upload.mimeType.ifBlank { current.mediaMimeType ?: "video/mp4" },
                 sizeBytes = upload.sizeBytes ?: current.mediaSizeBytes,
                 contentHash = upload.contentHash,
+                width = metadata.width,
+                height = metadata.height,
+                durationMs = metadata.durationMs,
+                posterRef = poster?.mediaRef,
+                posterMimeType = poster?.mimeType,
+                posterSizeBytes = poster?.sizeBytes,
+                posterWidth = poster?.width,
+                posterHeight = poster?.height,
+                posterFrameMs = poster?.frameMs,
             )
         } else {
             PostMediaRef(
@@ -625,18 +658,21 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "video/mp4"
         val name = uri.displayName()
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalStateException("Could not read selected video: $name")
+        val sizeBytes = uri.sizeBytes()
         val intent = communityRepository.createArtifactUpload(
             communityId,
             CreateSongArtifactUploadRequest(
                 artifactKind = "primary_video",
                 mimeType = mimeType,
                 filename = name,
-                sizeBytes = bytes.size.toLong(),
+                sizeBytes = sizeBytes,
             ),
         )
-        return communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
+        return communityRepository.uploadArtifactContent(
+            communityId = communityId,
+            uploadId = intent.id,
+            body = uri.streamingRequestBody(mimeType, sizeBytes),
+        )
     }
 
     private suspend fun uploadSongArtifact(
@@ -714,6 +750,80 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             }
         }
         return null
+    }
+
+    private fun Uri.streamingRequestBody(mimeType: String, sizeBytes: Long?): RequestBody {
+        val contentResolver = app.contentResolver
+        return object : RequestBody() {
+            override fun contentType() = mimeType.toMediaTypeOrNull()
+
+            override fun contentLength(): Long = sizeBytes ?: -1L
+
+            override fun writeTo(sink: BufferedSink) {
+                val input = contentResolver.openInputStream(this@streamingRequestBody)
+                    ?: throw IOException("Could not read selected video.")
+                input.use { stream ->
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val read = stream.read(buffer)
+                        if (read == -1) break
+                        sink.write(buffer, 0, read)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun Uri.videoMetadata(): VideoMediaMetadata {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(app, this)
+            val rawWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull()
+            val rawHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull()
+            val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+            val rotated = rotation == 90 || rotation == 270
+            VideoMediaMetadata(
+                width = if (rotated) rawHeight else rawWidth,
+                height = if (rotated) rawWidth else rawHeight,
+                durationMs = durationMs,
+            )
+        } catch (_: Exception) {
+            VideoMediaMetadata(width = null, height = null, durationMs = null)
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
+    private suspend fun Uri.uploadVideoPosterFrame(frameMs: Long = 0L): UploadedPosterFrame? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(app, this)
+            val bitmap = retriever.getFrameAtTime(frameMs * 1_000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: return null
+            val bytes = ByteArrayOutputStream().use { output ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
+                output.toByteArray()
+            }
+            val ref = communityRepository.uploadMedia(
+                kind = "post_image",
+                bytes = bytes,
+                filename = "${displayName().substringBeforeLast('.')}-poster.jpg",
+                mimeType = "image/jpeg",
+            )
+            UploadedPosterFrame(
+                mediaRef = ref,
+                mimeType = "image/jpeg",
+                sizeBytes = bytes.size.toLong(),
+                width = bitmap.width,
+                height = bitmap.height,
+                frameMs = frameMs,
+            )
+        } catch (_: Exception) {
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
     }
 
     private suspend fun Uri.uploadCommunityMedia(kind: String): String {

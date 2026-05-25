@@ -1,8 +1,10 @@
 package sc.pirate.app.shared.api
 
+import okhttp3.RequestBody
 import sc.pirate.app.api.ApiClient
 import sc.pirate.app.api.CompleteVerificationSessionRequest
 import sc.pirate.app.api.CreateCommentRequest
+import sc.pirate.app.api.CreateUserReportRequest
 import sc.pirate.app.api.ProfileUpdateInput
 import sc.pirate.app.api.RenameHandleResponse
 import sc.pirate.app.api.SessionExchangeProof
@@ -44,6 +46,7 @@ import sc.pirate.app.api.model.NotificationFeedResponse
 import sc.pirate.app.api.model.NotificationSummary
 import sc.pirate.app.api.model.NotificationTasksResponse
 import sc.pirate.app.api.model.OnboardingStatus
+import sc.pirate.app.api.model.Post
 import sc.pirate.app.api.model.PostListResponse
 import sc.pirate.app.api.model.PostVoteResponse
 import sc.pirate.app.api.model.PostableCommunitiesResponse
@@ -108,13 +111,14 @@ interface CommunityRepository {
         communityId: String,
         request: CreatePostRequest,
         altchaHeader: String? = null,
-    ): LocalizedPostResponse
+    ): Post
     suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String
     suspend fun createArtifactUpload(
         communityId: String,
         request: CreateSongArtifactUploadRequest,
     ): SongArtifactUpload
     suspend fun uploadArtifactContent(communityId: String, uploadId: String, bytes: ByteArray): SongArtifactUpload
+    suspend fun uploadArtifactContent(communityId: String, uploadId: String, body: RequestBody): SongArtifactUpload
     suspend fun createSongArtifactBundle(
         communityId: String,
         request: CreateSongArtifactBundleRequest,
@@ -205,6 +209,11 @@ interface PostRepository {
         postId: String,
         request: CreateCommentRequest,
         altchaHeader: String? = null,
+    )
+    suspend fun reportPost(
+        communityId: String,
+        postId: String,
+        request: CreateUserReportRequest,
     )
     suspend fun listReplies(
         commentId: String,
@@ -384,7 +393,7 @@ class ApiCommunityRepository(
         communityId: String,
         request: CreatePostRequest,
         altchaHeader: String?,
-    ): LocalizedPostResponse {
+    ): Post {
         return apiClient.communities.createPost(communityId, request, altchaHeader)
     }
 
@@ -405,6 +414,14 @@ class ApiCommunityRepository(
         bytes: ByteArray,
     ): SongArtifactUpload {
         return apiClient.communities.uploadArtifactContent(communityId, uploadId, bytes)
+    }
+
+    override suspend fun uploadArtifactContent(
+        communityId: String,
+        uploadId: String,
+        body: RequestBody,
+    ): SongArtifactUpload {
+        return apiClient.communities.uploadArtifactContent(communityId, uploadId, body)
     }
 
     override suspend fun createSongArtifactBundle(
@@ -600,6 +617,14 @@ class ApiPostRepository(
         altchaHeader: String?,
     ) {
         apiClient.communities.createComment(communityId, postId, request, altchaHeader)
+    }
+
+    override suspend fun reportPost(
+        communityId: String,
+        postId: String,
+        request: CreateUserReportRequest,
+    ) {
+        apiClient.communities.reportPost(communityId, postId, request)
     }
 
     override suspend fun listPublicReplies(

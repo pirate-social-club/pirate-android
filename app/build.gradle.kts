@@ -63,8 +63,8 @@ android {
     applicationId = "sc.pirate.mobile"
     minSdk = 28
     targetSdk = 36
-    versionCode = 10
-    versionName = "0.1.0-alpha.7-play-20260513"
+    versionCode = 11
+    versionName = "0.1.0-alpha.8-play-20260522"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     manifestPlaceholders["appLabel"] = "@string/app_name"

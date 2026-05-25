@@ -9,6 +9,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import sc.pirate.app.api.model.*
@@ -188,6 +189,16 @@ class ApiClient(private val sessionStore: SessionStore) {
         bytes: ByteArray,
         contentType: String = "application/octet-stream",
         requireAuth: Boolean = true,
+    ): String = putRequestBodyString(
+        path = path,
+        body = bytes.toRequestBody(contentType.toMediaTypeOrNull()),
+        requireAuth = requireAuth,
+    )
+
+    private suspend fun putRequestBodyString(
+        path: String,
+        body: RequestBody,
+        requireAuth: Boolean = true,
     ): String {
         val response = withContext(Dispatchers.IO) {
             val requestBuilder = Request.Builder().url("$baseUrl$path")
@@ -199,7 +210,7 @@ class ApiClient(private val sessionStore: SessionStore) {
             }
             client.newCall(
                 requestBuilder
-                    .put(bytes.toRequestBody(contentType.toMediaTypeOrNull()))
+                    .put(body)
                     .build(),
             ).execute().use { rawResponse ->
                 ApiResponse(
@@ -447,14 +458,23 @@ class ApiClient(private val sessionStore: SessionStore) {
             communityId: String,
             request: CreatePostRequest,
             altchaHeader: String? = null,
-        ): LocalizedPostResponse {
+        ): Post {
             val body = api.json.encodeToString(CreatePostRequest.serializer(), request)
             val response = api.postString(
                 "/communities/$communityId/posts",
                 body,
                 headers = altchaHeader.toAltchaHeader(),
             )
-            return api.json.decodeFromString(LocalizedPostResponse.serializer(), response)
+            return api.json.decodeFromString(Post.serializer(), response)
+        }
+
+        suspend fun reportPost(
+            communityId: String,
+            postId: String,
+            request: CreateUserReportRequest,
+        ) {
+            val body = api.json.encodeToString(CreateUserReportRequest.serializer(), request)
+            api.postString("/communities/$communityId/posts/$postId/reports", body)
         }
 
         suspend fun uploadMedia(
@@ -493,6 +513,18 @@ class ApiClient(private val sessionStore: SessionStore) {
             val response = api.putBytesString(
                 "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(uploadId)}/content",
                 bytes,
+            )
+            return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
+        }
+
+        suspend fun uploadArtifactContent(
+            communityId: String,
+            uploadId: String,
+            body: RequestBody,
+        ): SongArtifactUpload {
+            val response = api.putRequestBodyString(
+                "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(uploadId)}/content",
+                body,
             )
             return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
         }

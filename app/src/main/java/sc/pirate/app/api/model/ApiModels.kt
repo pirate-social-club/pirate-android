@@ -472,8 +472,10 @@ data class PostMediaRef(
     @SerialName("duration_ms") val durationMs: Long? = null,
     @SerialName("poster_ref") val posterRef: String? = null,
     @SerialName("poster_mime_type") val posterMimeType: String? = null,
+    @SerialName("poster_size_bytes") val posterSizeBytes: Long? = null,
     @SerialName("poster_width") val posterWidth: Int? = null,
     @SerialName("poster_height") val posterHeight: Int? = null,
+    @SerialName("poster_frame_ms") val posterFrameMs: Long? = null,
 )
 
 @Serializable
@@ -538,7 +540,10 @@ data class Post(
     @SerialName("song_title") val songTitle: String? = null,
     @SerialName("song_mode") val songMode: String? = null,
     @SerialName("rights_basis") val rightsBasis: String? = null,
-    @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String> = emptyList(),
+    @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String>? = null,
+    @SerialName("source_start_ms") val sourceStartMs: Long? = null,
+    @SerialName("source_duration_ms") val sourceDurationMs: Long? = null,
+    @SerialName("sync_offset_ms") val syncOffsetMs: Long? = null,
     @SerialName("analysis_state") val analysisState: String? = null,
     @SerialName("content_safety_state") val contentSafetyState: String? = null,
     @SerialName("age_gate_policy") val ageGatePolicy: String? = null,
@@ -728,6 +733,9 @@ data class CreatePostRequest(
     @SerialName("license_preset") val licensePreset: String? = null,
     @SerialName("commercial_rev_share_pct") val commercialRevSharePct: Int? = null,
     @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String>? = null,
+    @SerialName("source_start_ms") val sourceStartMs: Long? = null,
+    @SerialName("source_duration_ms") val sourceDurationMs: Long? = null,
+    @SerialName("sync_offset_ms") val syncOffsetMs: Long? = null,
 )
 
 @Serializable

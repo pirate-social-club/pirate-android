@@ -194,10 +194,11 @@ fun DerivativeSourceSearchScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(state.results, key = { it.id }) { source ->
+                    val sourceRef = sourceUpstreamAssetRef(source)
                     DerivativeSourceRow(
                         source = source,
-                        selected = source.id in state.selectedIds,
-                        onClick = { viewModel.toggleSource(source.id) },
+                        selected = sourceRef in state.selectedIds,
+                        onClick = { viewModel.toggleSource(sourceRef) },
                     )
                 }
                 item { Spacer(modifier = Modifier.height(16.dp)) }
@@ -248,6 +249,9 @@ private fun DerivativeSourceRow(
         }
     }
 }
+
+private fun sourceUpstreamAssetRef(source: DerivativeSource): String =
+    "story:asset:${source.asset}"
 
 private fun sourceSubtitle(source: DerivativeSource): String {
     val creator = source.creatorDisplayName

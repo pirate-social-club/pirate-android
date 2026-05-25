@@ -76,6 +76,12 @@ data class CreateCommentRequest(
 )
 
 @Serializable
+data class CreateUserReportRequest(
+    @kotlinx.serialization.SerialName("reason_code") val reasonCode: String,
+    val note: String? = null,
+)
+
+@Serializable
 data class RenameHandleRequest(
     @kotlinx.serialization.SerialName("desired_label") val desiredLabel: String,
 )
