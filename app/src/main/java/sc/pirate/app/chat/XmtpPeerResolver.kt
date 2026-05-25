@@ -47,7 +47,7 @@ internal class XmtpPeerResolver(context: Context) {
         val resolvedInboxId = handleTarget?.let { resolveHandleLikeTarget(client, it) }
         if (!resolvedInboxId.isNullOrBlank()) return resolvedInboxId
 
-        throw IllegalStateException("No XMTP inbox for ${handleTarget ?: trimmed}")
+        throw IllegalStateException("No XMTP inbox was found for that target.")
     }
 
     private suspend fun resolveHandleLikeTarget(client: Client, rawTarget: String): String? {
@@ -58,12 +58,14 @@ internal class XmtpPeerResolver(context: Context) {
         return runCatching {
             val profile = app.apiClient.profiles.getPublicByHandle(handle).profile
             profile.xmtpInbox?.trim()?.takeIf { it.isNotBlank() }?.let { return@runCatching it }
-            val address = profile.primaryWalletAddress?.trim()?.takeIf { it.isNotBlank() } ?: return@runCatching null
+            val address = profile.primaryWalletAddress?.trim()?.takeIf { it.isNotBlank() }
+                ?: throw IllegalStateException("That Pirate profile does not have a messageable wallet.")
             val normalizedAddress = normalizeEthAddress(address)
             client.inboxIdFromIdentity(PublicIdentity(IdentityKind.ETHEREUM, normalizedAddress))
+                ?: throw IllegalStateException("No XMTP inbox was found for that target.")
         }.onFailure {
             Log.d(TAG, "Handle XMTP lookup failed target=$rawTarget", it)
-        }.getOrNull()?.takeIf { it.isNotBlank() }
+        }.getOrThrow().takeIf { it.isNotBlank() }
     }
 
     private fun normalizeHandleTarget(rawTarget: String): String? {

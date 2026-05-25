@@ -239,6 +239,11 @@ fun PirateNavHost(
                         runCatching { app.repositories.profileRepository.publishXmtpInbox(inboxId) }
                             .onFailure { Log.w(TAG, "XMTP inbox publish failed", it) }
                     },
+                    onOpenWallet = {
+                        navController.navigate(PirateRoute.Wallet.route) {
+                            launchSingleTop = true
+                        }
+                    },
                     onOpenPeerProfile = { walletAddress ->
                         navController.navigate(PirateRoute.PublicProfileByWallet.buildRoute(walletAddress)) {
                             launchSingleTop = true

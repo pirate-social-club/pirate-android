@@ -256,8 +256,7 @@ private fun MessagingStatusLine(data: ProfilePageData) {
 }
 
 private fun ProfilePageData.messageTarget(): String? =
-    profile.xmtpInbox?.trim()?.takeIf { it.isNotBlank() }
-        ?: walletAddress?.trim()?.takeIf { it.isNotBlank() }
+    walletAddress?.trim()?.takeIf { it.isNotBlank() }
 
 @Composable
 private fun ProfileAvatar(

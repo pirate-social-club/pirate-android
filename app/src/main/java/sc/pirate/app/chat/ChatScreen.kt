@@ -81,6 +81,7 @@ fun ChatScreen(
     userAddress: String?,
     onShowMessage: (String) -> Unit,
     onConnected: suspend (String) -> Unit = {},
+    onOpenWallet: () -> Unit = {},
     onOpenPeerProfile: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -182,10 +183,12 @@ fun ChatScreen(
             }
         }
         ChatView.NewDm -> NewDmScreen(
+            canSendMessages = !userAddress.isNullOrBlank(),
             connecting = connecting,
             connected = connected,
             opening = openingConversation,
             onBack = { view = ChatView.Conversations },
+            onOpenWallet = onOpenWallet,
             onCreate = { target ->
                 scope.launch {
                     runCatching {
@@ -212,10 +215,12 @@ fun ChatScreen(
             modifier = modifier,
         )
         ChatView.NewGroup -> NewGroupScreen(
+            canSendMessages = !userAddress.isNullOrBlank(),
             connecting = connecting,
             connected = connected,
             opening = openingConversation,
             onBack = { view = ChatView.Conversations },
+            onOpenWallet = onOpenWallet,
             onCreate = { name, members ->
                 scope.launch {
                     runCatching {
@@ -491,10 +496,12 @@ private fun MessageBubble(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewDmScreen(
+    canSendMessages: Boolean,
     connecting: Boolean,
     connected: Boolean,
     opening: Boolean,
     onBack: () -> Unit,
+    onOpenWallet: () -> Unit,
     onCreate: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -522,24 +529,28 @@ private fun NewDmScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            OutlinedTextField(
-                value = target,
-                onValueChange = { target = it },
-                label = { Text("Handle or wallet address") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(modifier = Modifier.weight(1f))
-            PirateButton(
-                text = when {
-                    opening -> "Opening..."
-                    connecting && !connected -> "Connecting..."
-                    else -> "Message"
-                },
-                onClick = { onCreate(target.trim()) },
-                enabled = target.isNotBlank() && !connecting && !opening,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (!canSendMessages) {
+                WalletRequiredMessage(onOpenWallet = onOpenWallet)
+            } else {
+                OutlinedTextField(
+                    value = target,
+                    onValueChange = { target = it },
+                    label = { Text("Handle or wallet address") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                PirateButton(
+                    text = when {
+                        opening -> "Opening..."
+                        connecting && !connected -> "Connecting..."
+                        else -> "Message"
+                    },
+                    onClick = { onCreate(target.trim()) },
+                    enabled = target.isNotBlank() && !connecting && !opening,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }
@@ -547,10 +558,12 @@ private fun NewDmScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewGroupScreen(
+    canSendMessages: Boolean,
     connecting: Boolean,
     connected: Boolean,
     opening: Boolean,
     onBack: () -> Unit,
+    onOpenWallet: () -> Unit,
     onCreate: (String, List<String>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -588,71 +601,105 @@ private fun NewGroupScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            OutlinedTextField(
-                value = groupName,
-                onValueChange = { groupName = it },
-                label = { Text("Group name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!canSendMessages) {
+                WalletRequiredMessage(onOpenWallet = onOpenWallet)
+            } else {
                 OutlinedTextField(
-                    value = memberInput,
-                    onValueChange = { memberInput = it },
-                    label = { Text("Handle or wallet address") },
+                    value = groupName,
+                    onValueChange = { groupName = it },
+                    label = { Text("Group name") },
                     singleLine = true,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                PirateButton(
-                    text = "Add",
-                    onClick = ::addMember,
-                    enabled = memberInput.isNotBlank(),
-                    variant = ButtonVariant.Outline,
-                )
-            }
-            if (members.isNotEmpty()) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    members.forEach { member ->
-                        Surface(
-                            color = PirateTokens.colors.bgElevated,
-                            border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
-                            shape = RoundedCornerShape(PirateTokens.radius.md),
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = memberInput,
+                        onValueChange = { memberInput = it },
+                        label = { Text("Handle or wallet address") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    PirateButton(
+                        text = "Add",
+                        onClick = ::addMember,
+                        enabled = memberInput.isNotBlank(),
+                        variant = ButtonVariant.Outline,
+                    )
+                }
+                if (members.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        members.forEach { member ->
+                            Surface(
+                                color = PirateTokens.colors.bgElevated,
+                                border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+                                shape = RoundedCornerShape(PirateTokens.radius.md),
                             ) {
-                                Text(
-                                    text = member,
-                                    color = PirateTokens.colors.textPrimary,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                TextButton(onClick = { members = members.filterNot { it == member } }) {
-                                    Text("Remove", color = PirateTokens.colors.textSecondary)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = member,
+                                        color = PirateTokens.colors.textPrimary,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    TextButton(onClick = { members = members.filterNot { it == member } }) {
+                                        Text("Remove", color = PirateTokens.colors.textSecondary)
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                Spacer(modifier = Modifier.weight(1f))
+                PirateButton(
+                    text = when {
+                        opening -> "Opening..."
+                        connecting && !connected -> "Connecting..."
+                        else -> "Create group"
+                    },
+                    onClick = { onCreate(groupName.trim(), members) },
+                    enabled = members.isNotEmpty() && !connecting && !opening,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-            Spacer(modifier = Modifier.weight(1f))
-            PirateButton(
-                text = when {
-                    opening -> "Opening..."
-                    connecting && !connected -> "Connecting..."
-                    else -> "Create group"
-                },
-                onClick = { onCreate(groupName.trim(), members) },
-                enabled = members.isNotEmpty() && !connecting && !opening,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
+    }
+}
+
+@Composable
+private fun WalletRequiredMessage(onOpenWallet: () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "Link a wallet to send messages",
+            color = PirateTokens.colors.textPrimary,
+            style = MaterialTheme.typography.titleMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Encrypted messages need a wallet-backed XMTP identity.",
+            color = PirateTokens.colors.textSecondary,
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(18.dp))
+        PirateButton(
+            text = "Open wallet",
+            onClick = onOpenWallet,
+            leadingIcon = PhosphorIcons.Wallet,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
