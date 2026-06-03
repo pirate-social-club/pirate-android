@@ -135,7 +135,7 @@ fun DerivativeSourceSearchScreen(
         containerColor = PirateTokens.colors.bgPage,
         topBar = {
             TopAppBar(
-                title = { Text("Source track", color = PirateTokens.colors.textPrimary) },
+                title = { Text("Select song", color = PirateTokens.colors.textPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -164,7 +164,7 @@ fun DerivativeSourceSearchScreen(
             OutlinedTextField(
                 value = state.query,
                 onValueChange = viewModel::updateQuery,
-                label = { Text("Search tracks") },
+                label = { Text("Search songs") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -259,6 +259,6 @@ private fun sourceSubtitle(source: DerivativeSource): String {
         ?: source.creatorUser.takeIf { it.isNotBlank() }
         ?: "Unknown artist"
     val license = source.licensePreset?.takeIf { it.isNotBlank() } ?: "license unknown"
-    val share = source.commercialRevSharePct?.let { " · $it% remix share" }.orEmpty()
+    val share = source.commercialRevSharePct?.let { " · $it% royalty share" }.orEmpty()
     return "$creator · $license$share"
 }

@@ -566,9 +566,28 @@ data class SongPresentation(
 )
 
 @Serializable
+data class PostDerivativeSource(
+    @SerialName("source_ref") val sourceRef: String? = null,
+    val title: String? = null,
+    val kind: String? = null,
+    @SerialName("relationship_type") val relationshipType: String? = null,
+    val community: String? = null,
+    val asset: String? = null,
+    @SerialName("source_post") val sourcePost: String? = null,
+    @SerialName("story_ip") val storyIp: String? = null,
+    @SerialName("story_license_terms") val storyLicenseTerms: String? = null,
+    @SerialName("license_preset") val licensePreset: String? = null,
+    @SerialName("commercial_rev_share_pct") val commercialRevSharePct: Int? = null,
+    @SerialName("creator_user") val creatorUser: String? = null,
+    @SerialName("creator_handle") val creatorHandle: String? = null,
+    @SerialName("creator_display_name") val creatorDisplayName: String? = null,
+)
+
+@Serializable
 data class LocalizedPostResponse(
     val post: Post,
     @SerialName("song_presentation") val songPresentation: SongPresentation? = null,
+    @SerialName("derivative_sources") val derivativeSources: List<PostDerivativeSource>? = null,
     @SerialName("age_gate_viewer_state") val ageGateViewerState: String? = null,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
     @SerialName("comment_count") val commentCount: Int? = null,

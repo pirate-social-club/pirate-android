@@ -6,6 +6,7 @@ import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.LiveRoomPerformerAllocationInput
 import sc.pirate.app.api.model.LiveRoomSetlistInput
 import sc.pirate.app.api.model.LiveRoomSetlistItemInput
+import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.SongArtifactBundle
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -32,6 +33,11 @@ enum class PostComposerMode(val apiValue: String) {
 enum class SongMode(val apiValue: String) {
     Original("original"),
     Remix("remix"),
+}
+
+enum class VideoSourceMode {
+    Original,
+    UsesSong,
 }
 
 enum class AssetLicensePreset(val apiValue: String) {
@@ -118,6 +124,11 @@ data class SongComposerState(
     val paidSongPriceUsd: String = "",
     val regionalPricingEnabled: Boolean = false,
     val pendingBundleId: String? = null,
+    val upstreamAssetRefs: List<String> = emptyList(),
+)
+
+data class VideoComposerState(
+    val sourceMode: VideoSourceMode = VideoSourceMode.Original,
     val upstreamAssetRefs: List<String> = emptyList(),
 )
 
@@ -398,6 +409,36 @@ fun buildSongPostRequest(
             null
         },
         upstreamAssetRefs = if (song.songMode == SongMode.Remix) song.upstreamAssetRefs else null,
+    )
+}
+
+fun buildVideoPostRequest(
+    anonymousScope: String?,
+    caption: String,
+    idempotencyKey: String,
+    identityMode: String,
+    mediaRef: PostMediaRef,
+    title: String,
+    video: VideoComposerState,
+    visibility: String = "public",
+): CreatePostRequest {
+    val sourceRefs = if (video.sourceMode == VideoSourceMode.UsesSong) {
+        video.upstreamAssetRefs.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }.distinct()
+    } else {
+        emptyList()
+    }
+    return CreatePostRequest(
+        idempotencyKey = idempotencyKey,
+        title = title.trim().ifBlank { null },
+        caption = caption.trim().ifBlank { null },
+        postType = PostComposerMode.Video.apiValue,
+        mediaRefs = listOf(mediaRef),
+        identityMode = identityMode,
+        anonymousScope = anonymousScope,
+        translationPolicy = "machine_allowed",
+        visibility = visibility,
+        rightsBasis = if (sourceRefs.isNotEmpty()) "derivative" else null,
+        upstreamAssetRefs = sourceRefs.takeIf { it.isNotEmpty() },
     )
 }
 

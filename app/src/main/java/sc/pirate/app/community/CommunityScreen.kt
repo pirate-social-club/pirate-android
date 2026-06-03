@@ -79,6 +79,7 @@ import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.MembershipGateSummary
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.videoUsesSongAttributionLabel
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryRow
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -1420,6 +1421,7 @@ private fun VideoPostRow(
     val posterSrc = resolveVideoPosterUrl(post)
     val duration = durationLabel(post.post.mediaRefs.firstOrNull { it.mimeType?.startsWith("video/") == true }?.durationMs)
     val authorLabel = postAuthorLabel(post)
+    val songAttribution = videoUsesSongAttributionLabel(post)
 
     Surface(
         modifier = modifier.clickable(onClick = onClick),
@@ -1497,6 +1499,15 @@ private fun VideoPostRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            songAttribution?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
                 Text(
                     text = bodyText,

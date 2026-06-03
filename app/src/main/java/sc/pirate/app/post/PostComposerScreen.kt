@@ -99,6 +99,7 @@ data class PostComposerUiState(
     val linkUrl: String = "",
     val live: LiveComposerState = LiveComposerState(),
     val song: SongComposerState = SongComposerState(),
+    val video: VideoComposerState = VideoComposerState(),
     val liveCoverUri: Uri? = null,
     val mediaUri: Uri? = null,
     val mediaLabel: String = "",
@@ -247,6 +248,10 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         _state.value = _state.value.copy(song = song, error = null)
     }
 
+    fun updateVideo(video: VideoComposerState) {
+        _state.value = _state.value.copy(video = video, error = null)
+    }
+
     fun selectMedia(uri: Uri?) {
         val label = uri?.displayName().orEmpty()
         _state.value = _state.value.copy(
@@ -260,10 +265,20 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
 
     fun setDerivativeRefs(refs: List<String>) {
         val normalized = refs.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }.distinct()
-        _state.value = _state.value.copy(
-            song = _state.value.song.copy(upstreamAssetRefs = normalized),
-            error = null,
-        )
+        val current = _state.value
+        _state.value = when (current.postType) {
+            PostComposerMode.Video -> current.copy(
+                video = current.video.copy(
+                    sourceMode = VideoSourceMode.UsesSong,
+                    upstreamAssetRefs = normalized,
+                ),
+                error = null,
+            )
+            else -> current.copy(
+                song = current.song.copy(upstreamAssetRefs = normalized),
+                error = null,
+            )
+        }
     }
 
     private fun setSolvingProofOfWork(solving: Boolean) {
@@ -426,17 +441,33 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     PostComposerMode.Video,
                     PostComposerMode.Link,
                     PostComposerMode.Text -> {
-                        val createdPost = createPostWithProofOfWork(
-                            communityId,
+                        val resolvedIdentityMode = current.resolvedIdentityMode()
+                        val anonymousScope = if (resolvedIdentityMode == PostComposerIdentityMode.Anonymous) {
+                            current.anonymousIdentityScope
+                        } else {
+                            null
+                        }
+                        val request = if (current.postType == PostComposerMode.Video) {
+                            buildVideoPostRequest(
+                                anonymousScope = anonymousScope,
+                                caption = current.body,
+                                idempotencyKey = UUID.randomUUID().toString(),
+                                identityMode = resolvedIdentityMode.apiValue,
+                                mediaRef = uploadPostMediaRef(communityId, current),
+                                title = current.title,
+                                video = current.video,
+                                visibility = "public",
+                            )
+                        } else {
                             CreatePostRequest(
                                 idempotencyKey = UUID.randomUUID().toString(),
                                 title = current.title.trim().ifBlank { null },
-                                body = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
+                                body = if (current.postType == PostComposerMode.Image) {
                                     null
                                 } else {
                                     current.body.trim().ifBlank { null }
                                 },
-                                caption = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
+                                caption = if (current.postType == PostComposerMode.Image) {
                                     current.body.trim().ifBlank { null }
                                 } else {
                                     null
@@ -447,20 +478,20 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                                 } else {
                                     null
                                 },
-                                mediaRefs = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
+                                mediaRefs = if (current.postType == PostComposerMode.Image) {
                                     listOf(uploadPostMediaRef(communityId, current))
                                 } else {
                                     null
                                 },
-                                identityMode = current.resolvedIdentityMode().apiValue,
-                                anonymousScope = if (current.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) {
-                                    current.anonymousIdentityScope
-                                } else {
-                                    null
-                                },
+                                identityMode = resolvedIdentityMode.apiValue,
+                                anonymousScope = anonymousScope,
                                 translationPolicy = "machine_allowed",
                                 visibility = "public",
-                            ),
+                            )
+                        }
+                        val createdPost = createPostWithProofOfWork(
+                            communityId,
+                            request,
                         )
                         createdPost.postId
                     }
@@ -1141,6 +1172,15 @@ private fun PostComposerWriteContent(
                 mediaPicker.launch(if (state.postType == PostComposerMode.Video) "video/*" else "image/*")
             },
         )
+        if (state.postType == PostComposerMode.Video) {
+            Spacer(modifier = Modifier.height(16.dp))
+            VideoSourceFields(
+                enabled = !state.submitting,
+                onChange = viewModel::updateVideo,
+                onOpenSongSearch = { onOpenDerivativeSourceSearch(state.video.upstreamAssetRefs) },
+                video = state.video,
+            )
+        }
         Spacer(modifier = Modifier.height(16.dp))
         BodyEditorChrome {
             OutlinedTextField(
@@ -1169,6 +1209,43 @@ private fun PostComposerWriteContent(
                     .weight(1f),
                 maxLines = 12,
                 enabled = !state.submitting,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VideoSourceFields(
+    enabled: Boolean,
+    onChange: (VideoComposerState) -> Unit,
+    onOpenSongSearch: () -> Unit,
+    video: VideoComposerState,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LiveChoiceSection(title = "Video source") {
+            LiveChoiceChip("Original video", video.sourceMode == VideoSourceMode.Original, enabled) {
+                onChange(
+                    video.copy(
+                        sourceMode = VideoSourceMode.Original,
+                        upstreamAssetRefs = emptyList(),
+                    ),
+                )
+            }
+            LiveChoiceChip("Uses song", video.sourceMode == VideoSourceMode.UsesSong, enabled) {
+                onChange(video.copy(sourceMode = VideoSourceMode.UsesSong))
+            }
+        }
+        if (video.sourceMode == VideoSourceMode.UsesSong) {
+            PirateButton(
+                text = if (video.upstreamAssetRefs.isEmpty()) {
+                    "Select song"
+                } else {
+                    "Songs used (${video.upstreamAssetRefs.size})"
+                },
+                onClick = onOpenSongSearch,
+                enabled = enabled,
+                variant = ButtonVariant.Outline,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

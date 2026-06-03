@@ -89,6 +89,7 @@ import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.videoUsesSongAttributionLabel
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -1455,6 +1456,7 @@ private fun ThreadRootPost(
         authorUserId = post.authorUserId,
         authorProfile = authorProfile,
     )
+    val songAttribution = videoUsesSongAttributionLabel(postResponse)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1497,6 +1499,15 @@ private fun ThreadRootPost(
                 style = MaterialTheme.typography.titleMedium,
                 color = PirateTokens.colors.textPrimary,
             )
+            songAttribution?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             body?.takeIf { it.isNotBlank() && it != title }?.let {
                 Text(
                     text = it,

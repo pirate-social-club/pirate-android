@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.SongArtifactBundle
 
 class PostComposerStateTest {
@@ -318,6 +319,58 @@ class PostComposerStateTest {
         assertEquals("members_only", request.visibility)
         assertEquals(listOf("story:asset:123"), request.upstreamAssetRefs)
         assertNull(request.caption)
+    }
+
+    @Test
+    fun buildVideoPostRequest_keepsOriginalVideoFreeOfDerivativeFields() {
+        val request = buildVideoPostRequest(
+            anonymousScope = null,
+            caption = "A quick clip",
+            idempotencyKey = "idem-video",
+            identityMode = "public",
+            mediaRef = PostMediaRef(storageRef = "media/video.mp4", mimeType = "video/mp4"),
+            title = "Clip",
+            video = VideoComposerState(),
+        )
+
+        assertEquals("idem-video", request.idempotencyKey)
+        assertEquals("video", request.postType)
+        assertEquals("Clip", request.title)
+        assertEquals("A quick clip", request.caption)
+        assertEquals("public", request.identityMode)
+        assertEquals("machine_allowed", request.translationPolicy)
+        assertEquals("public", request.visibility)
+        assertEquals("media/video.mp4", request.mediaRefs?.single()?.storageRef)
+        assertNull(request.songMode)
+        assertNull(request.rightsBasis)
+        assertNull(request.upstreamAssetRefs)
+        assertNull(request.accessMode)
+        assertNull(request.licensePreset)
+    }
+
+    @Test
+    fun buildVideoPostRequest_mapsUsesSongRefsToDerivativePayload() {
+        val request = buildVideoPostRequest(
+            anonymousScope = "community_stable",
+            caption = "Dancing to this one",
+            idempotencyKey = "idem-video",
+            identityMode = "anonymous",
+            mediaRef = PostMediaRef(storageRef = "media/dance.mp4", mimeType = "video/mp4"),
+            title = "Dance",
+            video = VideoComposerState(
+                sourceMode = VideoSourceMode.UsesSong,
+                upstreamAssetRefs = listOf(" story:asset:asset_song ", "", "story:asset:asset_song"),
+            ),
+        )
+
+        assertEquals("video", request.postType)
+        assertEquals("anonymous", request.identityMode)
+        assertEquals("community_stable", request.anonymousScope)
+        assertEquals("derivative", request.rightsBasis)
+        assertEquals(listOf("story:asset:asset_song"), request.upstreamAssetRefs)
+        assertNull(request.songMode)
+        assertNull(request.accessMode)
+        assertNull(request.licensePreset)
     }
 
     @Test

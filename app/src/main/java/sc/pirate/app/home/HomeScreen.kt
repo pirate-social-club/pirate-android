@@ -100,6 +100,7 @@ import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.videoUsesSongAttributionLabel
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -1596,6 +1597,7 @@ private fun HomePostCard(
     val communityLabel = item.communityIdentityLabel()
     val mediaPreview = if (post.postType == "song") null else item.primaryMediaPreview(title)
     val xEmbed = post.primaryXEmbed()
+    val songAttribution = videoUsesSongAttributionLabel(postResponse)
 
     Surface(
         modifier = modifier.clickable(onClick = onOpenPost),
@@ -1661,6 +1663,16 @@ private fun HomePostCard(
                 maxLines = 4,
                 overflow = TextOverflow.Ellipsis,
             )
+
+            songAttribution?.let { label ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
             body
                 ?.takeIf { post.postType != "song" && it.isNotBlank() && it != post.title && it != title }
