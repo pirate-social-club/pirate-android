@@ -82,6 +82,7 @@ import sc.pirate.app.api.model.SongArtifactUploadRef
 import sc.pirate.app.api.model.SongPreviewWindow
 import sc.pirate.app.api.model.TranslationPolicy
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
+import sc.pirate.app.shared.communityAltchaAction
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
@@ -2020,12 +2021,6 @@ private fun PostComposerUiState.communityLabel(): String =
         )
     } ?: selectedCommunityName?.takeIf { it.isNotBlank() }
         ?: "Community"
-
-private fun communityAltchaAction(communityId: String): String {
-    val trimmed = communityId.trim()
-    val publicCommunityId = if (trimmed.startsWith("com_")) trimmed else "com_$trimmed"
-    return "community:$publicCommunityId"
-}
 
 @Composable
 private fun ComposerSettingsOptionRow(

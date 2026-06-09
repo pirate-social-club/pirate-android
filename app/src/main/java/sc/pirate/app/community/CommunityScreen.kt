@@ -67,7 +67,6 @@ import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
-import java.util.Locale
 import sc.pirate.app.PirateApp
 import sc.pirate.app.api.PoWGate
 import sc.pirate.app.api.model.Community
@@ -76,9 +75,13 @@ import sc.pirate.app.api.model.CommunityReferenceLink
 import sc.pirate.app.api.model.CommunityRule
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LocalizedPostResponse
-import sc.pirate.app.api.model.MembershipGateSummary
+import sc.pirate.app.shared.communityAltchaAction
 import sc.pirate.app.shared.formatCommunityRouteLabel
+import sc.pirate.app.shared.gateSummaryText
+import sc.pirate.app.shared.isSelfCapability
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.requiresProofOfWork
+import sc.pirate.app.shared.verificationProviderLabel
 import sc.pirate.app.shared.videoUsesSongAttributionLabel
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryRow
@@ -886,70 +889,6 @@ private fun communityStatusText(eligibility: JoinEligibility): String =
         "banned" -> "You cannot join this community."
         else -> eligibility.status.replace('_', ' ')
     }
-
-private fun gateSummaryText(gate: MembershipGateSummary): String =
-    when (gate.gateType) {
-        "altcha_pow" -> "Proof-of-work check"
-        "unique_human" -> {
-            val providers = gate.acceptedProviders
-                ?.takeIf { it.isNotEmpty() }
-                ?.joinToString(prefix = " via ") { verificationProviderLabel(it) }
-                .orEmpty()
-            "Unique human proof$providers"
-        }
-        "age_over_18" -> "Age 18+"
-        "minimum_age" -> "Age ${gate.requiredMinimumAge ?: gate.requiredValue ?: "required"}+"
-        "nationality" -> "Nationality: ${formatCountryRequirement(gate)}"
-        "gender" -> "Document marker: ${gate.requiredValue ?: "required"}"
-        "wallet_score" -> "Wallet score: ${gate.minimumScore ?: gate.requiredValue ?: "required"}+"
-        "erc721_holding" -> "NFT gate: ${gate.assetFilterLabel ?: gate.contractAddress ?: "configured"}"
-        "erc721_inventory_match" -> "Inventory gate: ${gate.assetFilterLabel ?: gate.assetCategory ?: "required"}"
-        else -> gate.gateType.replace('_', ' ')
-    }
-
-private fun verificationProviderLabel(provider: String?): String =
-    when (provider) {
-        "self" -> "Self"
-        "very" -> "Very"
-        "passport" -> "Passport"
-        else -> provider?.replace('_', ' ') ?: "verification"
-    }
-
-private fun formatCountryRequirement(gate: MembershipGateSummary): String {
-    val countries = gate.requiredValues?.takeIf { it.isNotEmpty() }
-        ?: gate.requiredValue?.takeIf { it.isNotBlank() }?.let(::listOf)
-        ?: return "required"
-    return countries.joinToString(", ") { countryCodeToName(it) }
-}
-
-private fun countryCodeToName(value: String): String {
-    val code = value.trim()
-    if (code.length != 2) return code.ifBlank { "required" }
-    return runCatching {
-        Locale.Builder()
-            .setRegion(code.uppercase(Locale.ROOT))
-            .build()
-            .getDisplayCountry(Locale.getDefault())
-            .takeIf { it.isNotBlank() }
-    }.getOrNull() ?: code
-}
-
-private fun requiresProofOfWork(eligibility: JoinEligibility?): Boolean =
-    eligibility?.missingCapabilities?.contains("altcha_pow") == true ||
-        eligibility?.membershipGateSummaries?.any { it.gateType == "altcha_pow" } == true
-
-private fun communityAltchaAction(communityId: String): String {
-    val trimmed = communityId.trim()
-    val publicCommunityId = if (trimmed.startsWith("com_")) trimmed else "com_$trimmed"
-    return "community:$publicCommunityId"
-}
-
-private fun isSelfCapability(capability: String): Boolean =
-    capability == "unique_human" ||
-        capability == "age_over_18" ||
-        capability == "minimum_age" ||
-        capability == "nationality" ||
-        capability == "gender"
 
 private fun referenceLinkText(link: CommunityReferenceLink): String {
     val label = link.label ?: link.platform ?: "Link"
