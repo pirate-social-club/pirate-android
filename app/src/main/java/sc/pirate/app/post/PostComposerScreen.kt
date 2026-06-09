@@ -69,9 +69,12 @@ import sc.pirate.app.api.model.AnonymousIdentityScope
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LiveRoom
 import sc.pirate.app.api.model.Post
+import sc.pirate.app.api.model.PostAuthorshipMode
 import sc.pirate.app.api.model.PostAudience
+import sc.pirate.app.api.model.PostCreatorRelation
 import sc.pirate.app.api.model.PostIdentityMode
 import sc.pirate.app.api.model.PostMediaRef
+import sc.pirate.app.api.model.PromotionDisclosureInput
 import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.SongArtifactBundle
 import sc.pirate.app.api.model.SongArtifactUpload
@@ -95,6 +98,7 @@ import java.util.UUID
 data class PostComposerUiState(
     val postType: PostComposerMode = PostComposerMode.Text,
     val step: PostComposerStep = PostComposerStep.Write,
+    val draft: CreatePostDraftState = createInitialDraftState(),
     val selectedCommunityId: String? = null,
     val selectedCommunityName: String? = null,
     val selectedCommunityRouteSlug: String? = null,
@@ -120,7 +124,6 @@ data class PostComposerUiState(
     val publicAvatarRef: String? = null,
     val identityMode: PostComposerIdentityMode = PostComposerIdentityMode.Public,
     val allowAnonymousIdentity: Boolean = false,
-    val anonymousIdentityScope: String = "community_stable",
     val hasCommunityPostingRole: Boolean = false,
     val loadingEligibility: Boolean = false,
     val submitting: Boolean = false,
@@ -154,6 +157,13 @@ private fun PostComposerIdentityMode.toPostIdentityMode(): PostIdentityMode {
     return when (this) {
         PostComposerIdentityMode.Public -> PostIdentityMode.Public
         PostComposerIdentityMode.Anonymous -> PostIdentityMode.Anonymous
+    }
+}
+
+private fun PostIdentityMode.toPostComposerIdentityMode(): PostComposerIdentityMode {
+    return when (this) {
+        PostIdentityMode.Public -> PostComposerIdentityMode.Public
+        PostIdentityMode.Anonymous -> PostComposerIdentityMode.Anonymous
     }
 }
 
@@ -217,6 +227,11 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 } else {
                     PostComposerIdentityMode.Public
                 }
+                val anonymousScope = AnonymousIdentityScope.fromApiValue(preview?.anonymousIdentityScope)
+                    ?: AnonymousIdentityScope.CommunityStable
+                val nextDraft = _state.value.draft
+                    .withAnonymousScope(anonymousScope)
+                    .withIdentityMode(nextIdentityMode.toPostIdentityMode())
                 _state.value = _state.value.copy(
                     selectedCommunityName = preview?.displayName ?: _state.value.selectedCommunityName,
                     selectedCommunityRouteSlug = preview?.routeSlug ?: _state.value.selectedCommunityRouteSlug,
@@ -224,9 +239,9 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     viewerUserId = viewerUserId,
                     publicHandle = profile?.displayPirateHandle() ?: _state.value.publicHandle,
                     publicAvatarRef = profile?.avatarRef ?: _state.value.publicAvatarRef,
+                    draft = nextDraft,
                     identityMode = nextIdentityMode,
                     allowAnonymousIdentity = allowAnonymous,
-                    anonymousIdentityScope = preview?.anonymousIdentityScope?.takeIf { it.isNotBlank() } ?: "community_stable",
                     hasCommunityPostingRole = viewerHasCommunityPostingRole(viewerUserId, preview),
                     loadingEligibility = false,
                 )
@@ -261,6 +276,119 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
 
     fun updateVideo(video: VideoComposerState) {
         _state.value = _state.value.copy(video = video, error = null)
+    }
+
+    fun setAudience(
+        visibility: PostAudience,
+        publicOptionEnabled: Boolean = true,
+        publicOptionDisabledReason: String? = null,
+    ) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.withAudience(
+                visibility = visibility,
+                publicOptionEnabled = publicOptionEnabled,
+                publicOptionDisabledReason = publicOptionDisabledReason,
+            ),
+            error = null,
+        )
+    }
+
+    fun setAuthorshipMode(mode: PostAuthorshipMode) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.withAuthorshipMode(mode),
+            error = null,
+        )
+    }
+
+    fun setIdentityMode(mode: PostIdentityMode) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.withIdentityMode(mode),
+            identityMode = mode.toPostComposerIdentityMode(),
+            error = null,
+        )
+    }
+
+    fun setAnonymousScope(scope: AnonymousIdentityScope) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.withAnonymousScope(scope),
+            error = null,
+        )
+    }
+
+    fun setEvent(event: ComposerEventState) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.copy(event = event),
+            error = null,
+        )
+    }
+
+    fun setMonetizationState(state: MonetizationState) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.copy(monetization = state),
+            error = null,
+        )
+    }
+
+    fun setCharityContribution(state: CharityContributionState?) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.copy(charityContribution = state),
+            error = null,
+        )
+    }
+
+    fun setSelectedQualifierIds(ids: List<String>) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.withSelectedQualifierIds(ids),
+            error = null,
+        )
+    }
+
+    fun setParentPost(parentPost: String?) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.copy(
+                deferred = current.draft.deferred.copy(parentPost = parentPost?.trim()?.takeIf { it.isNotBlank() }),
+            ),
+            error = null,
+        )
+    }
+
+    fun setLabel(label: LabelDefinition?) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.copy(
+                deferred = current.draft.deferred.copy(label = label),
+            ),
+            error = null,
+        )
+    }
+
+    fun setCreatorRelation(creatorRelation: PostCreatorRelation?) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.copy(
+                deferred = current.draft.deferred.copy(creatorRelation = creatorRelation),
+            ),
+            error = null,
+        )
+    }
+
+    fun setPromotionDisclosure(promotionDisclosure: PromotionDisclosureInput?) {
+        val current = _state.value
+        _state.value = current.copy(
+            draft = current.draft.copy(
+                deferred = current.draft.deferred.copy(promotionDisclosure = promotionDisclosure),
+            ),
+            error = null,
+        )
     }
 
     fun selectMedia(uri: Uri?) {
@@ -378,18 +506,20 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun selectPostType(postType: PostComposerMode) {
+        val current = _state.value
         val identityMode = if (postType.anonymousEligible()) {
-            _state.value.identityMode
+            current.identityMode
         } else {
             PostComposerIdentityMode.Public
         }
-        _state.value = _state.value.copy(
+        _state.value = current.copy(
             postType = postType,
+            draft = current.draft.withIdentityMode(identityMode.toPostIdentityMode()),
             identityMode = identityMode,
-            mediaUri = if (postType == _state.value.postType) _state.value.mediaUri else null,
-            mediaLabel = if (postType == _state.value.postType) _state.value.mediaLabel else "",
-            mediaMimeType = if (postType == _state.value.postType) _state.value.mediaMimeType else null,
-            mediaSizeBytes = if (postType == _state.value.postType) _state.value.mediaSizeBytes else null,
+            mediaUri = if (postType == current.postType) current.mediaUri else null,
+            mediaLabel = if (postType == current.postType) current.mediaLabel else "",
+            mediaMimeType = if (postType == current.postType) current.mediaMimeType else null,
+            mediaSizeBytes = if (postType == current.postType) current.mediaSizeBytes else null,
             error = null,
         )
     }
@@ -397,7 +527,11 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     fun selectIdentityMode(identityMode: PostComposerIdentityMode) {
         val current = _state.value
         if (identityMode == PostComposerIdentityMode.Anonymous && !current.canUseAnonymousIdentity()) return
-        _state.value = current.copy(identityMode = identityMode, error = null)
+        _state.value = current.copy(
+            draft = current.draft.withIdentityMode(identityMode.toPostIdentityMode()),
+            identityMode = identityMode,
+            error = null,
+        )
     }
 
     fun goToNextStep() {
@@ -453,13 +587,8 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     PostComposerMode.Link,
                     PostComposerMode.Text -> {
                         val resolvedIdentityMode = current.resolvedIdentityMode()
-                        val anonymousScope = if (resolvedIdentityMode == PostComposerIdentityMode.Anonymous) {
-                            AnonymousIdentityScope.fromApiValue(current.anonymousIdentityScope)
-                                ?: AnonymousIdentityScope.CommunityStable
-                        } else {
-                            null
-                        }
                         val requestIdentityMode = resolvedIdentityMode.toPostIdentityMode()
+                        val anonymousScope = current.draft.identity.anonymousScopeForRequest(requestIdentityMode)
                         val request = if (current.postType == PostComposerMode.Video) {
                             buildVideoPostRequest(
                                 anonymousScope = anonymousScope,
@@ -2275,12 +2404,15 @@ private fun AuthorPreviewAvatar(
 private fun PostComposerUiState.canUseAnonymousIdentity(): Boolean =
     allowAnonymousIdentity && postType.anonymousEligible()
 
-private fun PostComposerUiState.resolvedIdentityMode(): PostComposerIdentityMode =
-    if (identityMode == PostComposerIdentityMode.Anonymous && canUseAnonymousIdentity()) {
-        PostComposerIdentityMode.Anonymous
-    } else {
-        PostComposerIdentityMode.Public
-    }
+private fun PostComposerUiState.resolvedIdentityMode(): PostComposerIdentityMode {
+    val resolved = resolveComposerIdentityMode(
+        mode = postType,
+        identity = draft.identity,
+        allowAnonymousIdentity = allowAnonymousIdentity,
+        isMonetizedVideo = postType == PostComposerMode.Video && draft.monetization.priceUsd.isNotBlank(),
+    )
+    return resolved.toPostComposerIdentityMode()
+}
 
 private fun PostComposerUiState.publicAuthorLabel(): String =
     publicHandle?.takeIf { it.isNotBlank() } ?: "name.pirate"
@@ -2298,10 +2430,7 @@ private fun PostComposerUiState.previewAuthorAvatarSrc(): String? =
     if (resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) null else publicAvatarSrc()
 
 private fun PostComposerMode.anonymousEligible(): Boolean =
-    this == PostComposerMode.Text ||
-        this == PostComposerMode.Image ||
-        this == PostComposerMode.Video ||
-        this == PostComposerMode.Link
+    allowsAnonymousIdentity()
 
 private fun sc.pirate.app.api.model.Profile.displayPirateHandle(): String {
     val label = primaryPublicHandle?.label ?: globalHandle?.label.orEmpty()

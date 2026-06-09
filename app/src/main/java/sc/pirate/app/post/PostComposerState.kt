@@ -166,7 +166,6 @@ data class ComposerEventState(
 )
 
 data class MonetizationState(
-    val visible: Boolean = false,
     val priceLabel: String? = null,
     val priceUsd: String = "",
     val regionalPricingAvailable: Boolean = false,
@@ -221,6 +220,123 @@ data class DeferredPostContractFieldsState(
     val creatorRelation: PostCreatorRelation? = null,
     val promotionDisclosure: PromotionDisclosureInput? = null,
 )
+
+data class CreatePostDraftState(
+    val audience: ComposerAudienceState = ComposerAudienceState(),
+    val identity: ComposerIdentityState = ComposerIdentityState(),
+    val event: ComposerEventState = ComposerEventState(),
+    val monetization: MonetizationState = MonetizationState(),
+    val charityContribution: CharityContributionState? = null,
+    val charityPartner: CommunityCharityPartner? = null,
+    val regionalPricingPreview: RegionalPricingPreview? = null,
+    val qualifiers: List<IdentityQualifier> = emptyList(),
+    val deferred: DeferredPostContractFieldsState = DeferredPostContractFieldsState(),
+)
+
+fun createInitialDraftState(): CreatePostDraftState = CreatePostDraftState(
+    audience = ComposerAudienceState(
+        visibility = PostAudience.Public,
+        publicOptionEnabled = true,
+        publicOptionDisabledReason = null,
+    ),
+    identity = ComposerIdentityState(
+        authorshipMode = PostAuthorshipMode.HumanDirect,
+        identityMode = PostIdentityMode.Public,
+        anonymousScope = AnonymousIdentityScope.CommunityStable,
+        selectedQualifierIds = emptyList(),
+    ),
+    event = ComposerEventState(),
+    monetization = MonetizationState(),
+    charityContribution = null,
+    charityPartner = null,
+    regionalPricingPreview = null,
+    qualifiers = emptyList(),
+    deferred = DeferredPostContractFieldsState(),
+)
+
+fun CreatePostDraftState.withAudience(
+    visibility: PostAudience,
+    publicOptionEnabled: Boolean = true,
+    publicOptionDisabledReason: String? = null,
+): CreatePostDraftState = copy(
+    audience = audience.copy(
+        visibility = visibility,
+        publicOptionEnabled = publicOptionEnabled,
+        publicOptionDisabledReason = publicOptionDisabledReason,
+    ),
+)
+
+fun CreatePostDraftState.withAuthorshipMode(mode: PostAuthorshipMode): CreatePostDraftState =
+    copy(identity = identity.copy(authorshipMode = mode))
+
+fun CreatePostDraftState.withIdentityMode(mode: PostIdentityMode): CreatePostDraftState =
+    copy(
+        identity = identity.copy(
+            identityMode = mode,
+            selectedQualifierIds = if (mode == PostIdentityMode.Anonymous) {
+                identity.selectedQualifierIds
+            } else {
+                emptyList()
+            },
+        ),
+    )
+
+fun CreatePostDraftState.withAnonymousScope(scope: AnonymousIdentityScope): CreatePostDraftState =
+    copy(identity = identity.copy(anonymousScope = scope))
+
+fun CreatePostDraftState.withSelectedQualifierIds(ids: List<String>): CreatePostDraftState {
+    val normalized = ids.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }.distinct()
+    return copy(
+        identity = identity.copy(
+            selectedQualifierIds = if (identity.identityMode == PostIdentityMode.Anonymous) normalized else emptyList(),
+        ),
+    )
+}
+
+fun ComposerIdentityState.anonymousScopeForRequest(
+    resolvedIdentityMode: PostIdentityMode = identityMode,
+): AnonymousIdentityScope? =
+    if (resolvedIdentityMode == PostIdentityMode.Anonymous) anonymousScope else null
+
+fun ComposerIdentityState.disclosedQualifierIdsForRequest(
+    resolvedIdentityMode: PostIdentityMode = identityMode,
+): List<String>? =
+    if (resolvedIdentityMode == PostIdentityMode.Anonymous) {
+        selectedQualifierIds.takeIf { it.isNotEmpty() }
+    } else {
+        null
+    }
+
+fun PostComposerMode.allowsAnonymousIdentity(): Boolean =
+    this == PostComposerMode.Text ||
+        this == PostComposerMode.Image ||
+        this == PostComposerMode.Video ||
+        this == PostComposerMode.Link
+
+fun isComposerMonetizationVisible(mode: PostComposerMode): Boolean =
+    mode == PostComposerMode.Song || mode == PostComposerMode.Video
+
+fun resolveComposerIdentityMode(
+    mode: PostComposerMode,
+    identity: ComposerIdentityState,
+    allowAnonymousIdentity: Boolean,
+    isMonetizedVideo: Boolean = false,
+): PostIdentityMode {
+    val forcedPublic = identity.authorshipMode == PostAuthorshipMode.UserAgent ||
+        mode == PostComposerMode.Song ||
+        mode == PostComposerMode.Live ||
+        (mode == PostComposerMode.Video && isMonetizedVideo)
+    if (forcedPublic) return PostIdentityMode.Public
+    return if (
+        identity.identityMode == PostIdentityMode.Anonymous &&
+        allowAnonymousIdentity &&
+        mode.allowsAnonymousIdentity()
+    ) {
+        PostIdentityMode.Anonymous
+    } else {
+        PostIdentityMode.Public
+    }
+}
 
 enum class PostComposerStep {
     Write,
