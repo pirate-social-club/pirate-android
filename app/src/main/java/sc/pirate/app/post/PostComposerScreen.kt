@@ -65,15 +65,19 @@ import sc.pirate.app.api.model.CreateSongArtifactBundleRequest
 import sc.pirate.app.api.model.CreateSongArtifactUploadRequest
 import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CreatePostRequest
+import sc.pirate.app.api.model.AnonymousIdentityScope
 import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LiveRoom
 import sc.pirate.app.api.model.Post
+import sc.pirate.app.api.model.PostAudience
+import sc.pirate.app.api.model.PostIdentityMode
 import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.SongArtifactBundle
 import sc.pirate.app.api.model.SongArtifactUpload
 import sc.pirate.app.api.model.SongArtifactUploadRef
 import sc.pirate.app.api.model.SongPreviewWindow
+import sc.pirate.app.api.model.TranslationPolicy
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
@@ -144,6 +148,13 @@ private data class VideoMediaMetadata(
 enum class PostComposerIdentityMode(val apiValue: String) {
     Public("public"),
     Anonymous("anonymous"),
+}
+
+private fun PostComposerIdentityMode.toPostIdentityMode(): PostIdentityMode {
+    return when (this) {
+        PostComposerIdentityMode.Public -> PostIdentityMode.Public
+        PostComposerIdentityMode.Anonymous -> PostIdentityMode.Anonymous
+    }
 }
 
 class PostComposerViewModel(application: Application) : AndroidViewModel(application) {
@@ -443,20 +454,22 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     PostComposerMode.Text -> {
                         val resolvedIdentityMode = current.resolvedIdentityMode()
                         val anonymousScope = if (resolvedIdentityMode == PostComposerIdentityMode.Anonymous) {
-                            current.anonymousIdentityScope
+                            AnonymousIdentityScope.fromApiValue(current.anonymousIdentityScope)
+                                ?: AnonymousIdentityScope.CommunityStable
                         } else {
                             null
                         }
+                        val requestIdentityMode = resolvedIdentityMode.toPostIdentityMode()
                         val request = if (current.postType == PostComposerMode.Video) {
                             buildVideoPostRequest(
                                 anonymousScope = anonymousScope,
                                 caption = current.body,
                                 idempotencyKey = UUID.randomUUID().toString(),
-                                identityMode = resolvedIdentityMode.apiValue,
+                                identityMode = requestIdentityMode,
                                 mediaRef = uploadPostMediaRef(communityId, current),
                                 title = current.title,
                                 video = current.video,
-                                visibility = "public",
+                                visibility = PostAudience.Public,
                             )
                         } else {
                             CreatePostRequest(
@@ -483,10 +496,10 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                                 } else {
                                     null
                                 },
-                                identityMode = resolvedIdentityMode.apiValue,
+                                identityMode = requestIdentityMode,
                                 anonymousScope = anonymousScope,
-                                translationPolicy = "machine_allowed",
-                                visibility = "public",
+                                translationPolicy = TranslationPolicy.MachineAllowed,
+                                visibility = PostAudience.Public,
                             )
                         }
                         val createdPost = createPostWithProofOfWork(
@@ -633,7 +646,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 idempotencyKey = UUID.randomUUID().toString(),
                 song = song,
                 title = current.title,
-                visibility = "public",
+                visibility = PostAudience.Public,
             ),
         )
         if (isLocked) {

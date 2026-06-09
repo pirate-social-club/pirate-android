@@ -1,5 +1,6 @@
 package sc.pirate.app.post
 
+import sc.pirate.app.api.model.AnonymousIdentityScope
 import sc.pirate.app.api.model.CreateCommunityListingRequest
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.CreateLiveRoomRequest
@@ -7,7 +8,14 @@ import sc.pirate.app.api.model.LiveRoomPerformerAllocationInput
 import sc.pirate.app.api.model.LiveRoomSetlistInput
 import sc.pirate.app.api.model.LiveRoomSetlistItemInput
 import sc.pirate.app.api.model.PostMediaRef
+import sc.pirate.app.api.model.PostAuthorshipMode
+import sc.pirate.app.api.model.PostAudience
+import sc.pirate.app.api.model.PostCreatorRelation
+import sc.pirate.app.api.model.PostEventPlace
+import sc.pirate.app.api.model.PostIdentityMode
+import sc.pirate.app.api.model.PromotionDisclosureInput
 import sc.pirate.app.api.model.SongArtifactBundle
+import sc.pirate.app.api.model.TranslationPolicy
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -130,6 +138,88 @@ data class SongComposerState(
 data class VideoComposerState(
     val sourceMode: VideoSourceMode = VideoSourceMode.Original,
     val upstreamAssetRefs: List<String> = emptyList(),
+)
+
+data class ComposerAudienceState(
+    val visibility: PostAudience = PostAudience.Public,
+    val publicOptionEnabled: Boolean = true,
+    val publicOptionDisabledReason: String? = null,
+)
+
+data class ComposerIdentityState(
+    val authorshipMode: PostAuthorshipMode = PostAuthorshipMode.HumanDirect,
+    val identityMode: PostIdentityMode = PostIdentityMode.Public,
+    val anonymousScope: AnonymousIdentityScope = AnonymousIdentityScope.CommunityStable,
+    val selectedQualifierIds: List<String> = emptyList(),
+)
+
+data class ComposerEventState(
+    val enabled: Boolean = false,
+    val startsAt: String = "",
+    val endsAt: String = "",
+    val timezone: String = "",
+    val locationName: String = "",
+    val address: String = "",
+    val isOnline: Boolean = false,
+    val eventUrl: String = "",
+    val place: PostEventPlace? = null,
+)
+
+data class MonetizationState(
+    val visible: Boolean = false,
+    val priceLabel: String? = null,
+    val priceUsd: String = "",
+    val regionalPricingAvailable: Boolean = false,
+    val regionalPricingEnabled: Boolean = false,
+    val vinylReleaseUrl: String = "",
+)
+
+data class CharityContributionState(
+    val percentagePct: Int,
+)
+
+data class CommunityCharityPartner(
+    val partnerId: String,
+    val displayName: String,
+    val imageUrl: String? = null,
+)
+
+data class RegionalPricingTierPreview(
+    val tierKey: String,
+    val displayName: String,
+    val adjustmentType: String = "multiplier",
+    val adjustmentValue: Double,
+    val countryCodes: List<String> = emptyList(),
+)
+
+data class RegionalPricingPreview(
+    val defaultTierKey: String? = null,
+    val tiers: List<RegionalPricingTierPreview> = emptyList(),
+)
+
+data class IdentityQualifier(
+    val qualifierId: String,
+    val label: String,
+    val description: String? = null,
+    val sensitivityLevel: String? = null,
+    val sourceProvider: String? = null,
+    val sourceField: String? = null,
+    val redundancyKey: String? = null,
+    val suppressedByCommunityGate: Boolean = false,
+    val suppressionReason: String? = null,
+)
+
+data class LabelDefinition(
+    val id: String,
+    val displayName: String,
+    val description: String? = null,
+)
+
+data class DeferredPostContractFieldsState(
+    val parentPost: String? = null,
+    val label: LabelDefinition? = null,
+    val creatorRelation: PostCreatorRelation? = null,
+    val promotionDisclosure: PromotionDisclosureInput? = null,
 )
 
 enum class PostComposerStep {
@@ -387,7 +477,7 @@ fun buildSongPostRequest(
     idempotencyKey: String,
     song: SongComposerState,
     title: String,
-    visibility: String = "public",
+    visibility: PostAudience = PostAudience.Public,
 ): CreatePostRequest {
     val isLocked = song.paidSongPriceUsd.isNotBlank()
     return CreatePostRequest(
@@ -395,8 +485,8 @@ fun buildSongPostRequest(
         title = title.trim().ifBlank { null },
         caption = caption.trim().ifBlank { null },
         postType = PostComposerMode.Song.apiValue,
-        identityMode = "public",
-        translationPolicy = "machine_allowed",
+        identityMode = PostIdentityMode.Public,
+        translationPolicy = TranslationPolicy.MachineAllowed,
         visibility = visibility,
         songArtifactBundle = bundleId,
         songMode = song.songMode.apiValue,
@@ -413,14 +503,14 @@ fun buildSongPostRequest(
 }
 
 fun buildVideoPostRequest(
-    anonymousScope: String?,
+    anonymousScope: AnonymousIdentityScope?,
     caption: String,
     idempotencyKey: String,
-    identityMode: String,
+    identityMode: PostIdentityMode,
     mediaRef: PostMediaRef,
     title: String,
     video: VideoComposerState,
-    visibility: String = "public",
+    visibility: PostAudience = PostAudience.Public,
 ): CreatePostRequest {
     val sourceRefs = if (video.sourceMode == VideoSourceMode.UsesSong) {
         video.upstreamAssetRefs.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }.distinct()
@@ -435,7 +525,7 @@ fun buildVideoPostRequest(
         mediaRefs = listOf(mediaRef),
         identityMode = identityMode,
         anonymousScope = anonymousScope,
-        translationPolicy = "machine_allowed",
+        translationPolicy = TranslationPolicy.MachineAllowed,
         visibility = visibility,
         rightsBasis = if (sourceRefs.isNotEmpty()) "derivative" else null,
         upstreamAssetRefs = sourceRefs.takeIf { it.isNotEmpty() },

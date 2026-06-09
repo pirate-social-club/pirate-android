@@ -337,6 +337,81 @@ data class MembershipGateSummary(
 )
 
 @Serializable
+data class ProofRequirement(
+    @SerialName("proof_type") val proofType: String,
+    @SerialName("accepted_providers") val acceptedProviders: List<String>? = null,
+    @SerialName("accepted_mechanisms") val acceptedMechanisms: List<String>? = null,
+    val config: JsonObject? = null,
+)
+
+@Serializable
+data class GateRule(
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    val community: String,
+    val scope: String,
+    @SerialName("gate_family") val gateFamily: String,
+    @SerialName("gate_type") val gateType: String,
+    @SerialName("proof_requirements") val proofRequirements: List<ProofRequirement>? = null,
+    @SerialName("chain_namespace") val chainNamespace: String? = null,
+    @SerialName("gate_config") val gateConfig: JsonObject? = null,
+    val status: String,
+    val created: Long,
+)
+
+@Serializable
+enum class DonationPolicyMode(val apiValue: String) {
+    @SerialName("none")
+    None("none"),
+
+    @SerialName("optional_creator_sidecar")
+    OptionalCreatorSidecar("optional_creator_sidecar"),
+
+    @SerialName("fundraiser_default")
+    FundraiserDefault("fundraiser_default"),
+}
+
+@Serializable
+data class DonationPartnerSummary(
+    @SerialName("donation_partner") val donationPartner: String,
+    @SerialName("display_name") val displayName: String,
+    val provider: String,
+    @SerialName("provider_partner_ref") val providerPartnerRef: String? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("review_status") val reviewStatus: String,
+    val status: String,
+)
+
+@Serializable
+data class CommunityPricingTier(
+    @SerialName("tier_key") val tierKey: String,
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("adjustment_type") val adjustmentType: String,
+    @SerialName("adjustment_value") val adjustmentValue: Double,
+)
+
+@Serializable
+data class CommunityPricingCountryAssignment(
+    @SerialName("country_code") val countryCode: String,
+    @SerialName("tier_key") val tierKey: String,
+)
+
+@Serializable
+data class CommunityPricingPolicy(
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    @SerialName("policy_origin") val policyOrigin: String,
+    @SerialName("pricing_policy_version") val pricingPolicyVersion: String,
+    @SerialName("regional_pricing_enabled") val regionalPricingEnabled: Boolean,
+    @SerialName("verification_provider_requirement") val verificationProviderRequirement: String? = null,
+    @SerialName("default_tier_key") val defaultTierKey: String? = null,
+    val tiers: List<CommunityPricingTier> = emptyList(),
+    @SerialName("country_assignments") val countryAssignments: List<CommunityPricingCountryAssignment> = emptyList(),
+    @SerialName("source_template") val sourceTemplate: String? = null,
+    @SerialName("source_template_version") val sourceTemplateVersion: String? = null,
+)
+
+@Serializable
 data class CommunityReferenceLink(
     @SerialName("community_reference_link_id") val communityReferenceLinkId: String? = null,
     val platform: String? = null,
@@ -378,6 +453,13 @@ data class CommunityPreview(
     @SerialName("viewer_following") val viewerFollowing: Boolean? = null,
     @SerialName("allow_anonymous_identity") val allowAnonymousIdentity: Boolean = false,
     @SerialName("anonymous_identity_scope") val anonymousIdentityScope: String? = null,
+    @SerialName("allowed_disclosed_qualifiers") val allowedDisclosedQualifiers: List<String>? = null,
+    @SerialName("allow_qualifiers_on_anonymous_posts") val allowQualifiersOnAnonymousPosts: Boolean? = null,
+    @SerialName("donation_policy_mode") val donationPolicyMode: DonationPolicyMode? = null,
+    @SerialName("donation_partner") val donationPartner: DonationPartnerSummary? = null,
+    @SerialName("gate_match_mode") val gateMatchMode: String? = null,
+    @SerialName("gate_rules") val gateRules: List<GateRule>? = null,
+    @SerialName("pricing_policy") val pricingPolicy: CommunityPricingPolicy? = null,
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
 ) {
@@ -731,26 +813,195 @@ data class CommentListResponse(
 )
 
 @Serializable
+enum class PostAudience(val apiValue: String) {
+    @SerialName("public")
+    Public("public"),
+
+    @SerialName("members_only")
+    MembersOnly("members_only"),
+}
+
+@Serializable
+enum class PostAuthorshipMode(val apiValue: String) {
+    @SerialName("human_direct")
+    HumanDirect("human_direct"),
+
+    @SerialName("user_agent")
+    UserAgent("user_agent"),
+}
+
+@Serializable
+enum class PostIdentityMode(val apiValue: String) {
+    @SerialName("public")
+    Public("public"),
+
+    @SerialName("anonymous")
+    Anonymous("anonymous"),
+}
+
+@Serializable
+enum class AnonymousIdentityScope(val apiValue: String) {
+    @SerialName("community_stable")
+    CommunityStable("community_stable"),
+
+    @SerialName("thread_stable")
+    ThreadStable("thread_stable"),
+
+    @SerialName("post_ephemeral")
+    PostEphemeral("post_ephemeral");
+
+    companion object {
+        fun fromApiValue(value: String?): AnonymousIdentityScope? {
+            return entries.firstOrNull { it.apiValue == value }
+        }
+    }
+}
+
+@Serializable
+enum class TranslationPolicy(val apiValue: String) {
+    @SerialName("none")
+    None("none"),
+
+    @SerialName("machine_allowed")
+    MachineAllowed("machine_allowed"),
+
+    @SerialName("human_only")
+    HumanOnly("human_only"),
+
+    @SerialName("hybrid")
+    Hybrid("hybrid"),
+}
+
+@Serializable
+enum class PostCreatorRelation(val apiValue: String) {
+    @SerialName("captured")
+    Captured("captured"),
+
+    @SerialName("created")
+    Created("created"),
+
+    @SerialName("subject")
+    Subject("subject"),
+
+    @SerialName("authorized_repost")
+    AuthorizedRepost("authorized_repost"),
+
+    @SerialName("fan_work")
+    FanWork("fan_work"),
+
+    @SerialName("found")
+    Found("found"),
+}
+
+@Serializable
+enum class PromotionAffiliationKind(val apiValue: String) {
+    @SerialName("self")
+    Self("self"),
+
+    @SerialName("brand")
+    Brand("brand"),
+
+    @SerialName("client")
+    Client("client"),
+
+    @SerialName("partner")
+    Partner("partner"),
+
+    @SerialName("employer")
+    Employer("employer"),
+
+    @SerialName("other")
+    Other("other"),
+}
+
+@Serializable
+data class PromotionDisclosureInput(
+    @SerialName("is_promotional") val isPromotional: Boolean,
+    @SerialName("affiliation_kind") val affiliationKind: PromotionAffiliationKind,
+)
+
+@Serializable
+data class AgentActionProof(
+    val nonce: String,
+    @SerialName("signed_at") val signedAt: Long,
+    @SerialName("canonical_request_hash") val canonicalRequestHash: String,
+    val signature: String,
+)
+
+@Serializable
+data class PostEventPlace(
+    val label: String,
+    val address: String? = null,
+    val lat: Double,
+    val lon: Double,
+    val source: String,
+    @SerialName("providerPlaceId") val providerPlaceId: String? = null,
+    @SerialName("countryCode") val countryCode: String? = null,
+    val city: String? = null,
+)
+
+@Serializable
+enum class PostEventStatus(val apiValue: String) {
+    @SerialName("scheduled")
+    Scheduled("scheduled"),
+
+    @SerialName("canceled")
+    Canceled("canceled"),
+
+    @SerialName("postponed")
+    Postponed("postponed"),
+
+    @SerialName("ended")
+    Ended("ended"),
+}
+
+@Serializable
+data class CreatePostEventRequest(
+    @SerialName("starts_at") val startsAt: Long,
+    @SerialName("ends_at") val endsAt: Long? = null,
+    val timezone: String,
+    @SerialName("location_name") val locationName: String? = null,
+    val address: String? = null,
+    @SerialName("is_online") val isOnline: Boolean? = null,
+    @SerialName("event_url") val eventUrl: String? = null,
+    val status: PostEventStatus? = null,
+    val place: PostEventPlace? = null,
+)
+
+@Serializable
 data class CreatePostRequest(
     @SerialName("idempotency_key") val idempotencyKey: String? = null,
+    @SerialName("authorship_mode") val authorshipMode: PostAuthorshipMode? = null,
+    val agent: String? = null,
+    @SerialName("agent_action_proof") val agentActionProof: AgentActionProof? = null,
     val title: String? = null,
     val body: String? = null,
     val caption: String? = null,
     @SerialName("post_type") val postType: String,
     @SerialName("link_url") val linkUrl: String? = null,
+    @SerialName("source_post") val sourcePost: String? = null,
+    @SerialName("source_community") val sourceCommunity: String? = null,
     @SerialName("media_refs") val mediaRefs: List<PostMediaRef>? = null,
     @SerialName("age_gate_policy") val ageGatePolicy: String? = null,
     @SerialName("flair_id") val flairId: String? = null,
-    @SerialName("identity_mode") val identityMode: String? = null,
-    @SerialName("anonymous_scope") val anonymousScope: String? = null,
-    @SerialName("translation_policy") val translationPolicy: String? = null,
-    val visibility: String? = null,
+    @SerialName("identity_mode") val identityMode: PostIdentityMode? = null,
+    @SerialName("anonymous_scope") val anonymousScope: AnonymousIdentityScope? = null,
+    @SerialName("disclosed_qualifier_ids") val disclosedQualifierIds: List<String>? = null,
+    @SerialName("parent_post") val parentPost: String? = null,
+    val label: String? = null,
+    @SerialName("creator_relation") val creatorRelation: PostCreatorRelation? = null,
+    @SerialName("promotion_disclosure") val promotionDisclosure: PromotionDisclosureInput? = null,
+    @SerialName("translation_policy") val translationPolicy: TranslationPolicy? = null,
+    val visibility: PostAudience? = null,
+    val event: CreatePostEventRequest? = null,
+    val asset: String? = null,
     @SerialName("song_artifact_bundle") val songArtifactBundle: String? = null,
     @SerialName("song_mode") val songMode: String? = null,
     @SerialName("rights_basis") val rightsBasis: String? = null,
     @SerialName("access_mode") val accessMode: String? = null,
     @SerialName("license_preset") val licensePreset: String? = null,
     @SerialName("commercial_rev_share_pct") val commercialRevSharePct: Int? = null,
+    val lyrics: String? = null,
     @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String>? = null,
     @SerialName("source_start_ms") val sourceStartMs: Long? = null,
     @SerialName("source_duration_ms") val sourceDurationMs: Long? = null,

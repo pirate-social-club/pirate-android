@@ -5,12 +5,60 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import sc.pirate.app.api.model.AgentActionProof
+import sc.pirate.app.api.model.AnonymousIdentityScope
+import sc.pirate.app.api.model.CreatePostEventRequest
+import sc.pirate.app.api.model.CreatePostRequest
+import sc.pirate.app.api.model.PostAuthorshipMode
+import sc.pirate.app.api.model.PostAudience
+import sc.pirate.app.api.model.PostIdentityMode
 import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.SongArtifactBundle
+import sc.pirate.app.api.model.TranslationPolicy
 
 class PostComposerStateTest {
+    @Test
+    fun createPostRequest_serializesContractFieldNamesAndEnumValues() {
+        val encoded = Json.encodeToString(
+            CreatePostRequest.serializer(),
+            CreatePostRequest(
+                idempotencyKey = "idem-contract",
+                authorshipMode = PostAuthorshipMode.UserAgent,
+                agent = "agent_123",
+                agentActionProof = AgentActionProof(
+                    nonce = "nonce_1",
+                    signedAt = 1_781_280_000,
+                    canonicalRequestHash = "hash_1",
+                    signature = "sig_1",
+                ),
+                title = "Contract test",
+                postType = "text",
+                identityMode = PostIdentityMode.Anonymous,
+                anonymousScope = AnonymousIdentityScope.ThreadStable,
+                disclosedQualifierIds = listOf("qlf_unique_human"),
+                translationPolicy = TranslationPolicy.MachineAllowed,
+                visibility = PostAudience.MembersOnly,
+                event = CreatePostEventRequest(
+                    startsAt = 1_781_280_000,
+                    timezone = "UTC",
+                ),
+            ),
+        )
+
+        assertTrue(encoded.contains("\"authorship_mode\":\"user_agent\""))
+        assertTrue(encoded.contains("\"agent\":\"agent_123\""))
+        assertFalse(encoded.contains("agent_id"))
+        assertTrue(encoded.contains("\"identity_mode\":\"anonymous\""))
+        assertTrue(encoded.contains("\"anonymous_scope\":\"thread_stable\""))
+        assertTrue(encoded.contains("\"disclosed_qualifier_ids\":[\"qlf_unique_human\"]"))
+        assertTrue(encoded.contains("\"translation_policy\":\"machine_allowed\""))
+        assertTrue(encoded.contains("\"visibility\":\"members_only\""))
+        assertTrue(encoded.contains("\"starts_at\":1781280000"))
+    }
+
     @Test
     fun defaultPostComposerState_doesNotWaitForEligibilityWithoutCommunity() {
         val state = PostComposerUiState()
@@ -286,8 +334,8 @@ class PostComposerStateTest {
         assertEquals("song", request.postType)
         assertEquals("Post title", request.title)
         assertEquals("Listen now", request.caption)
-        assertEquals("public", request.identityMode)
-        assertEquals("machine_allowed", request.translationPolicy)
+        assertEquals(PostIdentityMode.Public, request.identityMode)
+        assertEquals(TranslationPolicy.MachineAllowed, request.translationPolicy)
         assertEquals("sab_track", request.songArtifactBundle)
         assertEquals("original", request.songMode)
         assertEquals("original", request.rightsBasis)
@@ -310,13 +358,13 @@ class PostComposerStateTest {
                 upstreamAssetRefs = listOf("story:asset:123"),
             ),
             title = "Remix post",
-            visibility = "members_only",
+            visibility = PostAudience.MembersOnly,
         )
 
         assertEquals("remix", request.songMode)
         assertEquals("derivative", request.rightsBasis)
         assertEquals("public", request.accessMode)
-        assertEquals("members_only", request.visibility)
+        assertEquals(PostAudience.MembersOnly, request.visibility)
         assertEquals(listOf("story:asset:123"), request.upstreamAssetRefs)
         assertNull(request.caption)
     }
@@ -327,7 +375,7 @@ class PostComposerStateTest {
             anonymousScope = null,
             caption = "A quick clip",
             idempotencyKey = "idem-video",
-            identityMode = "public",
+            identityMode = PostIdentityMode.Public,
             mediaRef = PostMediaRef(storageRef = "media/video.mp4", mimeType = "video/mp4"),
             title = "Clip",
             video = VideoComposerState(),
@@ -337,9 +385,9 @@ class PostComposerStateTest {
         assertEquals("video", request.postType)
         assertEquals("Clip", request.title)
         assertEquals("A quick clip", request.caption)
-        assertEquals("public", request.identityMode)
-        assertEquals("machine_allowed", request.translationPolicy)
-        assertEquals("public", request.visibility)
+        assertEquals(PostIdentityMode.Public, request.identityMode)
+        assertEquals(TranslationPolicy.MachineAllowed, request.translationPolicy)
+        assertEquals(PostAudience.Public, request.visibility)
         assertEquals("media/video.mp4", request.mediaRefs?.single()?.storageRef)
         assertNull(request.songMode)
         assertNull(request.rightsBasis)
@@ -351,10 +399,10 @@ class PostComposerStateTest {
     @Test
     fun buildVideoPostRequest_mapsUsesSongRefsToDerivativePayload() {
         val request = buildVideoPostRequest(
-            anonymousScope = "community_stable",
+            anonymousScope = AnonymousIdentityScope.CommunityStable,
             caption = "Dancing to this one",
             idempotencyKey = "idem-video",
-            identityMode = "anonymous",
+            identityMode = PostIdentityMode.Anonymous,
             mediaRef = PostMediaRef(storageRef = "media/dance.mp4", mimeType = "video/mp4"),
             title = "Dance",
             video = VideoComposerState(
@@ -364,8 +412,8 @@ class PostComposerStateTest {
         )
 
         assertEquals("video", request.postType)
-        assertEquals("anonymous", request.identityMode)
-        assertEquals("community_stable", request.anonymousScope)
+        assertEquals(PostIdentityMode.Anonymous, request.identityMode)
+        assertEquals(AnonymousIdentityScope.CommunityStable, request.anonymousScope)
         assertEquals("derivative", request.rightsBasis)
         assertEquals(listOf("story:asset:asset_song"), request.upstreamAssetRefs)
         assertNull(request.songMode)
