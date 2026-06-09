@@ -286,7 +286,7 @@ class PostComposerStateTest {
     }
 
     @Test
-    fun validatePostComposerDraft_requiresLiveTitleAndPaidPrice() {
+    fun validatePostComposerDraft_requiresLiveTitleSetlistAndSetlistTitles() {
         assertFalse(
             validatePostComposerDraft(
                 mode = PostComposerMode.Live,
@@ -300,7 +300,15 @@ class PostComposerStateTest {
                 mode = PostComposerMode.Live,
                 title = "Friday set",
                 linkUrl = "",
-                live = LiveComposerState(accessMode = LiveAccessMode.Paid),
+                live = LiveComposerState(),
+            ).canSubmit,
+        )
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Live,
+                title = "Friday set",
+                linkUrl = "",
+                live = LiveComposerState(setlistItems = listOf(LiveSetlistItemState(titleText = ""))),
             ).canSubmit,
         )
         assertTrue(
@@ -308,7 +316,79 @@ class PostComposerStateTest {
                 mode = PostComposerMode.Live,
                 title = "Friday set",
                 linkUrl = "",
-                live = LiveComposerState(accessMode = LiveAccessMode.Paid, paidPriceUsd = "5.00"),
+                live = LiveComposerState(setlistItems = validLiveSetlist()),
+            ).canSubmit,
+        )
+    }
+
+    @Test
+    fun validatePostComposerDraft_requiresPaidLivePricePublicVisibilityAndAllocationTotal() {
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Live,
+                title = "Friday set",
+                linkUrl = "",
+                live = LiveComposerState(
+                    accessMode = LiveAccessMode.Paid,
+                    setlistItems = validLiveSetlist(),
+                ),
+            ).canSubmit,
+        )
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Live,
+                title = "Friday set",
+                linkUrl = "",
+                live = LiveComposerState(
+                    accessMode = LiveAccessMode.Paid,
+                    visibility = LiveVisibility.Unlisted,
+                    paidPriceUsd = "5.00",
+                    setlistItems = validLiveSetlist(),
+                ),
+            ).canSubmit,
+        )
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Live,
+                title = "Friday set",
+                linkUrl = "",
+                live = LiveComposerState(
+                    accessMode = LiveAccessMode.Paid,
+                    paidPriceUsd = "5.00",
+                    setlistItems = validLiveSetlist(),
+                    performerAllocations = listOf(
+                        LivePerformerAllocationState(role = "host", sharePct = 70),
+                        LivePerformerAllocationState(role = "guest", sharePct = 20),
+                    ),
+                ),
+            ).canSubmit,
+        )
+        assertFalse(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Live,
+                title = "Friday set",
+                linkUrl = "",
+                live = LiveComposerState(
+                    accessMode = LiveAccessMode.Paid,
+                    paidPriceUsd = "5.00",
+                    setlistItems = validLiveSetlist(),
+                    performerAllocations = listOf(
+                        LivePerformerAllocationState(role = "host", sharePct = 120),
+                        LivePerformerAllocationState(role = "guest", sharePct = -20),
+                    ),
+                ),
+            ).canSubmit,
+        )
+        assertTrue(
+            validatePostComposerDraft(
+                mode = PostComposerMode.Live,
+                title = "Friday set",
+                linkUrl = "",
+                live = LiveComposerState(
+                    accessMode = LiveAccessMode.Paid,
+                    paidPriceUsd = "5.00",
+                    setlistItems = validLiveSetlist(),
+                ),
             ).canSubmit,
         )
     }
@@ -635,7 +715,7 @@ class PostComposerStateTest {
         assertEquals("A short live set.", request.description)
         assertEquals("duet", request.roomKind)
         assertEquals("paid", request.accessMode)
-        assertEquals("unlisted", request.visibility)
+        assertEquals("public", request.visibility)
         assertEquals("usr_guest", request.guestUser)
         assertEquals("media/live-cover", request.coverRef)
         assertEquals("https://store.example/show", request.storeUrl)
@@ -646,6 +726,28 @@ class PostComposerStateTest {
         assertEquals("original", request.setlist?.items?.get(0)?.rightsBasis)
         assertEquals("story:asset:123", request.setlist?.items?.get(1)?.sourceAssetRef)
         assertEquals("cover", request.setlist?.items?.get(1)?.rightsBasis)
+    }
+
+    @Test
+    fun normalizeLiveComposerState_forcesPaidLivePublic() {
+        val normalized = normalizeLiveComposerState(
+            LiveComposerState(
+                accessMode = LiveAccessMode.Paid,
+                visibility = LiveVisibility.Unlisted,
+            ),
+        )
+
+        assertEquals(LiveVisibility.Public, normalized.visibility)
+        assertEquals(LiveVisibility.Public, resolveLiveVisibility(normalized))
+        assertEquals(
+            LiveVisibility.Unlisted,
+            normalizeLiveComposerState(
+                LiveComposerState(
+                    accessMode = LiveAccessMode.Free,
+                    visibility = LiveVisibility.Unlisted,
+                ),
+            ).visibility,
+        )
     }
 
     @Test
@@ -691,4 +793,7 @@ class PostComposerStateTest {
         assertEquals("guest.pirate", normalizeLiveRoomGuestHandle("@guest.pirate"))
         assertEquals("guest.pirate", normalizeLiveRoomGuestHandle("/u/guest.pirate"))
     }
+
+    private fun validLiveSetlist(): List<LiveSetlistItemState> =
+        listOf(LiveSetlistItemState(titleText = "Opening song"))
 }

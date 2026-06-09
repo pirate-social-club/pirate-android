@@ -478,10 +478,40 @@ fun validateLiveComposerDraft(
             errorMessage = "Add a guest performer for duet live rooms.",
         )
     }
+    if (live.setlistItems.isEmpty()) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Add at least one setlist item before publishing.",
+        )
+    }
+    if (live.setlistItems.any { it.titleText.isBlank() }) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Add a title for every setlist item.",
+        )
+    }
+    if (live.accessMode == LiveAccessMode.Paid && live.visibility != LiveVisibility.Public) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Paid live rooms must be public.",
+        )
+    }
     if (live.accessMode == LiveAccessMode.Paid && usdToCents(live.paidPriceUsd) == null) {
         return PostComposerDraftValidation(
             canSubmit = false,
             errorMessage = "Enter a valid ticket price.",
+        )
+    }
+    if (live.accessMode == LiveAccessMode.Paid && live.performerAllocations.any { it.sharePct < 0 }) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Performer shares cannot be negative.",
+        )
+    }
+    if (live.accessMode == LiveAccessMode.Paid && live.performerAllocations.sumOf { it.sharePct } != 100) {
+        return PostComposerDraftValidation(
+            canSubmit = false,
+            errorMessage = "Paid performer shares must total 100%.",
         )
     }
     return PostComposerDraftValidation(canSubmit = true)
@@ -558,7 +588,7 @@ fun buildLiveRoomRequest(
         description = description.trim().ifBlank { null },
         roomKind = live.roomKind.apiValue,
         accessMode = live.accessMode.apiValue,
-        visibility = live.visibility.apiValue,
+        visibility = resolveLiveVisibility(live).apiValue,
         guestUser = guestUserId,
         eventStartAt = if (live.scheduleForLater) parseLiveScheduleEpochSeconds(live.scheduleAt) else null,
         coverRef = coverRef?.trim()?.takeIf { it.isNotBlank() },
@@ -571,6 +601,16 @@ fun buildLiveRoomRequest(
         ),
     )
 }
+
+fun normalizeLiveComposerState(live: LiveComposerState): LiveComposerState =
+    if (live.accessMode == LiveAccessMode.Paid && live.visibility != LiveVisibility.Public) {
+        live.copy(visibility = LiveVisibility.Public)
+    } else {
+        live
+    }
+
+fun resolveLiveVisibility(live: LiveComposerState): LiveVisibility =
+    if (live.accessMode == LiveAccessMode.Paid) LiveVisibility.Public else live.visibility
 
 fun buildLiveRoomListingRequest(
     liveRoomId: String? = null,

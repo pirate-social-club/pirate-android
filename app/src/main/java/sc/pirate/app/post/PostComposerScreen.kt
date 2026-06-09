@@ -267,7 +267,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun updateLive(live: LiveComposerState) {
-        _state.value = _state.value.copy(live = live, error = null)
+        _state.value = _state.value.copy(live = normalizeLiveComposerState(live), error = null)
     }
 
     fun updateSong(song: SongComposerState) {
@@ -1499,7 +1499,7 @@ private fun LiveComposerFields(
                 onLiveChange(live.copy(accessMode = LiveAccessMode.Gated))
             }
             LiveChoiceChip("Paid", live.accessMode == LiveAccessMode.Paid, enabled) {
-                onLiveChange(live.copy(accessMode = LiveAccessMode.Paid))
+                onLiveChange(live.copy(accessMode = LiveAccessMode.Paid, visibility = LiveVisibility.Public))
             }
         }
 
@@ -1516,12 +1516,19 @@ private fun LiveComposerFields(
         }
 
         LiveChoiceSection(title = "Visibility") {
+            val paidVisibilityLocked = live.accessMode == LiveAccessMode.Paid
             LiveChoiceChip("Public", live.visibility == LiveVisibility.Public, enabled) {
                 onLiveChange(live.copy(visibility = LiveVisibility.Public))
             }
-            LiveChoiceChip("Unlisted", live.visibility == LiveVisibility.Unlisted, enabled) {
+            LiveChoiceChip("Unlisted", live.visibility == LiveVisibility.Unlisted, enabled && !paidVisibilityLocked) {
                 onLiveChange(live.copy(visibility = LiveVisibility.Unlisted))
             }
+        }
+        if (live.accessMode == LiveAccessMode.Paid) {
+            FormNote(
+                message = "Paid live rooms must be public.",
+                tone = FormTone.Warning,
+            )
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
