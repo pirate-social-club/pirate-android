@@ -14,12 +14,114 @@ import sc.pirate.app.api.model.CreatePostEventRequest
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.PostAuthorshipMode
 import sc.pirate.app.api.model.PostAudience
+import sc.pirate.app.api.model.PostCreatorRelation
 import sc.pirate.app.api.model.PostIdentityMode
 import sc.pirate.app.api.model.PostMediaRef
+import sc.pirate.app.api.model.PromotionAffiliationKind
+import sc.pirate.app.api.model.PromotionDisclosureInput
 import sc.pirate.app.api.model.SongArtifactBundle
 import sc.pirate.app.api.model.TranslationPolicy
 
 class PostComposerStateTest {
+    @Test
+    fun createInitialDraftState_holdsLockedDefaults() {
+        val draft = createInitialDraftState()
+
+        assertEquals(PostAudience.Public, draft.audience.visibility)
+        assertTrue(draft.audience.publicOptionEnabled)
+        assertNull(draft.audience.publicOptionDisabledReason)
+        assertEquals(PostAuthorshipMode.HumanDirect, draft.identity.authorshipMode)
+        assertEquals(PostIdentityMode.Public, draft.identity.identityMode)
+        assertEquals(AnonymousIdentityScope.CommunityStable, draft.identity.anonymousScope)
+        assertTrue(draft.identity.selectedQualifierIds.isEmpty())
+        assertFalse(draft.event.enabled)
+        assertEquals("", draft.monetization.priceUsd)
+        assertFalse(draft.monetization.regionalPricingEnabled)
+        assertNull(draft.charityContribution)
+        assertNull(draft.charityPartner)
+        assertNull(draft.regionalPricingPreview)
+        assertTrue(draft.qualifiers.isEmpty())
+        assertNull(draft.deferred.parentPost)
+        assertNull(draft.deferred.label)
+        assertNull(draft.deferred.creatorRelation)
+        assertNull(draft.deferred.promotionDisclosure)
+    }
+
+    @Test
+    fun withIdentityMode_publicClearsQualifierIdsAndRequestFields() {
+        val anonymousDraft = createInitialDraftState()
+            .withIdentityMode(PostIdentityMode.Anonymous)
+            .withSelectedQualifierIds(listOf("qlf_unique_human", " qlf_age_over_18 "))
+
+        assertEquals(listOf("qlf_unique_human", "qlf_age_over_18"), anonymousDraft.identity.selectedQualifierIds)
+        assertEquals(AnonymousIdentityScope.CommunityStable, anonymousDraft.identity.anonymousScopeForRequest())
+        assertEquals(listOf("qlf_unique_human", "qlf_age_over_18"), anonymousDraft.identity.disclosedQualifierIdsForRequest())
+
+        val publicDraft = anonymousDraft.withIdentityMode(PostIdentityMode.Public)
+
+        assertTrue(publicDraft.identity.selectedQualifierIds.isEmpty())
+        assertNull(publicDraft.identity.anonymousScopeForRequest())
+        assertNull(publicDraft.identity.disclosedQualifierIdsForRequest())
+    }
+
+    @Test
+    fun withSelectedQualifierIds_clearsWhenPublic() {
+        val draft = createInitialDraftState()
+            .withSelectedQualifierIds(listOf("qlf_unique_human"))
+
+        assertEquals(PostIdentityMode.Public, draft.identity.identityMode)
+        assertTrue(draft.identity.selectedQualifierIds.isEmpty())
+        assertNull(draft.identity.disclosedQualifierIdsForRequest())
+    }
+
+    @Test
+    fun resolveComposerIdentityMode_forcesPublicForLockedModes() {
+        data class Case(
+            val mode: PostComposerMode,
+            val identity: ComposerIdentityState,
+            val allowAnonymous: Boolean,
+            val monetizedVideo: Boolean,
+            val expected: PostIdentityMode,
+        )
+
+        val anonymousIdentity = ComposerIdentityState(identityMode = PostIdentityMode.Anonymous)
+        val agentIdentity = ComposerIdentityState(
+            authorshipMode = PostAuthorshipMode.UserAgent,
+            identityMode = PostIdentityMode.Anonymous,
+        )
+
+        val cases = listOf(
+            Case(PostComposerMode.Text, anonymousIdentity, true, false, PostIdentityMode.Anonymous),
+            Case(PostComposerMode.Text, ComposerIdentityState(identityMode = PostIdentityMode.Public), true, false, PostIdentityMode.Public),
+            Case(PostComposerMode.Song, anonymousIdentity, true, false, PostIdentityMode.Public),
+            Case(PostComposerMode.Live, anonymousIdentity, true, false, PostIdentityMode.Public),
+            Case(PostComposerMode.Video, anonymousIdentity, true, true, PostIdentityMode.Public),
+            Case(PostComposerMode.Text, agentIdentity, true, false, PostIdentityMode.Public),
+        )
+
+        for (case in cases) {
+            assertEquals(
+                case.expected,
+                resolveComposerIdentityMode(
+                    mode = case.mode,
+                    identity = case.identity,
+                    allowAnonymousIdentity = case.allowAnonymous,
+                    isMonetizedVideo = case.monetizedVideo,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun isComposerMonetizationVisible_dependsOnlyOnMode() {
+        assertTrue(isComposerMonetizationVisible(PostComposerMode.Song))
+        assertTrue(isComposerMonetizationVisible(PostComposerMode.Video))
+        assertFalse(isComposerMonetizationVisible(PostComposerMode.Text))
+        assertFalse(isComposerMonetizationVisible(PostComposerMode.Image))
+        assertFalse(isComposerMonetizationVisible(PostComposerMode.Link))
+        assertFalse(isComposerMonetizationVisible(PostComposerMode.Live))
+    }
+
     @Test
     fun createPostRequest_serializesContractFieldNamesAndEnumValues() {
         val encoded = Json.encodeToString(
@@ -394,6 +496,17 @@ class PostComposerStateTest {
         assertNull(request.upstreamAssetRefs)
         assertNull(request.accessMode)
         assertNull(request.licensePreset)
+        assertNull(request.authorshipMode)
+        assertNull(request.agent)
+        assertNull(request.agentActionProof)
+        assertNull(request.disclosedQualifierIds)
+        assertNull(request.parentPost)
+        assertNull(request.label)
+        assertNull(request.creatorRelation)
+        assertNull(request.promotionDisclosure)
+        assertNull(request.event)
+        assertNull(request.asset)
+        assertNull(request.lyrics)
     }
 
     @Test
@@ -419,6 +532,37 @@ class PostComposerStateTest {
         assertNull(request.songMode)
         assertNull(request.accessMode)
         assertNull(request.licensePreset)
+    }
+
+    @Test
+    fun currentPostBuildersIgnoreDeferredDraftFields() {
+        val draft = createInitialDraftState().copy(
+            deferred = DeferredPostContractFieldsState(
+                parentPost = "pst_parent",
+                label = LabelDefinition(id = "lbl_test", displayName = "Test label"),
+                creatorRelation = PostCreatorRelation.Created,
+                promotionDisclosure = PromotionDisclosureInput(
+                    isPromotional = true,
+                    affiliationKind = PromotionAffiliationKind.Self,
+                ),
+            ),
+        )
+        val request = buildVideoPostRequest(
+            anonymousScope = null,
+            caption = "Deferred fields should not serialize yet",
+            idempotencyKey = "idem-deferred",
+            identityMode = PostIdentityMode.Public,
+            mediaRef = PostMediaRef(storageRef = "media/video.mp4", mimeType = "video/mp4"),
+            title = "Deferred",
+            video = VideoComposerState(),
+        )
+
+        assertEquals("pst_parent", draft.deferred.parentPost)
+        assertEquals("lbl_test", draft.deferred.label?.id)
+        assertNull(request.parentPost)
+        assertNull(request.label)
+        assertNull(request.creatorRelation)
+        assertNull(request.promotionDisclosure)
     }
 
     @Test
