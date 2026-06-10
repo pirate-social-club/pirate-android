@@ -66,7 +66,6 @@ import sc.pirate.app.api.model.CreateSongArtifactUploadRequest
 import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.AnonymousIdentityScope
-import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LiveRoom
 import sc.pirate.app.api.model.Post
 import sc.pirate.app.api.model.PostAuthorshipMode
@@ -119,14 +118,13 @@ data class PostComposerUiState(
     val songCanvasVideoUri: Uri? = null,
     val songInstrumentalAudioUri: Uri? = null,
     val songVocalAudioUri: Uri? = null,
-    val eligibility: JoinEligibility? = null,
+    val gate: ComposerGateState = ComposerGateState(),
     val viewerUserId: String? = null,
     val publicHandle: String? = null,
     val publicAvatarRef: String? = null,
     val identityMode: PostComposerIdentityMode = PostComposerIdentityMode.Public,
     val allowAnonymousIdentity: Boolean = false,
     val hasCommunityPostingRole: Boolean = false,
-    val loadingEligibility: Boolean = false,
     val submitting: Boolean = false,
     val solvingProofOfWork: Boolean = false,
     val error: String? = null,
@@ -185,9 +183,11 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             selectedCommunityId = id,
             selectedCommunityName = knownCommunity?.displayName,
             selectedCommunityRouteSlug = knownCommunity?.routeSlug,
-            eligibility = null,
-            hasCommunityPostingRole = true,
-            loadingEligibility = false,
+            gate = ComposerGateState(
+                status = ComposerGateStatus.Unknown,
+                message = "Posting access could not be determined.",
+            ),
+            hasCommunityPostingRole = false,
             error = null,
         )
     }
@@ -201,19 +201,38 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             val selectedCommunityId = communityId?.trim()?.takeIf { it.isNotBlank() }
             if (selectedCommunityId == null) {
                 _state.value = _state.value.copy(
-                    eligibility = null,
+                    gate = resolveComposerGateState(
+                        hasSession = hasSession,
+                        selectedCommunityId = null,
+                        loadingEligibility = false,
+                        hasCommunityPostingRole = false,
+                        eligibility = null,
+                    ),
                     hasCommunityPostingRole = false,
-                    loadingEligibility = false,
                     error = null,
                 )
                 return@launch
             }
-            _state.value = _state.value.copy(loadingEligibility = true, error = null)
+            _state.value = _state.value.copy(
+                gate = resolveComposerGateState(
+                    hasSession = hasSession,
+                    selectedCommunityId = selectedCommunityId,
+                    loadingEligibility = true,
+                    hasCommunityPostingRole = _state.value.hasCommunityPostingRole,
+                    eligibility = _state.value.gate.joinEligibility,
+                ),
+                error = null,
+            )
             if (!hasSession) {
                 _state.value = _state.value.copy(
-                    eligibility = null,
+                    gate = resolveComposerGateState(
+                        hasSession = false,
+                        selectedCommunityId = selectedCommunityId,
+                        loadingEligibility = false,
+                        hasCommunityPostingRole = false,
+                        eligibility = null,
+                    ),
                     hasCommunityPostingRole = false,
-                    loadingEligibility = false,
                 )
                 return@launch
             }
@@ -233,22 +252,33 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 val nextDraft = _state.value.draft
                     .withAnonymousScope(anonymousScope)
                     .withIdentityMode(nextIdentityMode.toPostIdentityMode())
+                val hasPostingRole = viewerHasCommunityPostingRole(viewerUserId, preview)
                 _state.value = _state.value.copy(
                     selectedCommunityName = preview?.displayName ?: _state.value.selectedCommunityName,
                     selectedCommunityRouteSlug = preview?.routeSlug ?: _state.value.selectedCommunityRouteSlug,
-                    eligibility = eligibility,
+                    gate = resolveComposerGateState(
+                        hasSession = true,
+                        selectedCommunityId = selectedCommunityId,
+                        loadingEligibility = false,
+                        hasCommunityPostingRole = hasPostingRole,
+                        eligibility = eligibility,
+                    ),
                     viewerUserId = viewerUserId,
                     publicHandle = profile?.displayPirateHandle() ?: _state.value.publicHandle,
                     publicAvatarRef = profile?.avatarRef ?: _state.value.publicAvatarRef,
                     draft = nextDraft,
                     identityMode = nextIdentityMode,
                     allowAnonymousIdentity = allowAnonymous,
-                    hasCommunityPostingRole = viewerHasCommunityPostingRole(viewerUserId, preview),
-                    loadingEligibility = false,
+                    hasCommunityPostingRole = hasPostingRole,
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
-                    loadingEligibility = false,
+                    gate = ComposerGateState(
+                        status = ComposerGateStatus.Unknown,
+                        joinEligibility = _state.value.gate.joinEligibility,
+                        gateSummaries = _state.value.gate.gateSummaries,
+                        message = e.message ?: "Could not load posting eligibility",
+                    ),
                     error = e.message ?: "Could not load posting eligibility",
                 )
             }

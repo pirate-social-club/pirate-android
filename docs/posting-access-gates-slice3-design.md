@@ -72,7 +72,7 @@ Add composer-owned gate state, not mode-owned gate state.
 
 ```kotlin
 data class ComposerGateState(
-    val status: ComposerGateStatus = ComposerGateStatus.Unknown,
+    val status: ComposerGateStatus = ComposerGateStatus.NeedsCommunity,
     val joinEligibility: JoinEligibility? = null,
     val gateSummaries: List<MembershipGateSummary> = emptyList(),
     val postProofOfWorkRequired: Boolean = false,
@@ -87,6 +87,7 @@ enum class ComposerGateStatus {
     Unknown,
     Loading,
     Allowed,
+    NeedsCommunity,
     NeedsSignIn,
     NeedsJoin,
     NeedsJoinRequest,
@@ -102,6 +103,10 @@ enum class ComposerGateStatus {
 This should live on `PostComposerUiState`, not inside
 `CreatePostDraftState`. Gate state is contextual to the selected community and
 current session, while the draft is the user's content.
+
+`verificationIntent` is the backend-provided intent passed to the selected
+verification detour. `message` is resolver-owned status copy, except that a
+load or backend failure may replace it with the returned failure reason.
 
 Computed helpers should decide:
 
@@ -154,6 +159,7 @@ posting. The disabled reason should match the panel copy.
 
 Primary action mapping:
 
+- `NeedsCommunity`: open community selection
 - `NeedsSignIn`: navigate to auth
 - `NeedsJoin`: join community
 - `NeedsJoinRequest`: submit join request
@@ -258,6 +264,7 @@ Unit tests first:
 - PoW-required resolver
 - primary action resolver
 - draft-preservation reducer paths
+- gate-failed state preserves the draft and surfaces `failureReason`
 
 Compose smoke tests can follow once the panel lands:
 

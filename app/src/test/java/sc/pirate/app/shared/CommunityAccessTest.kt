@@ -17,14 +17,14 @@ class CommunityAccessTest {
         )
         assertTrue(
             requiresProofOfWork(
-                eligibility(gates = listOf(MembershipGateSummary(gateType = "altcha_pow"))),
+                eligibility(gates = listOf(validGate("altcha_pow"))),
             ),
         )
         assertTrue(
             requiresProofOfWork(
                 eligibility(
                     missingCapabilities = listOf("altcha_pow"),
-                    gates = listOf(MembershipGateSummary(gateType = "altcha_pow")),
+                    gates = listOf(validGate("altcha_pow")),
                 ),
             ),
         )
@@ -33,7 +33,7 @@ class CommunityAccessTest {
             requiresProofOfWork(
                 eligibility(
                     missingCapabilities = listOf("unique_human"),
-                    gates = listOf(MembershipGateSummary(gateType = "unique_human")),
+                    gates = listOf(validGate("unique_human")),
                 ),
             ),
         )
@@ -63,12 +63,12 @@ class CommunityAccessTest {
     fun gateSummaryText_formatsKnownGateTypesAndFallback() {
         assertEquals(
             "Proof-of-work check",
-            gateSummaryText(MembershipGateSummary(gateType = "altcha_pow")),
+            gateSummaryText(validGate("altcha_pow")),
         )
         assertEquals(
             "Unique human proof via Self, Very",
             gateSummaryText(
-                MembershipGateSummary(
+                validGate(
                     gateType = "unique_human",
                     acceptedProviders = listOf("self", "very"),
                 ),
@@ -76,12 +76,12 @@ class CommunityAccessTest {
         )
         assertEquals(
             "Age 18+",
-            gateSummaryText(MembershipGateSummary(gateType = "age_over_18")),
+            gateSummaryText(validGate("age_over_18")),
         )
         assertEquals(
             "Age 21+",
             gateSummaryText(
-                MembershipGateSummary(
+                validGate(
                     gateType = "minimum_age",
                     requiredMinimumAge = 21,
                 ),
@@ -90,7 +90,7 @@ class CommunityAccessTest {
         assertEquals(
             "Nationality: global",
             gateSummaryText(
-                MembershipGateSummary(
+                validGate(
                     gateType = "nationality",
                     requiredValue = "global",
                 ),
@@ -98,7 +98,7 @@ class CommunityAccessTest {
         )
         assertEquals(
             "unknown gate",
-            gateSummaryText(MembershipGateSummary(gateType = "unknown_gate")),
+            gateSummaryText(validGate("unknown_gate")),
         )
     }
 
@@ -115,23 +115,33 @@ class CommunityAccessTest {
     fun formatCountryRequirement_formatsMissingAndRawValues() {
         assertEquals(
             "required",
-            formatCountryRequirement(MembershipGateSummary(gateType = "nationality")),
+            formatCountryRequirement(validGate("nationality")),
         )
         assertEquals(
             "required",
             formatCountryRequirement(
-                MembershipGateSummary(
+                validGate(
                     gateType = "nationality",
                     requiredValue = " ",
                 ),
             ),
         )
+        // Country lookup only applies to two-character codes; other values pass through.
         assertEquals(
             "global",
             formatCountryRequirement(
-                MembershipGateSummary(
+                validGate(
                     gateType = "nationality",
                     requiredValue = "global",
+                ),
+            ),
+        )
+        assertEquals(
+            "global, regional",
+            formatCountryRequirement(
+                validGate(
+                    gateType = "nationality",
+                    requiredValues = listOf("global", "regional"),
                 ),
             ),
         )
@@ -148,5 +158,20 @@ class CommunityAccessTest {
             status = "verification_required",
             membershipGateSummaries = gates,
             missingCapabilities = missingCapabilities,
+        )
+
+    private fun validGate(
+        gateType: String,
+        acceptedProviders: List<String>? = null,
+        requiredValue: String? = null,
+        requiredValues: List<String>? = null,
+        requiredMinimumAge: Int? = null,
+    ): MembershipGateSummary =
+        MembershipGateSummary(
+            gateType = gateType,
+            acceptedProviders = acceptedProviders,
+            requiredValue = requiredValue,
+            requiredValues = requiredValues,
+            requiredMinimumAge = requiredMinimumAge,
         )
 }

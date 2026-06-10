@@ -4,9 +4,11 @@ import sc.pirate.app.api.model.AnonymousIdentityScope
 import sc.pirate.app.api.model.CreateCommunityListingRequest
 import sc.pirate.app.api.model.CreatePostRequest
 import sc.pirate.app.api.model.CreateLiveRoomRequest
+import sc.pirate.app.api.model.JoinEligibility
 import sc.pirate.app.api.model.LiveRoomPerformerAllocationInput
 import sc.pirate.app.api.model.LiveRoomSetlistInput
 import sc.pirate.app.api.model.LiveRoomSetlistItemInput
+import sc.pirate.app.api.model.MembershipGateSummary
 import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.PostAuthorshipMode
 import sc.pirate.app.api.model.PostAudience
@@ -19,6 +21,8 @@ import sc.pirate.app.api.model.TranslationPolicy
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import sc.pirate.app.shared.requiresProofOfWork
+import sc.pirate.app.shared.verificationProviderLabel
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.net.URI
@@ -37,6 +41,154 @@ enum class PostComposerMode(val apiValue: String) {
     Song("song"),
     Live("live"),
 }
+
+enum class ComposerGateStatus {
+    Unknown,
+    Loading,
+    Allowed,
+    NeedsCommunity,
+    NeedsSignIn,
+    NeedsJoin,
+    NeedsJoinRequest,
+    JoinRequestPending,
+    NeedsVerification,
+    NeedsJoinProofOfWork,
+    NeedsPostProofOfWork,
+    GateFailed,
+    Banned,
+}
+
+enum class ComposerGatePrimaryAction {
+    None,
+    SelectCommunity,
+    SignIn,
+    Join,
+    RequestJoin,
+    Verify,
+    SolveJoinProofOfWork,
+    SolvePostProofOfWork,
+    Retry,
+}
+
+data class ComposerGateState(
+    val status: ComposerGateStatus = ComposerGateStatus.NeedsCommunity,
+    val joinEligibility: JoinEligibility? = null,
+    val gateSummaries: List<MembershipGateSummary> = emptyList(),
+    val postProofOfWorkRequired: Boolean = false,
+    val postProofOfWorkSolving: Boolean = false,
+    val joinProofOfWorkSolving: Boolean = false,
+    val verificationProvider: String? = null,
+    val verificationIntent: String? = null,
+    val message: String? = "Choose a community before publishing.",
+)
+
+fun resolveComposerGateState(
+    hasSession: Boolean,
+    selectedCommunityId: String?,
+    loadingEligibility: Boolean,
+    hasCommunityPostingRole: Boolean,
+    eligibility: JoinEligibility?,
+    postProofOfWorkRequired: Boolean = false,
+): ComposerGateState {
+    val communitySelected = !selectedCommunityId.isNullOrBlank()
+    val status = when {
+        !communitySelected -> ComposerGateStatus.NeedsCommunity
+        !hasSession -> ComposerGateStatus.NeedsSignIn
+        hasCommunityPostingRole && postProofOfWorkRequired -> ComposerGateStatus.NeedsPostProofOfWork
+        hasCommunityPostingRole -> ComposerGateStatus.Allowed
+        loadingEligibility -> ComposerGateStatus.Loading
+        eligibility == null -> ComposerGateStatus.Unknown
+        eligibility.status == "already_joined" && postProofOfWorkRequired ->
+            ComposerGateStatus.NeedsPostProofOfWork
+        eligibility.status == "already_joined" -> ComposerGateStatus.Allowed
+        eligibility.status == "joinable" -> ComposerGateStatus.NeedsJoin
+        eligibility.status == "requestable" -> ComposerGateStatus.NeedsJoinRequest
+        eligibility.status == "pending_request" -> ComposerGateStatus.JoinRequestPending
+        eligibility.status == "verification_required" && requiresProofOfWork(eligibility) ->
+            ComposerGateStatus.NeedsJoinProofOfWork
+        eligibility.status == "verification_required" -> ComposerGateStatus.NeedsVerification
+        eligibility.status == "gate_failed" -> ComposerGateStatus.GateFailed
+        eligibility.status == "banned" -> ComposerGateStatus.Banned
+        else -> ComposerGateStatus.Unknown
+    }
+
+    return ComposerGateState(
+        status = status,
+        joinEligibility = eligibility,
+        gateSummaries = eligibility?.membershipGateSummaries.orEmpty(),
+        postProofOfWorkRequired = postProofOfWorkRequired,
+        verificationProvider = eligibility?.suggestedVerificationProvider,
+        verificationIntent = eligibility?.suggestedVerificationIntent,
+        message = composerGateStatusText(status, eligibility),
+    )
+}
+
+fun viewerHasPostingAccess(gate: ComposerGateState): Boolean =
+    gate.status == ComposerGateStatus.Allowed
+
+fun submitBlockedByGate(gate: ComposerGateState): Boolean =
+    !viewerHasPostingAccess(gate)
+
+fun primaryGateAction(gate: ComposerGateState): ComposerGatePrimaryAction =
+    when (gate.status) {
+        ComposerGateStatus.NeedsCommunity -> ComposerGatePrimaryAction.SelectCommunity
+        ComposerGateStatus.NeedsSignIn -> ComposerGatePrimaryAction.SignIn
+        ComposerGateStatus.NeedsJoin -> ComposerGatePrimaryAction.Join
+        ComposerGateStatus.NeedsJoinRequest -> ComposerGatePrimaryAction.RequestJoin
+        ComposerGateStatus.NeedsVerification -> ComposerGatePrimaryAction.Verify
+        ComposerGateStatus.NeedsJoinProofOfWork -> ComposerGatePrimaryAction.SolveJoinProofOfWork
+        ComposerGateStatus.NeedsPostProofOfWork -> ComposerGatePrimaryAction.SolvePostProofOfWork
+        ComposerGateStatus.Unknown -> ComposerGatePrimaryAction.Retry
+        ComposerGateStatus.Loading,
+        ComposerGateStatus.Allowed,
+        ComposerGateStatus.JoinRequestPending,
+        ComposerGateStatus.GateFailed,
+        ComposerGateStatus.Banned -> ComposerGatePrimaryAction.None
+    }
+
+fun ComposerGateState.withPostProofOfWorkRequired(required: Boolean): ComposerGateState {
+    val nextStatus = when {
+        required && status == ComposerGateStatus.Allowed -> ComposerGateStatus.NeedsPostProofOfWork
+        !required && status == ComposerGateStatus.NeedsPostProofOfWork -> ComposerGateStatus.Allowed
+        else -> status
+    }
+    return copy(
+        status = nextStatus,
+        postProofOfWorkRequired = required,
+        postProofOfWorkSolving = if (required) postProofOfWorkSolving else false,
+        message = composerGateStatusText(nextStatus, joinEligibility),
+    )
+}
+
+fun ComposerGateState.withJoinProofOfWorkSolving(solving: Boolean): ComposerGateState =
+    copy(joinProofOfWorkSolving = solving)
+
+fun ComposerGateState.withPostProofOfWorkSolving(solving: Boolean): ComposerGateState =
+    copy(postProofOfWorkSolving = solving)
+
+private fun composerGateStatusText(
+    status: ComposerGateStatus,
+    eligibility: JoinEligibility?,
+): String? =
+    when (status) {
+        ComposerGateStatus.Unknown -> "Posting access could not be determined."
+        ComposerGateStatus.Loading -> "Checking posting access..."
+        ComposerGateStatus.Allowed -> null
+        ComposerGateStatus.NeedsCommunity -> "Choose a community before publishing."
+        ComposerGateStatus.NeedsSignIn -> "Sign in before publishing this draft."
+        ComposerGateStatus.NeedsJoin -> "Join this community before publishing."
+        ComposerGateStatus.NeedsJoinRequest -> "Request membership before publishing."
+        ComposerGateStatus.JoinRequestPending -> "Your membership request is pending."
+        ComposerGateStatus.NeedsVerification -> {
+            val provider = eligibility?.suggestedVerificationProvider ?: eligibility?.humanVerificationLane
+            "Verify with ${verificationProviderLabel(provider)} before publishing."
+        }
+        ComposerGateStatus.NeedsJoinProofOfWork -> "Complete the community join proof before publishing."
+        ComposerGateStatus.NeedsPostProofOfWork -> "Complete the posting proof before publishing."
+        ComposerGateStatus.GateFailed -> eligibility?.failureReason
+            ?: "You do not meet this community's posting requirements."
+        ComposerGateStatus.Banned -> "You cannot publish in this community."
+    }
 
 enum class SongMode(val apiValue: String) {
     Original("original"),

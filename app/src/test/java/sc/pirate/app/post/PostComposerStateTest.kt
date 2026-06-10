@@ -12,6 +12,8 @@ import sc.pirate.app.api.model.AgentActionProof
 import sc.pirate.app.api.model.AnonymousIdentityScope
 import sc.pirate.app.api.model.CreatePostEventRequest
 import sc.pirate.app.api.model.CreatePostRequest
+import sc.pirate.app.api.model.JoinEligibility
+import sc.pirate.app.api.model.MembershipGateSummary
 import sc.pirate.app.api.model.PostAuthorshipMode
 import sc.pirate.app.api.model.PostAudience
 import sc.pirate.app.api.model.PostCreatorRelation
@@ -166,7 +168,170 @@ class PostComposerStateTest {
         val state = PostComposerUiState()
 
         assertNull(state.selectedCommunityId)
-        assertFalse(state.loadingEligibility)
+        assertEquals(ComposerGateStatus.NeedsCommunity, state.gate.status)
+        assertTrue(submitBlockedByGate(state.gate))
+        assertEquals(ComposerGatePrimaryAction.SelectCommunity, primaryGateAction(state.gate))
+    }
+
+    @Test
+    fun resolveComposerGateState_handlesSessionLoadingAndPostingRoleBypass() {
+        assertEquals(
+            ComposerGateStatus.NeedsCommunity,
+            resolveGate(hasSession = false, communityId = null).status,
+        )
+        val needsSignIn = resolveGate(hasSession = false)
+        assertEquals(ComposerGateStatus.NeedsSignIn, needsSignIn.status)
+        assertEquals(ComposerGatePrimaryAction.SignIn, primaryGateAction(needsSignIn))
+
+        val loading = resolveGate(loading = true)
+        assertEquals(ComposerGateStatus.Loading, loading.status)
+        assertEquals(ComposerGatePrimaryAction.None, primaryGateAction(loading))
+        assertEquals(
+            ComposerGateStatus.Allowed,
+            resolveGate(
+                hasPostingRole = true,
+                eligibility = eligibility(status = "requestable"),
+            ).status,
+        )
+        val postingRoleWithProof = resolveGate(
+            hasPostingRole = true,
+            eligibility = eligibility(status = "requestable"),
+            postProofOfWorkRequired = true,
+        )
+        assertEquals(ComposerGateStatus.NeedsPostProofOfWork, postingRoleWithProof.status)
+        assertEquals(
+            ComposerGatePrimaryAction.SolvePostProofOfWork,
+            primaryGateAction(postingRoleWithProof),
+        )
+        assertEquals(
+            ComposerGateStatus.Unknown,
+            resolveGate(eligibility = null).status,
+        )
+    }
+
+    @Test
+    fun resolveComposerGateState_mapsJoinEligibilityStatuses() {
+        data class Case(
+            val eligibility: JoinEligibility,
+            val expectedStatus: ComposerGateStatus,
+            val expectedAction: ComposerGatePrimaryAction,
+        )
+
+        val cases = listOf(
+            Case(eligibility("already_joined"), ComposerGateStatus.Allowed, ComposerGatePrimaryAction.None),
+            Case(eligibility("joinable"), ComposerGateStatus.NeedsJoin, ComposerGatePrimaryAction.Join),
+            Case(
+                eligibility("requestable"),
+                ComposerGateStatus.NeedsJoinRequest,
+                ComposerGatePrimaryAction.RequestJoin,
+            ),
+            Case(
+                eligibility("pending_request"),
+                ComposerGateStatus.JoinRequestPending,
+                ComposerGatePrimaryAction.None,
+            ),
+            Case(
+                eligibility(
+                    status = "verification_required",
+                    provider = "self",
+                    intent = "community_join",
+                ),
+                ComposerGateStatus.NeedsVerification,
+                ComposerGatePrimaryAction.Verify,
+            ),
+            Case(
+                eligibility(
+                    status = "verification_required",
+                    missingCapabilities = listOf("altcha_pow"),
+                ),
+                ComposerGateStatus.NeedsJoinProofOfWork,
+                ComposerGatePrimaryAction.SolveJoinProofOfWork,
+            ),
+            Case(eligibility("gate_failed"), ComposerGateStatus.GateFailed, ComposerGatePrimaryAction.None),
+            Case(eligibility("banned"), ComposerGateStatus.Banned, ComposerGatePrimaryAction.None),
+            Case(eligibility("new_status"), ComposerGateStatus.Unknown, ComposerGatePrimaryAction.Retry),
+        )
+
+        for (case in cases) {
+            val gate = resolveGate(eligibility = case.eligibility)
+
+            assertEquals(case.expectedStatus, gate.status)
+            assertEquals(case.expectedAction, primaryGateAction(gate))
+            assertEquals(case.expectedStatus == ComposerGateStatus.Allowed, viewerHasPostingAccess(gate))
+            assertEquals(case.expectedStatus != ComposerGateStatus.Allowed, submitBlockedByGate(gate))
+        }
+    }
+
+    @Test
+    fun resolveComposerGateState_carriesVerificationAndFailureContext() {
+        val requirement = MembershipGateSummary(
+            gateType = "unique_human",
+            acceptedProviders = listOf("self", "very"),
+        )
+        val verificationGate = resolveGate(
+            eligibility = eligibility(
+                status = "verification_required",
+                provider = "very",
+                intent = "community_join",
+                gates = listOf(requirement),
+            ),
+        )
+
+        assertEquals("very", verificationGate.verificationProvider)
+        assertEquals("community_join", verificationGate.verificationIntent)
+        assertEquals(listOf(requirement), verificationGate.gateSummaries)
+        assertEquals("Verify with Very before publishing.", verificationGate.message)
+
+        val failedGate = resolveGate(
+            eligibility = eligibility(
+                status = "gate_failed",
+                failureReason = "A verified wallet is required.",
+            ),
+        )
+        assertEquals("A verified wallet is required.", failedGate.message)
+    }
+
+    @Test
+    fun composerGateState_tracksPostAndJoinProofOfWorkSeparately() {
+        val allowed = resolveGate(eligibility = eligibility("already_joined"))
+        val postProofRequired = allowed
+            .withPostProofOfWorkRequired(true)
+            .withPostProofOfWorkSolving(true)
+            .withJoinProofOfWorkSolving(true)
+
+        assertEquals(ComposerGateStatus.NeedsPostProofOfWork, postProofRequired.status)
+        assertTrue(postProofRequired.postProofOfWorkRequired)
+        assertTrue(postProofRequired.postProofOfWorkSolving)
+        assertTrue(postProofRequired.joinProofOfWorkSolving)
+
+        val cleared = postProofRequired.withPostProofOfWorkRequired(false)
+        assertEquals(ComposerGateStatus.Allowed, cleared.status)
+        assertFalse(cleared.postProofOfWorkRequired)
+        assertFalse(cleared.postProofOfWorkSolving)
+        assertTrue(cleared.joinProofOfWorkSolving)
+    }
+
+    @Test
+    fun composerGateState_changesPreservePostDraft() {
+        val initial = PostComposerUiState(
+            selectedCommunityId = "com_music",
+            title = "Draft title",
+            body = "Draft body",
+            draft = createInitialDraftState().withIdentityMode(PostIdentityMode.Anonymous),
+        )
+        val gated = initial.copy(
+            gate = resolveGate(
+                eligibility = eligibility(
+                    status = "verification_required",
+                    provider = "self",
+                ),
+            ),
+        )
+
+        assertEquals("Draft title", gated.title)
+        assertEquals("Draft body", gated.body)
+        assertEquals(PostIdentityMode.Anonymous, gated.draft.identity.identityMode)
+        assertEquals(ComposerGateStatus.NeedsVerification, gated.gate.status)
     }
 
     @Test
@@ -796,4 +961,41 @@ class PostComposerStateTest {
 
     private fun validLiveSetlist(): List<LiveSetlistItemState> =
         listOf(LiveSetlistItemState(titleText = "Opening song"))
+
+    private fun resolveGate(
+        hasSession: Boolean = true,
+        communityId: String? = "com_music",
+        loading: Boolean = false,
+        hasPostingRole: Boolean = false,
+        eligibility: JoinEligibility? = eligibility("already_joined"),
+        postProofOfWorkRequired: Boolean = false,
+    ): ComposerGateState =
+        resolveComposerGateState(
+            hasSession = hasSession,
+            selectedCommunityId = communityId,
+            loadingEligibility = loading,
+            hasCommunityPostingRole = hasPostingRole,
+            eligibility = eligibility,
+            postProofOfWorkRequired = postProofOfWorkRequired,
+        )
+
+    private fun eligibility(
+        status: String,
+        provider: String? = null,
+        intent: String? = null,
+        missingCapabilities: List<String> = emptyList(),
+        gates: List<MembershipGateSummary> = emptyList(),
+        failureReason: String? = null,
+    ): JoinEligibility =
+        JoinEligibility(
+            membershipMode = "gated",
+            humanVerificationLane = provider ?: "none",
+            joinableNow = status == "joinable",
+            status = status,
+            membershipGateSummaries = gates,
+            missingCapabilities = missingCapabilities,
+            suggestedVerificationProvider = provider,
+            suggestedVerificationIntent = intent,
+            failureReason = failureReason,
+        )
 }
