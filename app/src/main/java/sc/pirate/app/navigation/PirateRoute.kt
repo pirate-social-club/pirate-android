@@ -95,6 +95,12 @@ sealed class PirateRoute(val route: String) {
         const val ARG_POST_ID = "postId"
         fun buildRoute(postId: String): String = "post/${Uri.encode(postId)}/live-room"
     }
+    data object Karaoke : PirateRoute("community/{communityId}/post/{postId}/karaoke") {
+        const val ARG_COMMUNITY_ID = "communityId"
+        const val ARG_POST_ID = "postId"
+        fun buildRoute(communityId: String, postId: String): String =
+            "community/${Uri.encode(communityId)}/post/${Uri.encode(postId)}/karaoke"
+    }
     data object LiveRoomBroadcast : PirateRoute("community/{communityId}/live-room/{liveRoomId}/broadcast/{role}") {
         const val ARG_COMMUNITY_ID = "communityId"
         const val ARG_LIVE_ROOM_ID = "liveRoomId"
