@@ -56,6 +56,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     fun load(communityId: String, postId: String, hasSession: Boolean) {
         this.communityId = communityId
         this.postId = postId
+        currentAttemptKey = null
+        currentAttemptKeyFor = null
         viewModelScope.launch {
             _state.value = StudyUiState(loading = true)
             if (!hasSession) {
@@ -102,11 +104,15 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         val exercise = current.currentExercise ?: return
         if (current.submitting || current.lastResult != null) return
 
+        // One STABLE idempotency key per (exercise, attemptNumber): a lost-response retry
+        // must resend the SAME key so the server replays the original result rather than
+        // rejecting a duplicate exercise_id+attempt_number under a fresh key (409).
+        val idempKey = stableAttemptKey(exercise.id, current.attemptNumber)
         val request = when (exercise.type) {
             "translation_choice" -> {
                 val optionId = current.selectedOptionId ?: return
                 SongStudyAttemptRequest(
-                    idempotencyKey = idempotencyKey(exercise.id, current.attemptNumber),
+                    idempotencyKey = idempKey,
                     exerciseId = exercise.id,
                     type = exercise.type,
                     attemptNumber = current.attemptNumber,
@@ -117,7 +123,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 val transcript = current.sayItBackInput.trim()
                 if (transcript.isEmpty()) return
                 SongStudyAttemptRequest(
-                    idempotencyKey = idempotencyKey(exercise.id, current.attemptNumber),
+                    idempotencyKey = idempKey,
                     exerciseId = exercise.id,
                     type = exercise.type,
                     attemptNumber = current.attemptNumber,
@@ -175,6 +181,19 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private fun idempotencyKey(exerciseId: String, attemptNumber: Int): String =
-        "study:$exerciseId:$attemptNumber:${UUID.randomUUID()}"
+    // The idempotency key currently in force, and the "exerciseId:attemptNumber" it was minted
+    // for. Reused across repeated submit() calls of the same attempt; rotated only when the
+    // exercise or attemptNumber changes (advance/retry).
+    private var currentAttemptKey: String? = null
+    private var currentAttemptKeyFor: String? = null
+
+    private fun stableAttemptKey(exerciseId: String, attemptNumber: Int): String {
+        val keyFor = "$exerciseId:$attemptNumber"
+        val existing = currentAttemptKey
+        if (existing != null && currentAttemptKeyFor == keyFor) return existing
+        val minted = "study:$exerciseId:$attemptNumber:${UUID.randomUUID()}"
+        currentAttemptKey = minted
+        currentAttemptKeyFor = keyFor
+        return minted
+    }
 }
