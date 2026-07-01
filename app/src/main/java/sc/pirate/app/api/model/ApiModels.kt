@@ -558,6 +558,10 @@ data class SongPresentation(
     val title: String? = null,
     @SerialName("cover_art_ref") val coverArtRef: String? = null,
     @SerialName("duration_ms") val durationMs: Long? = null,
+    // Native karaoke CTA readiness. Projected by the API on song post reads.
+    // pending | processing | completed | failed
+    @SerialName("alignment_status") val alignmentStatus: String? = null,
+    @SerialName("has_timed_lyrics") val hasTimedLyrics: Boolean? = null,
 )
 
 @Serializable

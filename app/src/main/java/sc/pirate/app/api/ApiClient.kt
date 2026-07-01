@@ -738,6 +738,34 @@ class ApiClient(private val sessionStore: SessionStore) {
                 headers = altchaHeader.toAltchaHeader(),
             )
         }
+
+        suspend fun getKaraokePayload(
+            communityId: String,
+            postId: String,
+            locale: String? = null,
+        ): SongKaraokePayload {
+            val path = api.buildQueryPath(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/karaoke",
+                listOf("locale" to locale),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(SongKaraokePayload.serializer(), response)
+        }
+
+        suspend fun createKaraokeSession(
+            communityId: String,
+            postId: String,
+            idempotencyKey: String,
+            request: KaraokeSessionCreateRequest = KaraokeSessionCreateRequest(),
+        ): KaraokeSession {
+            val body = api.json.encodeToString(KaraokeSessionCreateRequest.serializer(), request)
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/karaoke/sessions",
+                body,
+                headers = mapOf("Idempotency-Key" to idempotencyKey),
+            )
+            return api.json.decodeFromString(KaraokeSession.serializer(), response)
+        }
     }
 
     class PublicCommunitiesEndpoints internal constructor(private val api: ApiClient) {

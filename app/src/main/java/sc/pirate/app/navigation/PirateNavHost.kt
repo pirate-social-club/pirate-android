@@ -36,6 +36,7 @@ import sc.pirate.app.community.CommunityViewModel
 import sc.pirate.app.createcommunity.CreateCommunityScreen
 import sc.pirate.app.home.HomeScreen
 import sc.pirate.app.inbox.InboxScreen
+import sc.pirate.app.karaoke.KaraokeScreen
 import sc.pirate.app.live.LiveRoomBroadcasterScreen
 import sc.pirate.app.live.LiveRoomWebViewScreen
 import sc.pirate.app.moderation.CommunityModerationScreen
@@ -298,6 +299,11 @@ fun PirateNavHost(
                         launchSingleTop = true
                     }
                 },
+                onSing = { communityId ->
+                    navController.navigate(PirateRoute.Karaoke.buildRoute(communityId, postId)) {
+                        launchSingleTop = true
+                    }
+                },
                 onBroadcastLiveRoom = { communityId, liveRoomId, role ->
                     navController.navigate(PirateRoute.LiveRoomBroadcast.buildRoute(communityId, liveRoomId, role)) {
                         launchSingleTop = true
@@ -348,6 +354,27 @@ fun PirateNavHost(
             LiveRoomWebViewScreen(
                 app = app,
                 postId = postId,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.Karaoke.route,
+            arguments = listOf(
+                navArgument(PirateRoute.Karaoke.ARG_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.Karaoke.ARG_POST_ID) {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.Karaoke.ARG_COMMUNITY_ID).orEmpty()
+            val karaokePostId = backStackEntry.arguments?.getString(PirateRoute.Karaoke.ARG_POST_ID).orEmpty()
+            KaraokeScreen(
+                communityId = communityId,
+                postId = karaokePostId,
+                hasSession = hasSession,
                 onBack = { navController.popBackStack() },
             )
         }

@@ -75,6 +75,9 @@ android {
     val webBaseUrl = runtimeProp("WEB_BASE_URL") ?: "https://pirate.sc"
     buildConfigField("String", "WEB_BASE_URL", buildConfigString(webBaseUrl))
 
+    val karaokeWebSocketOrigin = runtimeProp("KARAOKE_WEBSOCKET_ORIGIN") ?: "https://android.pirate.sc"
+    buildConfigField("String", "KARAOKE_WEBSOCKET_ORIGIN", buildConfigString(karaokeWebSocketOrigin))
+
     val xmtpEnvironment = runtimeProp("XMTP_ENVIRONMENT") ?: "production"
     buildConfigField("String", "XMTP_ENVIRONMENT", buildConfigString(xmtpEnvironment))
 

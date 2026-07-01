@@ -1063,6 +1063,7 @@ fun PostScreen(
     onNavigateToCompose: ((String) -> Unit)? = null,
     onNavigateToCommunity: (String) -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onSing: (String) -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
@@ -1228,6 +1229,9 @@ fun PostScreen(
                             },
                             onWatchLiveRoom = {
                                 onWatchLiveRoom()
+                            },
+                            onSing = {
+                                if (hasSession) onSing(postResponse.post.communityId) else authPromptAction = "Karaoke"
                             },
                             onBroadcastLiveRoom = { communityId, liveRoomId, role ->
                                 if (hasSession) {
@@ -1434,6 +1438,7 @@ private fun ThreadRootPost(
     onVote: (Int) -> Unit,
     onBuyLiveRoomTicket: () -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onSing: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
     onToggleSongPlayback: () -> Unit,
@@ -1525,6 +1530,7 @@ private fun ThreadRootPost(
                     isPlaying = postIsCurrent && songPlaybackState.isPlaying,
                     error = songPlaybackState.error.takeIf { postIsCurrent },
                     onPlayPause = onToggleSongPlayback,
+                    onSing = onSing.takeIf { postResponse.canStartNativeKaraoke() },
                 )
             }
             if (isVideoPost(postResponse) && post.anchorLiveRoom == null) {
@@ -1604,16 +1610,30 @@ private fun ThreadSongSummary(
     isPlaying: Boolean,
     error: String?,
     onPlayPause: () -> Unit,
+    onSing: (() -> Unit)? = null,
 ) {
-    SongSummaryCard(
-        post = postResponse,
-        canPlay = canPlay,
-        isBuffering = isBuffering,
-        isPlaying = isPlaying,
-        error = error,
-        onPlayPause = onPlayPause,
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SongSummaryCard(
+            post = postResponse,
+            canPlay = canPlay,
+            isBuffering = isBuffering,
+            isPlaying = isPlaying,
+            error = error,
+            onPlayPause = onPlayPause,
+        )
+        if (onSing != null) {
+            PirateButton(
+                text = "Sing",
+                onClick = onSing,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
 }
+
+private fun LocalizedPostResponse.canStartNativeKaraoke(): Boolean =
+    songPresentation?.alignmentStatus == "completed" &&
+        songPresentation.hasTimedLyrics == true
 
 private fun songTitle(post: LocalizedPostResponse): String =
     post.songPresentation?.title
