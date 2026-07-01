@@ -1,6 +1,12 @@
 package sc.pirate.app.karaoke
 
+import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Application
+import android.content.pm.PackageManager
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,8 +28,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -36,27 +44,36 @@ import sc.pirate.app.api.model.KaraokeSession
 import sc.pirate.app.api.model.SongKaraokePayload
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
+import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import java.time.Instant
 import java.util.UUID
+
+private const val TAG = "KaraokeScreen"
 
 data class KaraokeUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val payload: SongKaraokePayload? = null,
     val session: KaraokeSession? = null,
+    val captureActive: Boolean = false,
+    val captureMessage: String? = null,
 )
 
 class KaraokeViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<PirateApp>()
     private val _state = MutableStateFlow(KaraokeUiState())
     val state: StateFlow<KaraokeUiState> = _state.asStateFlow()
+    private val controller = KaraokeSessionController()
+    private val capture = AudioRecordKaraokeCapture()
 
     private var currentKeyFor: String? = null
     private var currentIdempotencyKey: String? = null
+    private var currentPostId: String? = null
 
     fun load(communityId: String, postId: String, hasSession: Boolean) {
+        currentPostId = postId
         viewModelScope.launch {
             _state.value = KaraokeUiState(loading = true)
             if (!hasSession) {
@@ -101,6 +118,69 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         require(session.tokenExpiresAt > now) { "Karaoke token expired before use." }
         require(session.sessionExpiresAt >= session.tokenExpiresAt) { "Karaoke session expiry is invalid." }
     }
+
+    @SuppressLint("MissingPermission")
+    fun startCapture() {
+        val current = _state.value
+        val session = current.session ?: return
+        val postId = currentPostId ?: return
+        if (current.captureActive) return
+
+        val listener = object : KaraokeSocketListener {
+            override fun onOpen() {
+                Log.d(TAG, "Karaoke websocket opened")
+            }
+
+            override fun onText(message: String) {
+                Log.d(TAG, "Karaoke server event received")
+            }
+
+            override fun onClosed() {
+                _state.value = _state.value.copy(captureActive = false, captureMessage = "Karaoke connection closed.")
+            }
+
+            override fun onFailure(message: String) {
+                _state.value = _state.value.copy(captureActive = false, captureMessage = message)
+                capture.stop()
+            }
+        }
+
+        runCatching {
+            controller.attach(session = session, postId = postId, listener = listener)
+            controller.start(startedAtAudioMs = 0)
+            controller.updateCaptureAnchor(KaraokeCaptureAnchor(captureMs = System.nanoTime() / 1_000_000L, songMs = 0))
+            capture.start(
+                scope = viewModelScope,
+                onChunk = { chunk ->
+                    if (!controller.sendCapturedChunk(chunk)) {
+                        _state.value = _state.value.copy(captureMessage = "Could not send microphone audio.")
+                    }
+                },
+                onFailure = { message ->
+                    _state.value = _state.value.copy(captureActive = false, captureMessage = message)
+                    controller.abort("capture_failed")
+                },
+            )
+            _state.value = _state.value.copy(captureActive = true, captureMessage = "Listening…")
+        }.onFailure { error ->
+            _state.value = _state.value.copy(
+                captureActive = false,
+                captureMessage = error.message ?: "Could not start karaoke capture.",
+            )
+        }
+    }
+
+    fun stopCapture() {
+        capture.stop()
+        controller.finish(audioTimeMs = 0)
+        _state.value = _state.value.copy(captureActive = false, captureMessage = "Capture stopped.")
+    }
+
+    override fun onCleared() {
+        capture.stop()
+        controller.abort("screen_closed")
+        super.onCleared()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,8 +192,14 @@ fun KaraokeScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val viewModel: KaraokeViewModel = viewModel()
     val state by viewModel.state.collectAsState()
+    val micPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) viewModel.startCapture()
+    }
 
     LaunchedEffect(communityId, postId, hasSession) {
         viewModel.load(communityId, postId, hasSession)
@@ -151,7 +237,22 @@ fun KaraokeScreen(
                     tone = StatusTone.Warning,
                     modifier = Modifier.padding(16.dp).fillMaxWidth(),
                 )
-                else -> KaraokeReadySurface(state = state, modifier = Modifier.padding(16.dp))
+                else -> KaraokeReadySurface(
+                    state = state,
+                    onStart = {
+                        val granted = ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.RECORD_AUDIO,
+                        ) == PackageManager.PERMISSION_GRANTED
+                        if (granted) {
+                            viewModel.startCapture()
+                        } else {
+                            micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                    onStop = viewModel::stopCapture,
+                    modifier = Modifier.padding(16.dp),
+                )
             }
         }
     }
@@ -160,6 +261,8 @@ fun KaraokeScreen(
 @Composable
 private fun KaraokeReadySurface(
     state: KaraokeUiState,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val payload = state.payload
@@ -190,9 +293,21 @@ private fun KaraokeReadySurface(
             color = PirateTokens.colors.textSecondary,
         )
         Text(
-            text = "Session ${session?.id?.take(10).orEmpty()} prepared. Native capture is next.",
+            text = "Session ${session?.id?.take(10).orEmpty()} prepared.",
             style = MaterialTheme.typography.bodySmall,
             color = PirateTokens.colors.textSecondary,
         )
+        PirateButton(
+            text = if (state.captureActive) "Stop" else "Start singing",
+            onClick = if (state.captureActive) onStop else onStart,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        state.captureMessage?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = PirateTokens.colors.textSecondary,
+            )
+        }
     }
 }

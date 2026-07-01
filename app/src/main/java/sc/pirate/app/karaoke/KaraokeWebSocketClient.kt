@@ -12,14 +12,21 @@ import java.util.concurrent.TimeUnit
 
 private const val NORMAL_CLOSURE = 1000
 
+interface KaraokeSocketClient {
+    fun connect(
+        session: KaraokeSession,
+        listener: KaraokeSocketListener,
+    ): KaraokeSocketConnection
+}
+
 class KaraokeWebSocketClient(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS)
         .build(),
     private val origin: String = BuildConfig.KARAOKE_WEBSOCKET_ORIGIN,
-) {
-    fun connect(
+) : KaraokeSocketClient {
+    override fun connect(
         session: KaraokeSession,
         listener: KaraokeSocketListener,
     ): KaraokeSocketConnection {
@@ -33,14 +40,22 @@ class KaraokeWebSocketClient(
 }
 
 class KaraokeSocketConnection internal constructor(
-    private val socket: WebSocket,
+    private val sendTextBlock: (String) -> Boolean,
+    private val sendBinaryBlock: (ByteArray) -> Boolean,
+    private val closeBlock: () -> Unit,
 ) {
-    fun sendText(message: String): Boolean = socket.send(message)
+    internal constructor(socket: WebSocket) : this(
+        sendTextBlock = socket::send,
+        sendBinaryBlock = { bytes -> socket.send(ByteString.of(*bytes)) },
+        closeBlock = { socket.close(NORMAL_CLOSURE, "closed") },
+    )
 
-    fun sendBinary(bytes: ByteArray): Boolean = socket.send(ByteString.of(*bytes))
+    fun sendText(message: String): Boolean = sendTextBlock(message)
+
+    fun sendBinary(bytes: ByteArray): Boolean = sendBinaryBlock(bytes)
 
     fun close() {
-        socket.close(NORMAL_CLOSURE, "closed")
+        closeBlock()
     }
 }
 
