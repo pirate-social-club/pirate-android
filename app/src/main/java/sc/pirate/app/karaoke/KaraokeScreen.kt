@@ -64,6 +64,7 @@ data class KaraokeUiState(
     val playback: KaraokePlaybackState = KaraokePlaybackState(),
     val captureActive: Boolean = false,
     val preparingAttempt: Boolean = false,
+    val reconnecting: Boolean = false,
     val captureMessage: String? = null,
     val playbackPositionMs: Long = 0,
     val partialTranscript: String = "",
@@ -85,6 +86,8 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
     private var playbackSyncJob: Job? = null
     private var playbackPositionJob: Job? = null
     private var currentCommunityId: String? = null
+    private var reconnectJob: Job? = null
+    private var closingIntentionally: Boolean = false
 
     init {
         viewModelScope.launch {
@@ -168,31 +171,14 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         val postId = currentPostId ?: return
         if (current.captureActive || current.preparingAttempt) return
 
-        val listener = object : KaraokeSocketListener {
-            override fun onOpen() {
-                Log.d(TAG, "Karaoke websocket opened")
-            }
-
-            override fun onText(message: String) {
-                Log.d(TAG, "Karaoke server event received")
-                handleServerEvent(message)
-            }
-
-            override fun onClosed() {
-                _state.value = _state.value.copy(captureActive = false, captureMessage = "Karaoke connection closed.")
-            }
-
-            override fun onFailure(message: String) {
-                _state.value = _state.value.copy(captureActive = false, captureMessage = message)
-                capture.stop()
-            }
-        }
-
         runCatching {
-            controller.attach(session = session, postId = postId, listener = listener)
+            closingIntentionally = false
             val captureNow = captureClockMs()
             val audioNow = playback.currentPositionMs
-            controller.start(startedAtAudioMs = audioNow)
+            if (!controller.hasStarted) {
+                controller.attach(session = session, postId = postId, listener = karaokeSocketListener())
+                controller.start(startedAtAudioMs = audioNow)
+            }
             controller.updateCaptureAnchor(KaraokeCaptureAnchor(captureMs = captureNow, songMs = audioNow))
             capture.start(
                 scope = viewModelScope,
@@ -208,12 +194,81 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
             )
             _state.value = _state.value.copy(captureActive = true, captureMessage = "Singing")
             startPlaybackSyncLoop()
+            controller.playbackSync(audioTimeMs = audioNow, playing = true)
             playback.play()
         }.onFailure { error ->
             _state.value = _state.value.copy(
                 captureActive = false,
                 captureMessage = error.message ?: "Could not start karaoke capture.",
             )
+        }
+    }
+
+    private fun karaokeSocketListener(): KaraokeSocketListener =
+        object : KaraokeSocketListener {
+            override fun onOpen() {
+                Log.d(TAG, "Karaoke websocket opened")
+                if (_state.value.reconnecting) {
+                    _state.update {
+                        it.copy(
+                            reconnecting = false,
+                            captureMessage = "Connection restored. Tap Start singing to resume.",
+                        )
+                    }
+                }
+            }
+
+            override fun onText(message: String) {
+                Log.d(TAG, "Karaoke server event received")
+                handleServerEvent(message)
+            }
+
+            override fun onClosed() {
+                handleUnexpectedSocketLoss("Karaoke connection closed.")
+            }
+
+            override fun onFailure(message: String) {
+                handleUnexpectedSocketLoss(message)
+            }
+        }
+
+    private fun handleUnexpectedSocketLoss(message: String) {
+        val current = _state.value
+        if (closingIntentionally || !current.captureActive || current.reconnecting || current.summary != null) return
+        capture.stop()
+        playback.pause()
+        playbackSyncJob?.cancel()
+        playbackSyncJob = null
+        _state.update {
+            it.copy(
+                captureActive = false,
+                reconnecting = true,
+                captureMessage = "$message Reconnecting…",
+            )
+        }
+        reconnectCurrentAttempt()
+    }
+
+    private fun reconnectCurrentAttempt() {
+        val communityId = currentCommunityId ?: return
+        val postId = currentPostId ?: return
+        reconnectJob?.cancel()
+        reconnectJob = viewModelScope.launch {
+            runCatching {
+                delay(1_000)
+                val session = createSession(communityId, postId, reuseIdempotencyKey = true)
+                validateSession(session)
+                closingIntentionally = false
+                controller.reconnect(session = session, listener = karaokeSocketListener())
+                _state.update { it.copy(session = session) }
+            }.onFailure { error ->
+                _state.update {
+                    it.copy(
+                        reconnecting = false,
+                        captureMessage = error.message ?: "Could not reconnect karaoke.",
+                    )
+                }
+            }
         }
     }
 
@@ -244,10 +299,12 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                 playback.pause()
                 playbackSyncJob?.cancel()
                 playbackSyncJob = null
+                closingIntentionally = true
                 controller.abort(event.code ?: "session_error")
                 _state.update {
                     it.copy(
                         captureActive = false,
+                        reconnecting = false,
                         captureMessage = event.message ?: "Karaoke session error: ${event.code}",
                     )
                 }
@@ -259,9 +316,12 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         capture.stop()
         playbackSyncJob?.cancel()
         playbackSyncJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
         val audioTimeMs = controller.currentAudioTimeMs(captureClockMs()) ?: playback.currentPositionMs
         playback.pause()
         controller.playbackSync(audioTimeMs = audioTimeMs, playing = false)
+        closingIntentionally = true
         controller.finish(audioTimeMs = audioTimeMs)
         _state.value = _state.value.copy(captureActive = false, captureMessage = "Capture stopped.")
         prepareNextAttempt(clearResults = true, readyMessage = "Ready for another attempt.")
@@ -276,6 +336,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                 val session = createSession(communityId, postId, reuseIdempotencyKey = false)
                 validateSession(session)
                 controller.reset()
+                closingIntentionally = false
                 playback.stop()
                 playback.prepare(_state.value.payload?.instrumentalAudioUrl.orEmpty())
                 _state.update {
@@ -309,9 +370,12 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         playbackSyncJob = null
         playbackPositionJob?.cancel()
         playbackPositionJob = null
+        reconnectJob?.cancel()
+        reconnectJob = null
         controller.abort("screen_closed")
         playback.release()
         controller.reset()
+        closingIntentionally = false
         super.onCleared()
     }
 
@@ -492,11 +556,12 @@ private fun KaraokeReadySurface(
         PirateButton(
             text = when {
                 state.captureActive -> "Stop"
+                state.reconnecting -> "Reconnecting…"
                 state.preparingAttempt -> "Preparing…"
                 else -> "Start singing"
             },
             onClick = if (state.captureActive) onStop else onStart,
-            enabled = state.playback.error == null && !state.playback.isBuffering && !state.preparingAttempt,
+            enabled = state.playback.error == null && !state.playback.isBuffering && !state.preparingAttempt && !state.reconnecting,
             modifier = Modifier.fillMaxWidth(),
         )
         state.playback.error?.let {

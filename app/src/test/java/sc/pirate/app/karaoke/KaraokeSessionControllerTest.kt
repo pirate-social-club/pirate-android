@@ -4,10 +4,15 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import sc.pirate.app.api.model.KaraokeScoringPolicy
 import sc.pirate.app.api.model.KaraokeSession
 
 class KaraokeSessionControllerTest {
+    private val json = Json { ignoreUnknownKeys = true }
+
     @Test
     fun sendCapturedChunk_mapsCaptureClockToSongWindowAndSendsBinaryFrame() {
         val socket = FakeSocketClient()
@@ -59,6 +64,29 @@ class KaraokeSessionControllerTest {
         assertEquals(3, socket.sentText.size)
         assertEquals(2, socket.closeCount)
     }
+
+    @Test
+    fun reconnect_preservesSequenceAndDoesNotResendStart() {
+        val socket = FakeSocketClient()
+        val controller = KaraokeSessionController(socketClient = socket)
+        controller.attach(session = testSession(), postId = "post_1")
+
+        assertTrue(controller.start(startedAtAudioMs = 0))
+        controller.reconnect(session = testSession(id = "ks_1", attempt = "att_1"))
+        assertTrue(controller.playbackSync(audioTimeMs = 1_000, playing = false))
+
+        assertEquals(2, socket.sentText.size)
+        assertEquals("start", eventType(socket.sentText[0]))
+        assertEquals("playback_sync", eventType(socket.sentText[1]))
+        assertEquals(2, eventSequence(socket.sentText[1]))
+        assertEquals(1, socket.closeCount)
+    }
+
+    private fun eventType(message: String): String =
+        json.parseToJsonElement(message).jsonObject.getValue("type").jsonPrimitive.content
+
+    private fun eventSequence(message: String): Long =
+        json.parseToJsonElement(message).jsonObject.getValue("sequence").jsonPrimitive.content.toLong()
 
     private fun testSession(id: String = "ks_1", attempt: String = "att_1"): KaraokeSession =
         KaraokeSession(
