@@ -63,6 +63,7 @@ data class KaraokeUiState(
     val session: KaraokeSession? = null,
     val playback: KaraokePlaybackState = KaraokePlaybackState(),
     val captureActive: Boolean = false,
+    val preparingAttempt: Boolean = false,
     val captureMessage: String? = null,
     val playbackPositionMs: Long = 0,
     val partialTranscript: String = "",
@@ -83,6 +84,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
     private var currentPostId: String? = null
     private var playbackSyncJob: Job? = null
     private var playbackPositionJob: Job? = null
+    private var currentCommunityId: String? = null
 
     init {
         viewModelScope.launch {
@@ -96,6 +98,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun load(communityId: String, postId: String, hasSession: Boolean) {
+        currentCommunityId = communityId
         currentPostId = postId
         viewModelScope.launch {
             _state.value = KaraokeUiState(loading = true)
@@ -106,12 +109,9 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
 
             try {
                 val payload = app.apiClient.communities.getKaraokePayload(communityId, postId)
-                val session = app.apiClient.communities.createKaraokeSession(
-                    communityId = communityId,
-                    postId = postId,
-                    idempotencyKey = sessionIdempotencyKey(communityId, postId),
-                )
+                val session = createSession(communityId, postId, reuseIdempotencyKey = true)
                 validateSession(session)
+                controller.reset()
                 playback.prepare(payload.instrumentalAudioUrl)
                 _state.value = KaraokeUiState(
                     loading = false,
@@ -130,10 +130,21 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun sessionIdempotencyKey(communityId: String, postId: String): String {
+    private suspend fun createSession(
+        communityId: String,
+        postId: String,
+        reuseIdempotencyKey: Boolean,
+    ): KaraokeSession =
+        app.apiClient.communities.createKaraokeSession(
+            communityId = communityId,
+            postId = postId,
+            idempotencyKey = sessionIdempotencyKey(communityId, postId, reuse = reuseIdempotencyKey),
+        )
+
+    private fun sessionIdempotencyKey(communityId: String, postId: String, reuse: Boolean): String {
         val keyFor = "$communityId:$postId"
         val existing = currentIdempotencyKey
-        if (existing != null && currentKeyFor == keyFor) return existing
+        if (reuse && existing != null && currentKeyFor == keyFor) return existing
         val next = UUID.randomUUID().toString()
         currentKeyFor = keyFor
         currentIdempotencyKey = next
@@ -155,7 +166,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         val current = _state.value
         val session = current.session ?: return
         val postId = currentPostId ?: return
-        if (current.captureActive) return
+        if (current.captureActive || current.preparingAttempt) return
 
         val listener = object : KaraokeSocketListener {
             override fun onOpen() {
@@ -212,19 +223,34 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
             "stt_partial" -> _state.update { it.copy(partialTranscript = event.text.orEmpty()) }
             "stt_final" -> _state.update { it.copy(partialTranscript = "") }
             "line_score" -> _state.update { it.copy(latestLineScore = event.result, partialTranscript = "") }
-            "summary" -> _state.update {
-                it.copy(
-                    captureActive = false,
-                    captureMessage = "Scoring complete.",
-                    partialTranscript = "",
-                    summary = event.summary,
-                )
+            "summary" -> {
+                capture.stop()
+                playback.pause()
+                playbackSyncJob?.cancel()
+                playbackSyncJob = null
+                controller.reset()
+                _state.update {
+                    it.copy(
+                        captureActive = false,
+                        captureMessage = "Scoring complete.",
+                        partialTranscript = "",
+                        summary = event.summary,
+                    )
+                }
+                prepareNextAttempt(clearResults = false, readyMessage = "Ready for another attempt.")
             }
-            "session_error" -> _state.update {
-                it.copy(
-                    captureActive = false,
-                    captureMessage = event.message ?: "Karaoke session error: ${event.code}",
-                )
+            "session_error" -> {
+                capture.stop()
+                playback.pause()
+                playbackSyncJob?.cancel()
+                playbackSyncJob = null
+                controller.abort(event.code ?: "session_error")
+                _state.update {
+                    it.copy(
+                        captureActive = false,
+                        captureMessage = event.message ?: "Karaoke session error: ${event.code}",
+                    )
+                }
             }
         }
     }
@@ -238,6 +264,43 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         controller.playbackSync(audioTimeMs = audioTimeMs, playing = false)
         controller.finish(audioTimeMs = audioTimeMs)
         _state.value = _state.value.copy(captureActive = false, captureMessage = "Capture stopped.")
+        prepareNextAttempt(clearResults = true, readyMessage = "Ready for another attempt.")
+    }
+
+    private fun prepareNextAttempt(clearResults: Boolean, readyMessage: String) {
+        val communityId = currentCommunityId ?: return
+        val postId = currentPostId ?: return
+        viewModelScope.launch {
+            _state.update { it.copy(preparingAttempt = true, captureMessage = "Preparing next attempt…") }
+            runCatching {
+                val session = createSession(communityId, postId, reuseIdempotencyKey = false)
+                validateSession(session)
+                controller.reset()
+                playback.stop()
+                playback.prepare(_state.value.payload?.instrumentalAudioUrl.orEmpty())
+                _state.update {
+                    val next = it.copy(
+                        session = session,
+                        preparingAttempt = false,
+                        captureMessage = readyMessage,
+                        partialTranscript = "",
+                        playbackPositionMs = 0,
+                    )
+                    if (clearResults) {
+                        next.copy(latestLineScore = null, summary = null)
+                    } else {
+                        next
+                    }
+                }
+            }.onFailure { error ->
+                _state.update {
+                    it.copy(
+                        preparingAttempt = false,
+                        captureMessage = error.message ?: "Could not prepare another karaoke attempt.",
+                    )
+                }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -246,8 +309,9 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         playbackSyncJob = null
         playbackPositionJob?.cancel()
         playbackPositionJob = null
-        playback.release()
         controller.abort("screen_closed")
+        playback.release()
+        controller.reset()
         super.onCleared()
     }
 
@@ -426,9 +490,13 @@ private fun KaraokeReadySurface(
             )
         }
         PirateButton(
-            text = if (state.captureActive) "Stop" else "Start singing",
+            text = when {
+                state.captureActive -> "Stop"
+                state.preparingAttempt -> "Preparing…"
+                else -> "Start singing"
+            },
             onClick = if (state.captureActive) onStop else onStart,
-            enabled = state.playback.error == null && !state.playback.isBuffering,
+            enabled = state.playback.error == null && !state.playback.isBuffering && !state.preparingAttempt,
             modifier = Modifier.fillMaxWidth(),
         )
         state.playback.error?.let {

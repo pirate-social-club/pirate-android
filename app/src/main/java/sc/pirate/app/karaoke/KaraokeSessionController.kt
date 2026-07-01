@@ -13,6 +13,16 @@ class KaraokeSessionController(
     private var started = false
     private var closed = false
 
+    fun reset() {
+        connection?.close()
+        session = null
+        postId = null
+        connection = null
+        captureClock = null
+        started = false
+        closed = false
+    }
+
     fun attach(session: KaraokeSession, postId: String, listener: KaraokeSocketListener = NoopKaraokeSocketListener): KaraokeSessionPhase {
         require(!closed) { "Karaoke session controller is closed" }
         this.session = session
