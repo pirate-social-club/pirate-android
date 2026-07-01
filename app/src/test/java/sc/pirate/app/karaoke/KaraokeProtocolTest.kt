@@ -66,4 +66,15 @@ class KaraokeProtocolTest {
         assertEquals("post_1", event["postId"]!!.jsonPrimitive.content)
         assertEquals(42, event["startedAtAudioMs"]!!.jsonPrimitive.content.toLong())
     }
+
+    @Test
+    fun resetRestartsSequenceForFreshSession() {
+        val sequence = KaraokeSequenceCounter()
+        sequence.next()
+        sequence.next()
+
+        sequence.reset()
+
+        assertEquals(1, sequence.next())
+    }
 }

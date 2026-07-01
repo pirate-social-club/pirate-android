@@ -24,6 +24,7 @@ class KaraokeSessionController(
         captureClock = null
         started = false
         closed = false
+        sequence.reset()
     }
 
     fun attach(session: KaraokeSession, postId: String, listener: KaraokeSocketListener = NoopKaraokeSocketListener): KaraokeSessionPhase {
