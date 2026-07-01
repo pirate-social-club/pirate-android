@@ -43,11 +43,28 @@ class KaraokeSessionControllerTest {
         )
     }
 
-    private fun testSession(): KaraokeSession =
+    @Test
+    fun reset_allowsControllerReuseAfterFinish() {
+        val socket = FakeSocketClient()
+        val controller = KaraokeSessionController(socketClient = socket)
+        controller.attach(session = testSession(), postId = "post_1")
+
+        assertTrue(controller.start(startedAtAudioMs = 0))
+        assertTrue(controller.finish(audioTimeMs = 1_000))
+
+        controller.reset()
+        controller.attach(session = testSession(id = "ks_2", attempt = "att_2"), postId = "post_1")
+
+        assertTrue(controller.start(startedAtAudioMs = 0))
+        assertEquals(3, socket.sentText.size)
+        assertEquals(2, socket.closeCount)
+    }
+
+    private fun testSession(id: String = "ks_1", attempt: String = "att_1"): KaraokeSession =
         KaraokeSession(
-            id = "ks_1",
+            id = id,
             contractObject = "karaoke_session",
-            attempt = "att_1",
+            attempt = attempt,
             protocolVersion = 1,
             websocketUrl = "wss://api.pirate.sc/karaoke/sessions/ks_1/websocket?token=redacted",
             tokenExpiresAt = 4_102_444_800,
@@ -59,6 +76,7 @@ class KaraokeSessionControllerTest {
 private class FakeSocketClient : KaraokeSocketClient {
     val sentText = mutableListOf<String>()
     val sentBinary = mutableListOf<ByteArray>()
+    var closeCount = 0
 
     override fun connect(
         session: KaraokeSession,
@@ -73,6 +91,6 @@ private class FakeSocketClient : KaraokeSocketClient {
                 sentBinary += bytes
                 true
             },
-            closeBlock = {},
+            closeBlock = { closeCount += 1 },
         )
 }
