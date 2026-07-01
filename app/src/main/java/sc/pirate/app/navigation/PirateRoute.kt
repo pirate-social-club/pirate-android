@@ -94,6 +94,12 @@ sealed class PirateRoute(val route: String) {
         const val ARG_COMMUNITY_ID = "communityId"
         fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/song-source-search"
     }
+    data object Study : PirateRoute("community/{communityId}/post/{postId}/study") {
+        const val ARG_COMMUNITY_ID = "communityId"
+        const val ARG_POST_ID = "postId"
+        fun buildRoute(communityId: String, postId: String): String =
+            "community/${Uri.encode(communityId)}/post/${Uri.encode(postId)}/study"
+    }
     data object Notifications : PirateRoute("notifications")
     data object Inbox : PirateRoute("inbox")
     data object Wallet : PirateRoute("wallet")

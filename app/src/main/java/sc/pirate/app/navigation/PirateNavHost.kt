@@ -45,6 +45,7 @@ import sc.pirate.app.post.DerivativeSourceSearchScreen
 import sc.pirate.app.post.DerivativeSourceSearchViewModel
 import sc.pirate.app.post.PostComposerScreen
 import sc.pirate.app.post.PostComposerViewModel
+import sc.pirate.app.study.StudyScreen
 import sc.pirate.app.post.PostScreen
 import sc.pirate.app.profile.MeProfileScreen
 import sc.pirate.app.profile.MeProfileViewModel
@@ -316,6 +317,11 @@ fun PirateNavHost(
                         ),
                     )
                 },
+                onStudy = { communityId ->
+                    navController.navigate(PirateRoute.Study.buildRoute(communityId, postId)) {
+                        launchSingleTop = true
+                    }
+                },
                 signInDrawer = { onDismiss ->
                     SignInDrawer(
                         state = authState,
@@ -382,6 +388,27 @@ fun PirateNavHost(
                     onBack = { navController.popBackStack() },
                 )
             }
+        }
+
+        composable(
+            route = PirateRoute.Study.route,
+            arguments = listOf(
+                navArgument(PirateRoute.Study.ARG_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.Study.ARG_POST_ID) {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.Study.ARG_COMMUNITY_ID).orEmpty()
+            val studyPostId = backStackEntry.arguments?.getString(PirateRoute.Study.ARG_POST_ID).orEmpty()
+            StudyScreen(
+                communityId = communityId,
+                postId = studyPostId,
+                hasSession = hasSession,
+                onBack = { navController.popBackStack() },
+            )
         }
 
         composable(
