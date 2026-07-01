@@ -13,6 +13,9 @@ class KaraokeSessionController(
     private var started = false
     private var closed = false
 
+    val hasStarted: Boolean
+        get() = started
+
     fun reset() {
         connection?.close()
         session = null
@@ -29,6 +32,15 @@ class KaraokeSessionController(
         this.postId = postId
         connection = socketClient.connect(session, listener)
         return KaraokeSessionPhase.Connecting
+    }
+
+    fun reconnect(session: KaraokeSession, listener: KaraokeSocketListener = NoopKaraokeSocketListener): KaraokeSessionPhase {
+        require(!closed) { "Karaoke session controller is closed" }
+        require(started) { "Karaoke session must start before reconnect" }
+        this.session = session
+        connection?.close()
+        connection = socketClient.connect(session, listener)
+        return KaraokeSessionPhase.Reconnecting
     }
 
     fun start(startedAtAudioMs: Long = 0): Boolean {
@@ -136,6 +148,7 @@ class KaraokeSessionController(
 enum class KaraokeSessionPhase {
     Connecting,
     Live,
+    Reconnecting,
     Closed,
 }
 
