@@ -35,6 +35,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +64,9 @@ data class KaraokeUiState(
     val playback: KaraokePlaybackState = KaraokePlaybackState(),
     val captureActive: Boolean = false,
     val captureMessage: String? = null,
+    val partialTranscript: String = "",
+    val latestLineScore: JsonObject? = null,
+    val summary: JsonObject? = null,
 )
 
 class KaraokeViewModel(application: Application) : AndroidViewModel(application) {
@@ -156,6 +160,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
 
             override fun onText(message: String) {
                 Log.d(TAG, "Karaoke server event received")
+                handleServerEvent(message)
             }
 
             override fun onClosed() {
@@ -194,6 +199,29 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                 captureActive = false,
                 captureMessage = error.message ?: "Could not start karaoke capture.",
             )
+        }
+    }
+
+    private fun handleServerEvent(message: String) {
+        val event = parseKaraokeServerEvent(message) ?: return
+        when (event.type) {
+            "stt_partial" -> _state.update { it.copy(partialTranscript = event.text.orEmpty()) }
+            "stt_final" -> _state.update { it.copy(partialTranscript = "") }
+            "line_score" -> _state.update { it.copy(latestLineScore = event.result, partialTranscript = "") }
+            "summary" -> _state.update {
+                it.copy(
+                    captureActive = false,
+                    captureMessage = "Scoring complete.",
+                    partialTranscript = "",
+                    summary = event.summary,
+                )
+            }
+            "session_error" -> _state.update {
+                it.copy(
+                    captureActive = false,
+                    captureMessage = event.message ?: "Karaoke session error: ${event.code}",
+                )
+            }
         }
     }
 
@@ -347,6 +375,36 @@ private fun KaraokeReadySurface(
             style = MaterialTheme.typography.bodySmall,
             color = PirateTokens.colors.textSecondary,
         )
+        state.summary?.let { summary ->
+            val finalScore = summary.finalScoreValue()
+            val scoredLineCount = summary.scoredLineCountValue()
+            val lineCount = summary.lineCountValue()
+            Text(
+                text = buildString {
+                    append("Final score")
+                    if (finalScore != null) append(": ${scorePercent(finalScore)}")
+                    if (scoredLineCount != null && lineCount != null) append(" · $scoredLineCount/$lineCount lines")
+                },
+                style = MaterialTheme.typography.titleMedium,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+        state.latestLineScore?.scoreValue()?.let { score ->
+            Text(
+                text = "Last line: ${scorePercent(score)}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.textSecondary,
+            )
+        }
+        if (state.partialTranscript.isNotBlank()) {
+            Text(
+                text = state.partialTranscript,
+                style = MaterialTheme.typography.bodySmall,
+                color = PirateTokens.colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         PirateButton(
             text = if (state.captureActive) "Stop" else "Start singing",
             onClick = if (state.captureActive) onStop else onStart,
@@ -369,3 +427,6 @@ private fun KaraokeReadySurface(
         }
     }
 }
+
+private fun scorePercent(score: Double): String =
+    "${(score.coerceIn(0.0, 1.0) * 100).toInt()}%"
