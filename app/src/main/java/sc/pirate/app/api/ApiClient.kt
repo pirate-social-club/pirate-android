@@ -738,6 +738,53 @@ class ApiClient(private val sessionStore: SessionStore) {
                 headers = altchaHeader.toAltchaHeader(),
             )
         }
+
+        // --- Song Study ---
+
+        suspend fun getStudyPack(
+            communityId: String,
+            postId: String,
+            targetLanguage: String? = null,
+        ): SongStudyPayload {
+            val path = api.buildQueryPath(
+                "/communities/$communityId/posts/$postId/study",
+                listOf("target_language" to targetLanguage),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(SongStudyPayload.serializer(), response)
+        }
+
+        suspend fun submitStudyAttempt(
+            communityId: String,
+            postId: String,
+            request: SongStudyAttemptRequest,
+        ): SongStudyAttemptResult {
+            val body = api.json.encodeToString(SongStudyAttemptRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/posts/$postId/study/attempts", body)
+            return api.json.decodeFromString(SongStudyAttemptResult.serializer(), response)
+        }
+
+        suspend fun transcribeStudyAudio(
+            communityId: String,
+            postId: String,
+            bytes: ByteArray,
+            filename: String,
+            mimeType: String,
+        ): SongStudyTranscriptionResponse {
+            val parts = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file",
+                    filename,
+                    bytes.toRequestBody(mimeType.toMediaTypeOrNull()),
+                )
+                .build()
+            val response = api.postMultipartString(
+                "/communities/$communityId/posts/$postId/study/transcriptions",
+                parts,
+            )
+            return api.json.decodeFromString(SongStudyTranscriptionResponse.serializer(), response)
+        }
     }
 
     class PublicCommunitiesEndpoints internal constructor(private val api: ApiClient) {

@@ -558,12 +558,17 @@ data class SongPresentation(
     val title: String? = null,
     @SerialName("cover_art_ref") val coverArtRef: String? = null,
     @SerialName("duration_ms") val durationMs: Long? = null,
+    // Karaoke readiness (projected by the API on song post reads; origin/main).
+    // pending | processing | completed | failed
+    @SerialName("alignment_status") val alignmentStatus: String? = null,
+    @SerialName("has_timed_lyrics") val hasTimedLyrics: Boolean? = null,
 )
 
 @Serializable
 data class LocalizedPostResponse(
     val post: Post,
     @SerialName("song_presentation") val songPresentation: SongPresentation? = null,
+    @SerialName("study_capability") val studyCapability: SongStudyCapability? = null,
     @SerialName("age_gate_viewer_state") val ageGateViewerState: String? = null,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
     @SerialName("comment_count") val commentCount: Int? = null,
