@@ -34,6 +34,13 @@ class KaraokeCaptureClockTest {
     }
 
     @Test
+    fun songPositionAt_mapsCaptureTimeFromAnchor() {
+        val clock = KaraokeCaptureClock(KaraokeCaptureAnchor(captureMs = 10_000, songMs = 45_000))
+
+        assertEquals(45_250, clock.songPositionAt(10_250))
+    }
+
+    @Test
     fun mapCaptureWindow_appliesPlaybackRate() {
         val clock = KaraokeCaptureClock(
             KaraokeCaptureAnchor(

@@ -46,6 +46,9 @@ class KaraokeSessionController(
         captureClock?.updateAnchor(anchor)
     }
 
+    fun currentAudioTimeMs(captureMs: Long): Long? =
+        captureClock?.songPositionAt(captureMs)
+
     fun playbackSync(audioTimeMs: Long, playing: Boolean): Boolean {
         val currentSession = session ?: return false
         if (!started || closed) return false
