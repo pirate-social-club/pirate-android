@@ -75,6 +75,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun start() {
+        // Every new run starts with no cached attempt key (lifecycle invariant).
+        currentAttemptKey = null
+        currentAttemptKeyFor = null
         _state.value = _state.value.copy(
             started = true,
             index = 0,
