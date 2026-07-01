@@ -107,6 +107,7 @@ import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PhosphorIcons
+import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.ReportContentSheet
 import sc.pirate.app.ui.StatusCard
@@ -1130,6 +1131,7 @@ fun PostScreen(
     onWatchLiveRoom: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
+    onStudy: (String) -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1359,6 +1361,9 @@ fun PostScreen(
                             },
                             onVerifyAge = {
                                 if (hasSession) onVerifyAge() else authPromptAction = "Age verification"
+                            },
+                            onStudy = {
+                                if (hasSession) onStudy(postResponse.post.communityId) else authPromptAction = "Studying"
                             },
                             onToggleSongPlayback = {
                                 viewModel.toggleSongPlayback(postResponse)
@@ -1621,6 +1626,7 @@ private fun ThreadRootPost(
     onWatchLiveRoom: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
+    onStudy: () -> Unit,
     onToggleSongPlayback: () -> Unit,
     onPlayVideoDetail: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
@@ -1711,6 +1717,16 @@ private fun ThreadRootPost(
                     error = songPlaybackState.error.takeIf { postIsCurrent },
                     onPlayPause = onToggleSongPlayback,
                 )
+                // Data-gated Study CTA: the server decides availability via study_capability.
+                // Access itself is re-checked server-side when the study pack loads.
+                if (postResponse.studyCapability?.status == "ready") {
+                    PirateButton(
+                        text = "Study",
+                        onClick = onStudy,
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
             if (isVideoPost(postResponse) && post.anchorLiveRoom == null) {
                 val postIsCurrent = videoPlaybackState.postId == post.postId
