@@ -30,6 +30,8 @@ interface KaraokeAudioCapture {
     )
 
     fun stop()
+
+    fun resetChunkIds()
 }
 
 class AudioRecordKaraokeCapture(
@@ -112,6 +114,9 @@ class AudioRecordKaraokeCapture(
             audioRecord.release()
         }
         recorder = null
+    }
+
+    override fun resetChunkIds() {
         nextChunkId = 1
     }
 

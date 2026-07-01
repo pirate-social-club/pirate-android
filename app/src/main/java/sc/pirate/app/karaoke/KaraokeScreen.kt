@@ -115,6 +115,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                 val session = createSession(communityId, postId, reuseIdempotencyKey = true)
                 validateSession(session)
                 controller.reset()
+                capture.resetChunkIds()
                 playback.prepare(payload.instrumentalAudioUrl)
                 _state.value = KaraokeUiState(
                     loading = false,
@@ -336,6 +337,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                 val session = createSession(communityId, postId, reuseIdempotencyKey = false)
                 validateSession(session)
                 controller.reset()
+                capture.resetChunkIds()
                 closingIntentionally = false
                 playback.stop()
                 playback.prepare(_state.value.payload?.instrumentalAudioUrl.orEmpty())
