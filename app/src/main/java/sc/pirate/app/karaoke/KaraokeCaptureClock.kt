@@ -44,6 +44,11 @@ class KaraokeCaptureClock(
         )
     }
 
+    fun songPositionAt(captureMs: Long): Long {
+        require(captureMs >= 0) { "captureMs must be non-negative" }
+        return captureToSongMs(captureMs).coerceAtLeast(0)
+    }
+
     private fun captureToSongMs(captureMs: Long): Long {
         val elapsedCaptureMs = captureMs - anchor.captureMs
         return (anchor.songMs + elapsedCaptureMs * anchor.playbackRate).roundToLong()

@@ -35,9 +35,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import sc.pirate.app.PirateApp
 import sc.pirate.app.api.model.KaraokeSession
@@ -57,6 +60,7 @@ data class KaraokeUiState(
     val error: String? = null,
     val payload: SongKaraokePayload? = null,
     val session: KaraokeSession? = null,
+    val playback: KaraokePlaybackState = KaraokePlaybackState(),
     val captureActive: Boolean = false,
     val captureMessage: String? = null,
 )
@@ -67,10 +71,23 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
     val state: StateFlow<KaraokeUiState> = _state.asStateFlow()
     private val controller = KaraokeSessionController()
     private val capture = AudioRecordKaraokeCapture()
+    private val playback = ExoPlayerKaraokeInstrumentalPlayback(application)
 
     private var currentKeyFor: String? = null
     private var currentIdempotencyKey: String? = null
     private var currentPostId: String? = null
+    private var playbackSyncJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            playback.state.collect { playbackState ->
+                _state.update { it.copy(playback = playbackState) }
+                if (playbackState.ended && _state.value.captureActive) {
+                    stopCapture()
+                }
+            }
+        }
+    }
 
     fun load(communityId: String, postId: String, hasSession: Boolean) {
         currentPostId = postId
@@ -89,7 +106,13 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                     idempotencyKey = sessionIdempotencyKey(communityId, postId),
                 )
                 validateSession(session)
-                _state.value = KaraokeUiState(loading = false, payload = payload, session = session)
+                playback.prepare(payload.instrumentalAudioUrl)
+                _state.value = KaraokeUiState(
+                    loading = false,
+                    payload = payload,
+                    session = session,
+                    playback = playback.state.value,
+                )
             } catch (error: Exception) {
                 _state.value = KaraokeUiState(
                     loading = false,
@@ -147,8 +170,10 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
 
         runCatching {
             controller.attach(session = session, postId = postId, listener = listener)
-            controller.start(startedAtAudioMs = 0)
-            controller.updateCaptureAnchor(KaraokeCaptureAnchor(captureMs = System.nanoTime() / 1_000_000L, songMs = 0))
+            val captureNow = captureClockMs()
+            val audioNow = playback.currentPositionMs
+            controller.start(startedAtAudioMs = audioNow)
+            controller.updateCaptureAnchor(KaraokeCaptureAnchor(captureMs = captureNow, songMs = audioNow))
             capture.start(
                 scope = viewModelScope,
                 onChunk = { chunk ->
@@ -161,7 +186,9 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                     controller.abort("capture_failed")
                 },
             )
-            _state.value = _state.value.copy(captureActive = true, captureMessage = "Listening…")
+            _state.value = _state.value.copy(captureActive = true, captureMessage = "Singing")
+            startPlaybackSyncLoop()
+            playback.play()
         }.onFailure { error ->
             _state.value = _state.value.copy(
                 captureActive = false,
@@ -172,15 +199,38 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
 
     fun stopCapture() {
         capture.stop()
-        controller.finish(audioTimeMs = 0)
+        playbackSyncJob?.cancel()
+        playbackSyncJob = null
+        val audioTimeMs = controller.currentAudioTimeMs(captureClockMs()) ?: playback.currentPositionMs
+        playback.pause()
+        controller.playbackSync(audioTimeMs = audioTimeMs, playing = false)
+        controller.finish(audioTimeMs = audioTimeMs)
         _state.value = _state.value.copy(captureActive = false, captureMessage = "Capture stopped.")
     }
 
     override fun onCleared() {
         capture.stop()
+        playbackSyncJob?.cancel()
+        playbackSyncJob = null
+        playback.release()
         controller.abort("screen_closed")
         super.onCleared()
     }
+
+    private fun startPlaybackSyncLoop() {
+        playbackSyncJob?.cancel()
+        playbackSyncJob = viewModelScope.launch {
+            while (_state.value.captureActive || playback.state.value.isPlaying || playback.state.value.isBuffering) {
+                val captureNow = captureClockMs()
+                val audioNow = playback.currentPositionMs
+                controller.updateCaptureAnchor(KaraokeCaptureAnchor(captureMs = captureNow, songMs = audioNow))
+                controller.playbackSync(audioTimeMs = audioNow, playing = playback.state.value.isPlaying)
+                delay(2_000)
+            }
+        }
+    }
+
+    private fun captureClockMs(): Long = System.nanoTime() / 1_000_000L
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -300,8 +350,16 @@ private fun KaraokeReadySurface(
         PirateButton(
             text = if (state.captureActive) "Stop" else "Start singing",
             onClick = if (state.captureActive) onStop else onStart,
+            enabled = state.playback.error == null && !state.playback.isBuffering,
             modifier = Modifier.fillMaxWidth(),
         )
+        state.playback.error?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = PirateTokens.colors.textSecondary,
+            )
+        }
         state.captureMessage?.let {
             Text(
                 text = it,
