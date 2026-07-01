@@ -62,6 +62,7 @@ class KaraokeSessionControllerTest {
 
         assertTrue(controller.start(startedAtAudioMs = 0))
         assertEquals(3, socket.sentText.size)
+        assertEquals(1, eventSequence(socket.sentText[2]))
         assertEquals(2, socket.closeCount)
     }
 

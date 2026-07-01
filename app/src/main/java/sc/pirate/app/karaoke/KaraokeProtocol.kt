@@ -22,6 +22,10 @@ class KaraokeSequenceCounter(initialValue: Long = 0) {
     }
 
     fun current(): Long = nextValue
+
+    fun reset() {
+        nextValue = 0
+    }
 }
 
 data class KaraokeClientEnvelope(
