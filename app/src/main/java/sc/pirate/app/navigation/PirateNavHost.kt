@@ -36,6 +36,7 @@ import sc.pirate.app.community.CommunityViewModel
 import sc.pirate.app.createcommunity.CreateCommunityScreen
 import sc.pirate.app.home.HomeScreen
 import sc.pirate.app.inbox.InboxScreen
+import sc.pirate.app.karaoke.KaraokeWebViewScreen
 import sc.pirate.app.live.LiveRoomBroadcasterScreen
 import sc.pirate.app.live.LiveRoomWebViewScreen
 import sc.pirate.app.moderation.CommunityModerationScreen
@@ -298,6 +299,11 @@ fun PirateNavHost(
                         launchSingleTop = true
                     }
                 },
+                onSing = {
+                    navController.navigate(PirateRoute.KaraokeWeb.buildRoute(postId)) {
+                        launchSingleTop = true
+                    }
+                },
                 onBroadcastLiveRoom = { communityId, liveRoomId, role ->
                     navController.navigate(PirateRoute.LiveRoomBroadcast.buildRoute(communityId, liveRoomId, role)) {
                         launchSingleTop = true
@@ -348,6 +354,20 @@ fun PirateNavHost(
             LiveRoomWebViewScreen(
                 app = app,
                 postId = postId,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.KaraokeWeb.route,
+            arguments = listOf(navArgument(PirateRoute.KaraokeWeb.ARG_POST_ID) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val karaokePostId = backStackEntry.arguments?.getString(PirateRoute.KaraokeWeb.ARG_POST_ID).orEmpty()
+            KaraokeWebViewScreen(
+                app = app,
+                postId = karaokePostId,
                 onBack = { navController.popBackStack() },
             )
         }

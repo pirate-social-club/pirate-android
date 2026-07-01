@@ -97,6 +97,7 @@ import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
+import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
@@ -1065,6 +1066,7 @@ fun PostScreen(
     onWatchLiveRoom: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
+    onSing: () -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1238,6 +1240,9 @@ fun PostScreen(
                             },
                             onVerifyAge = {
                                 if (hasSession) onVerifyAge() else authPromptAction = "Age verification"
+                            },
+                            onSing = {
+                                if (hasSession) onSing() else authPromptAction = "Karaoke"
                             },
                             onToggleSongPlayback = {
                                 viewModel.toggleSongPlayback(postResponse)
@@ -1436,6 +1441,7 @@ private fun ThreadRootPost(
     onWatchLiveRoom: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
     onVerifyAge: () -> Unit,
+    onSing: () -> Unit,
     onToggleSongPlayback: () -> Unit,
     onPlayVideoDetail: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
@@ -1526,6 +1532,18 @@ private fun ThreadRootPost(
                     error = songPlaybackState.error.takeIf { postIsCurrent },
                     onPlayPause = onToggleSongPlayback,
                 )
+                // P2 spike: Sing CTA gated on karaoke readiness (alignment complete + timed lyrics).
+                // The web karaoke route re-checks true availability/access server-side.
+                val karaokeReady = postResponse.songPresentation?.alignmentStatus == "completed" &&
+                    postResponse.songPresentation?.hasTimedLyrics == true
+                if (karaokeReady) {
+                    PirateButton(
+                        text = "Sing (beta)",
+                        onClick = onSing,
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
             if (isVideoPost(postResponse) && post.anchorLiveRoom == null) {
                 val postIsCurrent = videoPlaybackState.postId == post.postId

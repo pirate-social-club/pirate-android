@@ -196,6 +196,10 @@ dependencies {
   implementation("androidx.media3:media3-exoplayer:1.5.1")
   implementation("androidx.media3:media3-ui:1.5.1")
 
+  // Karaoke WebView spike: addDocumentStartJavaScript to seed the web session
+  // into localStorage before the SPA's first synchronous session read.
+  implementation("androidx.webkit:webkit:1.12.1")
+
   implementation("androidx.datastore:datastore-preferences:1.1.4")
 
   testImplementation("junit:junit:4.13.2")
