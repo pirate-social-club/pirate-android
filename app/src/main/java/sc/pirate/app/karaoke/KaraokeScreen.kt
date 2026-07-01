@@ -64,6 +64,7 @@ data class KaraokeUiState(
     val playback: KaraokePlaybackState = KaraokePlaybackState(),
     val captureActive: Boolean = false,
     val captureMessage: String? = null,
+    val playbackPositionMs: Long = 0,
     val partialTranscript: String = "",
     val latestLineScore: JsonObject? = null,
     val summary: JsonObject? = null,
@@ -81,6 +82,7 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
     private var currentIdempotencyKey: String? = null
     private var currentPostId: String? = null
     private var playbackSyncJob: Job? = null
+    private var playbackPositionJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -116,7 +118,9 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                     payload = payload,
                     session = session,
                     playback = playback.state.value,
+                    playbackPositionMs = playback.currentPositionMs,
                 )
+                startPlaybackPositionLoop()
             } catch (error: Exception) {
                 _state.value = KaraokeUiState(
                     loading = false,
@@ -240,6 +244,8 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
         capture.stop()
         playbackSyncJob?.cancel()
         playbackSyncJob = null
+        playbackPositionJob?.cancel()
+        playbackPositionJob = null
         playback.release()
         controller.abort("screen_closed")
         super.onCleared()
@@ -254,6 +260,16 @@ class KaraokeViewModel(application: Application) : AndroidViewModel(application)
                 controller.updateCaptureAnchor(KaraokeCaptureAnchor(captureMs = captureNow, songMs = audioNow))
                 controller.playbackSync(audioTimeMs = audioNow, playing = playback.state.value.isPlaying)
                 delay(2_000)
+            }
+        }
+    }
+
+    private fun startPlaybackPositionLoop() {
+        playbackPositionJob?.cancel()
+        playbackPositionJob = viewModelScope.launch {
+            while (_state.value.payload != null) {
+                _state.update { it.copy(playbackPositionMs = playback.currentPositionMs) }
+                delay(100)
             }
         }
     }
@@ -375,6 +391,10 @@ private fun KaraokeReadySurface(
             style = MaterialTheme.typography.bodySmall,
             color = PirateTokens.colors.textSecondary,
         )
+        KaraokeLyricsSurface(
+            payload = payload,
+            playbackPositionMs = state.playbackPositionMs,
+        )
         state.summary?.let { summary ->
             val finalScore = summary.finalScoreValue()
             val scoredLineCount = summary.scoredLineCountValue()
@@ -430,3 +450,30 @@ private fun KaraokeReadySurface(
 
 private fun scorePercent(score: Double): String =
     "${(score.coerceIn(0.0, 1.0) * 100).toInt()}%"
+
+@Composable
+private fun KaraokeLyricsSurface(
+    payload: SongKaraokePayload?,
+    playbackPositionMs: Long,
+) {
+    val lines = payload?.karaokeLines.orEmpty()
+    val activeIndex = activeKaraokeLineIndex(lines, playbackPositionMs) ?: return
+    val visible = listOf(activeIndex - 1, activeIndex, activeIndex + 1)
+        .filter { it in lines.indices }
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        visible.forEach { index ->
+            val active = index == activeIndex
+            Text(
+                text = lines[index].text,
+                style = if (active) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+                color = if (active) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
