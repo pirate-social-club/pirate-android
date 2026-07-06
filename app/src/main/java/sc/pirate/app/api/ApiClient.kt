@@ -514,6 +514,7 @@ class ApiClient(private val sessionStore: SessionStore) {
         suspend fun listDerivativeSources(
             communityId: String,
             kind: String? = null,
+            scope: String? = null,
             query: String? = null,
             limit: Int? = null,
         ): DerivativeSourceListResponse {
@@ -521,6 +522,7 @@ class ApiClient(private val sessionStore: SessionStore) {
                 "/communities/$communityId/derivative-sources",
                 listOf(
                     "kind" to kind,
+                    "scope" to scope,
                     "q" to query,
                     "limit" to limit?.toString(),
                 ),

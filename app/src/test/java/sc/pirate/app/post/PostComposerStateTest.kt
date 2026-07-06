@@ -7,6 +7,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.SongArtifactBundle
 
 class PostComposerStateTest {
@@ -318,6 +319,37 @@ class PostComposerStateTest {
         assertEquals("members_only", request.visibility)
         assertEquals(listOf("story:asset:123"), request.upstreamAssetRefs)
         assertNull(request.caption)
+    }
+
+    @Test
+    fun buildVideoPostRequest_setsPublicAccessModeAndDerivativeRefs() {
+        val request = buildVideoPostRequest(
+            caption = "Video caption",
+            identityMode = "public",
+            idempotencyKey = "idem-video",
+            mediaRefs = listOf(
+                PostMediaRef(
+                    storageRef = "artifact_video",
+                    mimeType = "video/mp4",
+                    sizeBytes = 123,
+                    contentHash = "hash_video",
+                ),
+            ),
+            title = "Video post",
+            upstreamAssetRefs = listOf("story:asset:123", "story:asset:123", " "),
+        )
+
+        assertEquals("idem-video", request.idempotencyKey)
+        assertEquals("video", request.postType)
+        assertEquals("Video post", request.title)
+        assertEquals("Video caption", request.caption)
+        assertEquals("machine_allowed", request.translationPolicy)
+        assertEquals("public", request.identityMode)
+        assertEquals("public", request.visibility)
+        assertEquals("public", request.accessMode)
+        assertEquals("derivative", request.rightsBasis)
+        assertEquals(listOf("story:asset:123"), request.upstreamAssetRefs)
+        assertEquals("artifact_video", request.mediaRefs?.single()?.storageRef)
     }
 
     @Test

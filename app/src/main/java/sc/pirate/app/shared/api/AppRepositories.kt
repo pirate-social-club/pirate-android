@@ -123,6 +123,7 @@ interface CommunityRepository {
     suspend fun listDerivativeSources(
         communityId: String,
         kind: String? = null,
+        scope: String? = null,
         query: String? = null,
         limit: Int? = null,
     ): DerivativeSourceListResponse
@@ -421,10 +422,11 @@ class ApiCommunityRepository(
     override suspend fun listDerivativeSources(
         communityId: String,
         kind: String?,
+        scope: String?,
         query: String?,
         limit: Int?,
     ): DerivativeSourceListResponse {
-        return apiClient.communities.listDerivativeSources(communityId, kind, query, limit)
+        return apiClient.communities.listDerivativeSources(communityId, kind, scope, query, limit)
     }
 
     override suspend fun createLiveRoom(

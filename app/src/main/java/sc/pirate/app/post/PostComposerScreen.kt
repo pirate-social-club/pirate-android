@@ -97,6 +97,7 @@ data class PostComposerUiState(
     val mediaLabel: String = "",
     val mediaMimeType: String? = null,
     val mediaSizeBytes: Long? = null,
+    val videoUpstreamAssetRefs: List<String> = emptyList(),
     val songPrimaryAudioUri: Uri? = null,
     val songCoverUri: Uri? = null,
     val songCanvasVideoUri: Uri? = null,
@@ -238,10 +239,14 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
 
     fun setDerivativeRefs(refs: List<String>) {
         val normalized = refs.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }.distinct()
-        _state.value = _state.value.copy(
-            song = _state.value.song.copy(upstreamAssetRefs = normalized),
-            error = null,
-        )
+        val current = _state.value
+        _state.value = when (current.postType) {
+            PostComposerMode.Video -> current.copy(videoUpstreamAssetRefs = normalized, error = null)
+            else -> current.copy(
+                song = current.song.copy(upstreamAssetRefs = normalized),
+                error = null,
+            )
+        }
     }
 
     private fun setSolvingProofOfWork(solving: Boolean) {
@@ -404,8 +409,26 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     PostComposerMode.Video,
                     PostComposerMode.Link,
                     PostComposerMode.Text -> {
-                        val createdPost = createPostWithProofOfWork(
-                            communityId,
+                        val mediaRefs = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
+                            listOf(uploadPostMediaRef(communityId, current))
+                        } else {
+                            null
+                        }
+                        val request = if (current.postType == PostComposerMode.Video && mediaRefs != null) {
+                            buildVideoPostRequest(
+                                anonymousScope = if (current.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) {
+                                    current.anonymousIdentityScope
+                                } else {
+                                    null
+                                },
+                                idempotencyKey = UUID.randomUUID().toString(),
+                                title = current.title,
+                                caption = current.body,
+                                identityMode = current.resolvedIdentityMode().apiValue,
+                                mediaRefs = mediaRefs,
+                                upstreamAssetRefs = current.videoUpstreamAssetRefs,
+                            )
+                        } else {
                             CreatePostRequest(
                                 idempotencyKey = UUID.randomUUID().toString(),
                                 title = current.title.trim().ifBlank { null },
@@ -425,11 +448,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                                 } else {
                                     null
                                 },
-                                mediaRefs = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
-                                    listOf(uploadPostMediaRef(communityId, current))
-                                } else {
-                                    null
-                                },
+                                mediaRefs = mediaRefs,
                                 identityMode = current.resolvedIdentityMode().apiValue,
                                 anonymousScope = if (current.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) {
                                     current.anonymousIdentityScope
@@ -438,7 +457,11 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                                 },
                                 translationPolicy = "machine_allowed",
                                 visibility = "public",
-                            ),
+                            )
+                        }
+                        val createdPost = createPostWithProofOfWork(
+                            communityId,
+                            request,
                         )
                         createdPost.post.postId
                     }
@@ -1030,6 +1053,8 @@ private fun PostComposerWriteContent(
             onMediaSelect = {
                 mediaPicker.launch(if (state.postType == PostComposerMode.Video) "video/*" else "image/*")
             },
+            onOpenVideoSourceSearch = { onOpenDerivativeSourceSearch(state.videoUpstreamAssetRefs) },
+            videoUpstreamAssetRefs = state.videoUpstreamAssetRefs,
         )
         Spacer(modifier = Modifier.height(16.dp))
         BodyEditorChrome {
@@ -1071,6 +1096,8 @@ private fun MediaComposerFields(
     mediaUri: Uri?,
     mode: PostComposerMode,
     onMediaSelect: () -> Unit,
+    onOpenVideoSourceSearch: () -> Unit,
+    videoUpstreamAssetRefs: List<String>,
 ) {
     PirateButton(
         text = when {
@@ -1103,6 +1130,20 @@ private fun MediaComposerFields(
             color = PirateTokens.colors.textSecondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+    if (mode == PostComposerMode.Video) {
+        Spacer(modifier = Modifier.height(12.dp))
+        PirateButton(
+            text = if (videoUpstreamAssetRefs.isEmpty()) {
+                "Uses song"
+            } else {
+                "Source songs (${videoUpstreamAssetRefs.size})"
+            },
+            onClick = onOpenVideoSourceSearch,
+            enabled = enabled,
+            variant = ButtonVariant.Outline,
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
