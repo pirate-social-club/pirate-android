@@ -6,6 +6,7 @@ import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.LiveRoomPerformerAllocationInput
 import sc.pirate.app.api.model.LiveRoomSetlistInput
 import sc.pirate.app.api.model.LiveRoomSetlistItemInput
+import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.SongArtifactBundle
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -398,6 +399,33 @@ fun buildSongPostRequest(
             null
         },
         upstreamAssetRefs = if (song.songMode == SongMode.Remix) song.upstreamAssetRefs else null,
+    )
+}
+
+fun buildVideoPostRequest(
+    anonymousScope: String? = null,
+    caption: String,
+    identityMode: String? = null,
+    idempotencyKey: String,
+    mediaRefs: List<PostMediaRef>,
+    title: String,
+    upstreamAssetRefs: List<String> = emptyList(),
+    visibility: String = "public",
+): CreatePostRequest {
+    val refs = upstreamAssetRefs.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }.distinct()
+    return CreatePostRequest(
+        idempotencyKey = idempotencyKey,
+        title = title.trim().ifBlank { null },
+        caption = caption.trim().ifBlank { null },
+        postType = PostComposerMode.Video.apiValue,
+        mediaRefs = mediaRefs,
+        identityMode = identityMode,
+        anonymousScope = anonymousScope,
+        translationPolicy = "machine_allowed",
+        visibility = visibility,
+        accessMode = "public",
+        rightsBasis = if (refs.isEmpty()) null else "derivative",
+        upstreamAssetRefs = refs.ifEmpty { null },
     )
 }
 

@@ -97,6 +97,7 @@ class DerivativeSourceSearchViewModel(application: Application) : AndroidViewMod
                 val result = communityRepository.listDerivativeSources(
                     communityId = id,
                     kind = "song",
+                    scope = "global",
                     query = _state.value.query.trim().takeIf { it.isNotBlank() },
                     limit = 25,
                 )
