@@ -12,12 +12,19 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.Json
 import sc.pirate.app.api.model.SessionExchangeResponse
+import sc.pirate.app.security.AndroidKeystoreSessionCipher
+import sc.pirate.app.security.SessionCipher
 
 private val Context.sessionDataStore: DataStore<Preferences> by preferencesDataStore(name = "pirate_session")
 
-private val KEY_SESSION = stringPreferencesKey("session_json")
+private val KEY_LEGACY_SESSION = stringPreferencesKey("session_json")
+private val KEY_ENCRYPTED_SESSION = stringPreferencesKey("session_encrypted_v1")
 
-class SessionStore(private val context: Context) {
+class SessionStore internal constructor(
+    private val context: Context,
+    private val cipher: SessionCipher,
+) {
+    constructor(context: Context) : this(context, AndroidKeystoreSessionCipher())
 
     private val json = Json { ignoreUnknownKeys = true }
     @Volatile private var cachedSession: SessionExchangeResponse? = null
@@ -34,13 +41,15 @@ class SessionStore(private val context: Context) {
         }
 
         val prefs = context.sessionDataStore.data.first()
-        val raw = prefs[KEY_SESSION]
-        val session = raw?.let {
-            try {
-                json.decodeFromString<SessionExchangeResponse>(it)
-            } catch (_: Exception) {
-                null
-            }
+        val encrypted = prefs[KEY_ENCRYPTED_SESSION]
+        val legacy = prefs[KEY_LEGACY_SESSION]
+        val session = decodeSession(encrypted, legacy)
+        if (encrypted != null && session == null) {
+            clear()
+            return null
+        }
+        if (encrypted == null && legacy != null && session != null) {
+            persistEncrypted(session)
         }
         if (session != null && SessionExpiry.isExpired(session.accessToken)) {
             clear()
@@ -53,12 +62,10 @@ class SessionStore(private val context: Context) {
 
     fun observe(): Flow<SessionExchangeResponse?> =
         context.sessionDataStore.data.map { prefs ->
-            val raw = prefs[KEY_SESSION] ?: return@map null
-            val session = try {
-                json.decodeFromString<SessionExchangeResponse>(raw)
-            } catch (_: Exception) {
-                null
-            }
+            val session = decodeSession(
+                prefs[KEY_ENCRYPTED_SESSION],
+                prefs[KEY_LEGACY_SESSION],
+            )
             session?.takeUnless { SessionExpiry.isExpired(it.accessToken) }
         }.onEach {
             cachedSession = it
@@ -66,20 +73,39 @@ class SessionStore(private val context: Context) {
         }
 
     suspend fun set(session: SessionExchangeResponse) {
-        context.sessionDataStore.edit { prefs ->
-            prefs[KEY_SESSION] = json.encodeToString(SessionExchangeResponse.serializer(), session)
-        }
+        persistEncrypted(session)
         cachedSession = session
         cacheLoaded = true
     }
 
+    private suspend fun persistEncrypted(session: SessionExchangeResponse) {
+        val plaintext = json.encodeToString(SessionExchangeResponse.serializer(), session)
+        val encrypted = cipher.encrypt(plaintext)
+        context.sessionDataStore.edit { prefs ->
+            prefs[KEY_ENCRYPTED_SESSION] = encrypted
+            prefs.remove(KEY_LEGACY_SESSION)
+        }
+    }
+
     suspend fun clear() {
         context.sessionDataStore.edit { prefs ->
-            prefs.remove(KEY_SESSION)
+            prefs.remove(KEY_ENCRYPTED_SESSION)
+            prefs.remove(KEY_LEGACY_SESSION)
         }
         cachedSession = null
         cacheLoaded = true
     }
 
     suspend fun getAccessToken(): String? = get()?.accessToken
+
+    private fun decodeSession(encrypted: String?, legacy: String?): SessionExchangeResponse? = try {
+        val raw = when {
+            encrypted != null -> cipher.decrypt(encrypted)
+            legacy != null -> legacy
+            else -> return null
+        }
+        json.decodeFromString<SessionExchangeResponse>(raw)
+    } catch (_: Exception) {
+        null
+    }
 }
