@@ -843,6 +843,8 @@ class ApiClient(private val sessionStore: SessionStore) {
                 "/communities/${api.encodePathSegment(communityId)}/comments/${api.encodePathSegment(commentId)}/reports",
                 body,
             )
+        }
+
         // --- Song Study ---
 
         suspend fun getStudyPack(
