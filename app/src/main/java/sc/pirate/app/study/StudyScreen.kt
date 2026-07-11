@@ -116,6 +116,7 @@ fun StudyScreen(
                     onStart = viewModel::start,
                     onSelectOption = viewModel::selectOption,
                     onSayItBackChange = viewModel::updateSayItBack,
+                    onRecordingReady = viewModel::transcribeRecording,
                     onSubmit = viewModel::submit,
                     onRetry = viewModel::retry,
                     onNext = viewModel::next,
@@ -132,6 +133,7 @@ private fun StudyContent(
     onStart: () -> Unit,
     onSelectOption: (String) -> Unit,
     onSayItBackChange: (String) -> Unit,
+    onRecordingReady: (java.io.File) -> Unit,
     onSubmit: () -> Unit,
     onRetry: () -> Unit,
     onNext: () -> Unit,
@@ -164,6 +166,7 @@ private fun StudyContent(
                                 exercise = exercise,
                                 state = state,
                                 onSayItBackChange = onSayItBackChange,
+                                onRecordingReady = onRecordingReady,
                             )
                             else -> StatusCard(
                                 title = "Unsupported exercise",
@@ -316,6 +319,7 @@ private fun SayItBackCard(
     exercise: SongStudyExercise,
     state: StudyUiState,
     onSayItBackChange: (String) -> Unit,
+    onRecordingReady: (java.io.File) -> Unit,
 ) {
     val result = state.lastResult
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -334,11 +338,18 @@ private fun SayItBackCard(
         exercise.translationText?.let {
             Text(text = it, style = MaterialTheme.typography.bodyMedium, color = PirateTokens.colors.textSecondary)
         }
+        StudyAudioRecorder(
+            enabled = result == null,
+            transcribing = state.transcribing,
+            onRecordingReady = onRecordingReady,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        state.transcriptionError?.let { FormNote(message = it, tone = FormTone.Error) }
         OutlinedTextField(
             value = state.sayItBackInput,
             onValueChange = onSayItBackChange,
             enabled = result == null,
-            label = { Text("Type what you'd sing") },
+            label = { Text("Transcript (you can edit this)") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             modifier = Modifier.fillMaxWidth(),

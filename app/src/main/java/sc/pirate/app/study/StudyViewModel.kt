@@ -6,13 +6,16 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import sc.pirate.app.PirateApp
 import sc.pirate.app.api.model.SongStudyAttemptRequest
 import sc.pirate.app.api.model.SongStudyAttemptResult
 import sc.pirate.app.api.model.SongStudyExercise
 import sc.pirate.app.api.model.SongStudyPayload
 import java.util.UUID
+import java.io.File
 
 /**
  * Drives the Song Study screen. Access is server-authoritative: the UI branches on
@@ -33,6 +36,8 @@ data class StudyUiState(
     val attemptNumber: Int = 1,
     val selectedOptionId: String? = null,
     val sayItBackInput: String = "",
+    val transcribing: Boolean = false,
+    val transcriptionError: String? = null,
     val submitting: Boolean = false,
     val attemptError: String? = null,
     val lastResult: SongStudyAttemptResult? = null,
@@ -99,7 +104,43 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateSayItBack(text: String) {
         if (_state.value.lastResult != null) return
-        _state.value = _state.value.copy(sayItBackInput = text, attemptError = null)
+        _state.value = _state.value.copy(
+            sayItBackInput = text,
+            attemptError = null,
+            transcriptionError = null,
+        )
+    }
+
+    fun transcribeRecording(file: File) {
+        val current = _state.value
+        if (current.transcribing || current.lastResult != null) {
+            file.delete()
+            return
+        }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(transcribing = true, transcriptionError = null)
+            try {
+                val bytes = withContext(Dispatchers.IO) { file.readBytes() }
+                val response = api.communities.transcribeStudyAudio(
+                    communityId = communityId,
+                    postId = postId,
+                    bytes = bytes,
+                    filename = file.name,
+                    mimeType = "audio/mp4",
+                )
+                _state.value = _state.value.copy(
+                    transcribing = false,
+                    sayItBackInput = response.text,
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    transcribing = false,
+                    transcriptionError = e.message ?: "Could not transcribe recording.",
+                )
+            } finally {
+                withContext(Dispatchers.IO) { file.delete() }
+            }
+        }
     }
 
     fun submit() {
