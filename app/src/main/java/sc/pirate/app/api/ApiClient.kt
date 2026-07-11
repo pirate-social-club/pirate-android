@@ -9,7 +9,9 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import sc.pirate.app.api.model.*
 import java.net.URLEncoder
@@ -23,6 +25,22 @@ class ApiError(
     val retryable: Boolean = false,
     val details: GateFailureDetails? = null,
 ) : Exception(message)
+
+private fun StreamUpload.toRequestBody(): RequestBody = object : RequestBody() {
+    override fun contentType() = mimeType.toMediaTypeOrNull()
+    override fun contentLength(): Long = this@toRequestBody.contentLength
+
+    override fun writeTo(sink: BufferedSink) {
+        openStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                sink.write(buffer, 0, count)
+            }
+        }
+    }
+}
 
 private fun displayApiErrorMessage(error: ErrorResponse?, status: Int): String {
     val code = error?.code
@@ -225,6 +243,43 @@ class ApiClient(private val sessionStore: SessionStore) {
             )
         }
 
+        return response.body
+    }
+
+    private suspend fun putStreamString(
+        path: String,
+        upload: StreamUpload,
+        requireAuth: Boolean = true,
+    ): String {
+        val response = withContext(Dispatchers.IO) {
+            val requestBuilder = Request.Builder().url("$baseUrl$path")
+            if (requireAuth) {
+                sessionStore.getAccessToken()?.let { token ->
+                    requestBuilder.header("Authorization", "Bearer $token")
+                }
+            }
+            client.newCall(requestBuilder.put(upload.toRequestBody()).build()).execute().use { rawResponse ->
+                ApiResponse(
+                    successful = rawResponse.isSuccessful,
+                    status = rawResponse.code,
+                    body = rawResponse.body?.string().orEmpty(),
+                )
+            }
+        }
+        if (!response.successful) {
+            val errorResponse = try {
+                json.decodeFromString<ErrorResponse>(response.body)
+            } catch (_: Exception) {
+                null
+            }
+            throw ApiError(
+                code = errorResponse?.code ?: "internal_error",
+                message = displayApiErrorMessage(errorResponse, response.status),
+                status = response.status,
+                retryable = errorResponse?.retryable == true,
+                details = errorResponse?.details,
+            )
+        }
         return response.body
     }
 
@@ -476,6 +531,16 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(CommunityMediaUploadResponse.serializer(), response)
         }
 
+        suspend fun uploadMedia(kind: String, upload: StreamUpload, filename: String): CommunityMediaUploadResponse {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("kind", kind)
+                .addFormDataPart("file", filename, upload.toRequestBody())
+                .build()
+            val response = api.postMultipartString("/community-media", body)
+            return api.json.decodeFromString(CommunityMediaUploadResponse.serializer(), response)
+        }
+
         suspend fun createArtifactUpload(
             communityId: String,
             request: CreateSongArtifactUploadRequest,
@@ -493,6 +558,18 @@ class ApiClient(private val sessionStore: SessionStore) {
             val response = api.putBytesString(
                 "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(uploadId)}/content",
                 bytes,
+            )
+            return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
+        }
+
+        suspend fun uploadArtifactContent(
+            communityId: String,
+            uploadId: String,
+            upload: StreamUpload,
+        ): SongArtifactUpload {
+            val response = api.putStreamString(
+                "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(uploadId)}/content",
+                upload,
             )
             return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
         }

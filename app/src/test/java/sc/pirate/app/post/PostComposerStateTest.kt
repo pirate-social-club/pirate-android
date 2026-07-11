@@ -13,6 +13,18 @@ import sc.pirate.app.api.model.SongArtifactBundle
 
 class PostComposerStateTest {
     @Test
+    fun `upload limits mirror server media policies`() {
+        assertNull(validateUploadSize("post_image", 20L * 1024L * 1024L))
+        assertNull(validateUploadSize("cover_art", 12L * 1024L * 1024L))
+        assertNull(validateUploadSize("primary_audio", 64L * 1024L * 1024L))
+        assertEquals(
+            "The selected file exceeds the 64MB limit.",
+            validateUploadSize("primary_video", 64L * 1024L * 1024L + 1L),
+        )
+        assertEquals("The selected file is empty.", validateUploadSize("post_image", 0L))
+    }
+
+    @Test
     fun `draft idempotency key survives state updates and retry snapshots`() {
         val initial = PostComposerUiState()
 

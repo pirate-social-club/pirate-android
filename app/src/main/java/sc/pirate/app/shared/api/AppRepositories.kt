@@ -7,6 +7,7 @@ import sc.pirate.app.api.ProfileUpdateInput
 import sc.pirate.app.api.RenameHandleResponse
 import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.api.StartVerificationSessionRequest
+import sc.pirate.app.api.StreamUpload
 import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.CommunityCreateAcceptedResponse
 import sc.pirate.app.api.model.CommunityFollowResponse
@@ -110,11 +111,13 @@ interface CommunityRepository {
         altchaHeader: String? = null,
     ): LocalizedPostResponse
     suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String
+    suspend fun uploadMedia(kind: String, upload: StreamUpload, filename: String): String
     suspend fun createArtifactUpload(
         communityId: String,
         request: CreateSongArtifactUploadRequest,
     ): SongArtifactUpload
     suspend fun uploadArtifactContent(communityId: String, uploadId: String, bytes: ByteArray): SongArtifactUpload
+    suspend fun uploadArtifactContent(communityId: String, uploadId: String, upload: StreamUpload): SongArtifactUpload
     suspend fun createSongArtifactBundle(
         communityId: String,
         request: CreateSongArtifactBundleRequest,
@@ -393,6 +396,10 @@ class ApiCommunityRepository(
         return apiClient.communities.uploadMedia(kind, bytes, filename, mimeType).mediaRef
     }
 
+    override suspend fun uploadMedia(kind: String, upload: StreamUpload, filename: String): String {
+        return apiClient.communities.uploadMedia(kind, upload, filename).mediaRef
+    }
+
     override suspend fun createArtifactUpload(
         communityId: String,
         request: CreateSongArtifactUploadRequest,
@@ -406,6 +413,14 @@ class ApiCommunityRepository(
         bytes: ByteArray,
     ): SongArtifactUpload {
         return apiClient.communities.uploadArtifactContent(communityId, uploadId, bytes)
+    }
+
+    override suspend fun uploadArtifactContent(
+        communityId: String,
+        uploadId: String,
+        upload: StreamUpload,
+    ): SongArtifactUpload {
+        return apiClient.communities.uploadArtifactContent(communityId, uploadId, upload)
     }
 
     override suspend fun createSongArtifactBundle(

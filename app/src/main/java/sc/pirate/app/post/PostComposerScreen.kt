@@ -69,6 +69,7 @@ import sc.pirate.app.api.model.SongArtifactBundle
 import sc.pirate.app.api.model.SongArtifactUpload
 import sc.pirate.app.api.model.SongArtifactUploadRef
 import sc.pirate.app.api.model.SongPreviewWindow
+import sc.pirate.app.api.StreamUpload
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
@@ -649,18 +650,21 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "video/mp4"
         val name = uri.displayName()
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalStateException("Could not read selected video: $name")
+        val sizeBytes = uri.requireUploadSize("primary_video")
         val intent = communityRepository.createArtifactUpload(
             communityId,
             CreateSongArtifactUploadRequest(
                 artifactKind = "primary_video",
                 mimeType = mimeType,
                 filename = name,
-                sizeBytes = bytes.size.toLong(),
+                sizeBytes = sizeBytes,
             ),
         )
-        return communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
+        return communityRepository.uploadArtifactContent(
+            communityId,
+            intent.id,
+            uri.streamUpload(sizeBytes, mimeType),
+        )
     }
 
     private suspend fun uploadSongArtifact(
@@ -672,18 +676,21 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
         val name = uri.displayName()
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: throw IllegalStateException("Could not read selected file: $name")
+        val sizeBytes = uri.requireUploadSize(kind)
         val intent = communityRepository.createArtifactUpload(
             communityId,
             CreateSongArtifactUploadRequest(
                 artifactKind = kind,
                 mimeType = mimeType,
                 filename = name,
-                sizeBytes = bytes.size.toLong(),
+                sizeBytes = sizeBytes,
             ),
         )
-        return communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
+        return communityRepository.uploadArtifactContent(
+            communityId,
+            intent.id,
+            uri.streamUpload(sizeBytes, mimeType),
+        )
     }
 
     private suspend fun waitForSongPreview(communityId: String, bundleId: String): SongArtifactBundle {
@@ -740,13 +747,31 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         return null
     }
 
+    private fun Uri.requireUploadSize(kind: String): Long {
+        val size = sizeBytes()
+            ?: app.contentResolver.openAssetFileDescriptor(this, "r")?.use { descriptor ->
+                descriptor.length.takeIf { it >= 0L }
+            }
+            ?: throw IllegalStateException("Could not determine the selected file size.")
+        validateUploadSize(kind, size)?.let { message -> throw IllegalStateException(message) }
+        return size
+    }
+
+    private fun Uri.streamUpload(sizeBytes: Long, mimeType: String): StreamUpload = StreamUpload(
+        contentLength = sizeBytes,
+        mimeType = mimeType,
+        openStream = {
+            app.contentResolver.openInputStream(this)
+                ?: throw IllegalStateException("Could not read the selected file.")
+        },
+    )
+
     private suspend fun Uri.uploadCommunityMedia(kind: String): String {
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(this) ?: "image/jpeg"
         val name = displayName()
-        val bytes = contentResolver.openInputStream(this)?.use { it.readBytes() }
-            ?: throw IllegalStateException("Could not read selected image.")
-        return communityRepository.uploadMedia(kind, bytes, name, mimeType)
+        val sizeBytes = requireUploadSize(kind)
+        return communityRepository.uploadMedia(kind, streamUpload(sizeBytes, mimeType), name)
     }
 }
 

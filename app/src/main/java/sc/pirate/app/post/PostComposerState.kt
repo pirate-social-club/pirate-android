@@ -19,6 +19,22 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+internal const val POST_IMAGE_MAX_BYTES = 20L * 1024L * 1024L
+internal const val SONG_COVER_MAX_BYTES = 12L * 1024L * 1024L
+internal const val SONG_ARTIFACT_MAX_BYTES = 64L * 1024L * 1024L
+
+internal fun validateUploadSize(kind: String, sizeBytes: Long): String? {
+    val maxBytes = when (kind) {
+        "post_image" -> POST_IMAGE_MAX_BYTES
+        "cover_art" -> SONG_COVER_MAX_BYTES
+        "primary_video", "canvas_video", "primary_audio", "instrumental_audio", "vocal_audio" -> SONG_ARTIFACT_MAX_BYTES
+        else -> return "Unsupported upload type."
+    }
+    if (sizeBytes <= 0L) return "The selected file is empty."
+    if (sizeBytes > maxBytes) return "The selected file exceeds the ${maxBytes / (1024L * 1024L)}MB limit."
+    return null
+}
+
 const val POST_COMPOSER_TITLE_MAX_LENGTH = 300
 
 enum class PostComposerMode(val apiValue: String) {
