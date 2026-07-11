@@ -1,6 +1,11 @@
 package sc.pirate.app.navigation
 
 import android.net.Uri
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
+private fun encodeDeepLinkSegment(value: String): String =
+    URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
 
 object PirateRouteSections {
     val settings = setOf("profile", "domains", "preferences", "agents")
@@ -37,17 +42,17 @@ object PirateDeepLinks {
         if (scheme.equals("pirate", ignoreCase = true)) return when (host?.lowercase()) {
             "post" -> pathSegments.firstOrNull()
                 ?.takeIf { it.isNotBlank() }
-                ?.let(PirateRoute.Post::buildRoute)
+                ?.let { "post/${encodeDeepLinkSegment(it)}" }
             "community" -> pathSegments.firstOrNull()
                 ?.takeIf { it.isNotBlank() }
-                ?.let(PirateRoute.Community::buildRoute)
+                ?.let { "community/${encodeDeepLinkSegment(it)}" }
             else -> null
         }
         if (!scheme.equals("https", ignoreCase = true) || !host.equals("pirate.sc", ignoreCase = true)) return null
         val id = pathSegments.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return null
         return when (pathSegments.firstOrNull()?.lowercase()) {
-            "p" -> PirateRoute.Post.buildRoute(id)
-            "c" -> PirateRoute.Community.buildRoute(id)
+            "p" -> "post/${encodeDeepLinkSegment(id)}"
+            "c" -> "community/${encodeDeepLinkSegment(id)}"
             else -> null
         }
     }

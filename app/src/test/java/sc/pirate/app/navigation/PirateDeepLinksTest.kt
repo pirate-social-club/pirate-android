@@ -8,11 +8,11 @@ class PirateDeepLinksTest {
     @Test
     fun `maps canonical web post and community links`() {
         assertEquals(
-            PirateRoute.Post.buildRoute("pst_123"),
+            "post/pst_123",
             PirateDeepLinks.routeFromParts("https", "pirate.sc", listOf("p", "pst_123")),
         )
         assertEquals(
-            PirateRoute.Community.buildRoute("@music"),
+            "community/%40music",
             PirateDeepLinks.routeFromParts("https", "PIRATE.SC", listOf("c", "@music")),
         )
     }
@@ -20,7 +20,7 @@ class PirateDeepLinksTest {
     @Test
     fun `keeps custom scheme compatibility`() {
         assertEquals(
-            PirateRoute.Post.buildRoute("pst_123"),
+            "post/pst_123",
             PirateDeepLinks.routeFromParts("pirate", "post", listOf("pst_123")),
         )
     }
