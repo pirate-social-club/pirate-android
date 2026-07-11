@@ -28,6 +28,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -65,6 +67,7 @@ fun PirateScaffold(
     val navController = rememberNavController(bottomSheetNavigator)
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     val navBackStackEntry = navController.currentBackStackEntryAsState().value
     val currentRoute = navBackStackEntry?.destination?.route
     val openDrawer = { scope.launch { drawerState.open() }; Unit }
@@ -115,7 +118,8 @@ fun PirateScaffold(
                                         item = item,
                                         selected = selected,
                                         onClick = {
-                                            if (!selected) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (!selected || currentRoute != item.route) {
                                                 if (item.requiresAuth && !hasSession) {
                                                     onRequireAuth()
                                                     return@BottomNavIcon

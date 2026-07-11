@@ -15,6 +15,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.theme.PirateTokens
 
@@ -26,6 +28,7 @@ fun VoteControl(
     onVote: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
     Surface(
         modifier = modifier.height(38.dp),
         shape = RoundedCornerShape(PirateTokens.radius.full),
@@ -38,7 +41,10 @@ fun VoteControl(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
         ) {
             IconButton(
-                onClick = { onVote(1) },
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onVote(1)
+                },
                 enabled = enabled,
                 modifier = Modifier.size(32.dp),
             ) {
@@ -55,7 +61,10 @@ fun VoteControl(
                 color = PirateTokens.colors.textPrimary,
             )
             IconButton(
-                onClick = { onVote(-1) },
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onVote(-1)
+                },
                 enabled = enabled,
                 modifier = Modifier.size(32.dp),
             ) {

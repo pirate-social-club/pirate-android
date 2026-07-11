@@ -450,7 +450,10 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun reportComment(commentId: String, reasonCode: String) {
-        val comment = _state.value.comments.firstOrNull { it.comment.commentId == commentId }?.comment ?: return
+        val state = _state.value
+        val comment = state.comments.firstOrNull { it.comment.commentId == commentId }?.comment
+            ?: state.repliesByParentId.values.flatten().firstOrNull { it.comment.commentId == commentId }?.comment
+            ?: return
         report(
             targetId = commentId,
             submit = { postRepository.reportComment(comment.communityId, commentId, CreateUserReportRequest(reasonCode)) },
@@ -708,11 +711,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         val current = _state.value
         if (commentId in current.votingCommentIds) return
 
-        val previousComment = current.comments.firstOrNull { it.comment.commentId == commentId } ?: return
+        val previousComment = current.comments.firstOrNull { it.comment.commentId == commentId }
+            ?: current.repliesByParentId.values.flatten().firstOrNull { it.comment.commentId == commentId }
+            ?: return
         if (previousComment.viewerVote == value) return
 
         _state.value = current.copy(
             comments = current.comments.withCommentVote(commentId, value),
+            repliesByParentId = current.repliesByParentId.withCommentVote(commentId, value),
             votingCommentIds = current.votingCommentIds + commentId,
             commentVoteError = null,
         )
@@ -722,11 +728,13 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 val response = postRepository.voteComment(commentId, value)
                 _state.value = _state.value.copy(
                     comments = _state.value.comments.replaceComment(previousComment.withVote(response.value)),
+                    repliesByParentId = _state.value.repliesByParentId.replaceComment(previousComment.withVote(response.value)),
                     votingCommentIds = _state.value.votingCommentIds - commentId,
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     comments = _state.value.comments.replaceComment(previousComment),
+                    repliesByParentId = _state.value.repliesByParentId.replaceComment(previousComment),
                     votingCommentIds = _state.value.votingCommentIds - commentId,
                     commentVoteError = e.message ?: "Failed to vote on comment",
                 )
@@ -1451,21 +1459,76 @@ fun PostScreen(
                         else -> {
                             items(state.comments, key = { it.comment.commentId }) { comment ->
                                 val commentId = comment.comment.commentId
-                                CommentRow(
-                                    comment = comment,
-                                    authorProfile = comment.comment.authorUserId?.let { state.authorProfiles[it] },
-                                    isVoting = commentId in state.votingCommentIds,
-                                    onVote = { value ->
-                                        if (hasSession) viewModel.voteComment(commentId, value) else authPromptAction = "Voting"
-                                    },
-                                    onReply = {
-                                        if (hasSession) viewModel.loadReplies(commentId) else authPromptAction = "Replying"
-                                    },
-                                    onReport = {
-                                        if (hasSession) reportTarget = ReportTarget.Comment(commentId)
-                                        else authPromptAction = "Reporting comments"
-                                    },
-                                )
+                                var expanded by rememberSaveable(commentId) { mutableStateOf(false) }
+                                Column {
+                                    CommentRow(
+                                        comment = comment,
+                                        authorProfile = comment.comment.authorUserId?.let { state.authorProfiles[it] },
+                                        isVoting = commentId in state.votingCommentIds,
+                                        onVote = { value ->
+                                            if (hasSession) viewModel.voteComment(commentId, value) else authPromptAction = "Voting"
+                                        },
+                                        onReply = {
+                                            if (!hasSession) {
+                                                authPromptAction = "Replying"
+                                            } else {
+                                                expanded = !expanded
+                                                if (expanded && commentId !in state.repliesByParentId) {
+                                                    viewModel.loadReplies(commentId)
+                                                }
+                                            }
+                                        },
+                                        onReport = {
+                                            if (hasSession) reportTarget = ReportTarget.Comment(commentId)
+                                            else authPromptAction = "Reporting comments"
+                                        },
+                                    )
+                                    if (expanded) {
+                                        InlineReplyComposer(
+                                            draft = state.replyDraftsByParentId[commentId].orEmpty(),
+                                            error = state.replySubmitErrorByParentId[commentId],
+                                            submitting = commentId in state.submittingReplyParentIds,
+                                            onDraftChange = { viewModel.updateReplyDraft(commentId, it) },
+                                            onSubmit = { viewModel.submitReply(commentId) },
+                                            modifier = Modifier.padding(start = 40.dp, end = 16.dp),
+                                        )
+                                        if (commentId in state.loadingRepliesParentIds && state.repliesByParentId[commentId] == null) {
+                                            CircularProgressIndicator(
+                                                color = PirateTokens.colors.accentBrand,
+                                                modifier = Modifier.padding(start = 56.dp, top = 12.dp).size(22.dp),
+                                            )
+                                        }
+                                        state.repliesByParentId[commentId].orEmpty().forEach { reply ->
+                                            val replyId = reply.comment.commentId
+                                            CommentRow(
+                                                comment = reply,
+                                                authorProfile = reply.comment.authorUserId?.let { state.authorProfiles[it] },
+                                                isVoting = replyId in state.votingCommentIds,
+                                                onVote = { value -> viewModel.voteComment(replyId, value) },
+                                                onReply = {},
+                                                onReport = { reportTarget = ReportTarget.Comment(replyId) },
+                                                showReplyAction = false,
+                                                modifier = Modifier.padding(start = 32.dp),
+                                            )
+                                        }
+                                        state.repliesErrorByParentId[commentId]?.let { error ->
+                                            FormNote(
+                                                message = error,
+                                                tone = FormTone.Error,
+                                                modifier = Modifier.padding(horizontal = 56.dp, vertical = 8.dp),
+                                            )
+                                        }
+                                        if (state.nextRepliesCursorByParentId[commentId] != null) {
+                                            PirateButton(
+                                                text = "More replies",
+                                                onClick = { viewModel.loadMoreReplies(commentId) },
+                                                loading = commentId in state.loadingRepliesParentIds,
+                                                variant = sc.pirate.app.ui.ButtonVariant.Outline,
+                                                modifier = Modifier.padding(start = 48.dp, end = 16.dp, bottom = 12.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1520,6 +1583,15 @@ private fun List<CommentListItem>.replaceComment(previousComment: CommentListIte
     map { item ->
         if (item.comment.commentId == previousComment.comment.commentId) previousComment else item
     }
+
+private fun Map<String, List<CommentListItem>>.withCommentVote(
+    commentId: String,
+    value: Int,
+): Map<String, List<CommentListItem>> = mapValues { (_, replies) -> replies.withCommentVote(commentId, value) }
+
+private fun Map<String, List<CommentListItem>>.replaceComment(
+    comment: CommentListItem,
+): Map<String, List<CommentListItem>> = mapValues { (_, replies) -> replies.replaceComment(comment) }
 
 private fun voteScoreDelta(previousValue: Int?, nextValue: Int): Int =
     nextValue - (previousValue ?: 0)
@@ -2092,9 +2164,10 @@ private fun InlineReplyComposer(
     submitting: Boolean,
     onDraftChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -2142,6 +2215,8 @@ private fun CommentRow(
     onVote: (Int) -> Unit,
     onReply: () -> Unit,
     onReport: () -> Unit,
+    showReplyAction: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
     val model = comment.comment
     val authorLabel = resolveAuthorLabel(
@@ -2157,7 +2232,7 @@ private fun CommentRow(
         authorProfile = authorProfile,
     )
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         color = PirateTokens.colors.bgPage,
         shape = RoundedCornerShape(0.dp),
     ) {
@@ -2206,7 +2281,7 @@ private fun CommentRow(
                         enabled = !isVoting,
                         onVote = onVote,
                     )
-                    ReplyPill(onClick = onReply)
+                    if (showReplyAction) ReplyPill(onClick = onReply)
                     IconButton(onClick = onReport, modifier = Modifier.size(36.dp)) {
                         Icon(
                             imageVector = PhosphorIcons.Flag,

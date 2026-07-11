@@ -2,8 +2,11 @@ package sc.pirate.app.navigation
 
 import android.util.Log
 import android.widget.Toast
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -105,10 +108,18 @@ fun PirateNavHost(
         navController = navController,
         startDestination = PirateRoute.Home.route,
         modifier = modifier,
-        enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { ExitTransition.None },
+        enterTransition = {
+            fadeIn(tween(180)) + slideInHorizontally(tween(220)) { width -> width / 12 }
+        },
+        exitTransition = {
+            fadeOut(tween(120)) + slideOutHorizontally(tween(160)) { width -> -width / 20 }
+        },
+        popEnterTransition = {
+            fadeIn(tween(160)) + slideInHorizontally(tween(200)) { width -> -width / 16 }
+        },
+        popExitTransition = {
+            fadeOut(tween(120)) + slideOutHorizontally(tween(180)) { width -> width / 12 }
+        },
     ) {
         composable(PirateRoute.Auth.route) {
             val vm: AuthViewModel = viewModel()
