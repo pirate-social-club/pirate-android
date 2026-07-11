@@ -199,7 +199,7 @@ fun LiveRoomViewerWebView(
     val loadKey = remember(html) { "viewer:${html.hashCode()}" }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val renewBridge = remember(onRenew, coroutineScope) {
+    val renewBridge: LiveRoomRenewBridge = remember(onRenew, coroutineScope) {
         LiveRoomRenewBridge(coroutineScope, onRenew)
     }
     val liveRoomWebChromeClient = remember(context) { LiveRoomWebChromeClient(context) }
