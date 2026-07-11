@@ -32,6 +32,7 @@ import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.ButtonVariant
+import sc.pirate.app.security.AgentKeyStore
 
 private data class AgentsSettingsState(
     val loading: Boolean = true,
@@ -39,9 +40,11 @@ private data class AgentsSettingsState(
     val error: String? = null,
     val savingAgentId: String? = null,
     val saveError: String? = null,
+    val enrolledKeyAgentIds: Set<String> = emptySet(),
 )
 
 private class AgentsSettingsViewModel(application: Application) : AndroidViewModel(application) {
+    private val keyStore by lazy { AgentKeyStore.create(getApplication()) }
     private val _state = MutableStateFlow(AgentsSettingsState())
     val state = _state.asStateFlow()
 
@@ -51,7 +54,12 @@ private class AgentsSettingsViewModel(application: Application) : AndroidViewMod
             _state.value = AgentsSettingsState(loading = true)
             try {
                 val result = getApplication<PirateApp>().apiClient.agents.list()
-                _state.value = AgentsSettingsState(loading = false, agents = result.items)
+                val enrolledIds = runCatching { keyStore.list().map { it.agentId }.toSet() }.getOrDefault(emptySet())
+                _state.value = AgentsSettingsState(
+                    loading = false,
+                    agents = result.items,
+                    enrolledKeyAgentIds = enrolledIds,
+                )
             } catch (error: Exception) {
                 _state.value = AgentsSettingsState(
                     loading = false,
@@ -91,6 +99,9 @@ private class AgentsSettingsViewModel(application: Application) : AndroidViewMod
             _state.value = _state.value.copy(savingAgentId = agentId, saveError = null)
             try {
                 val updated = action()
+                keyStore.find(agentId)?.let { stored ->
+                    keyStore.save(stored.copy(displayName = updated.displayName, updatedAt = java.time.Instant.now().toString()))
+                }
                 _state.value = _state.value.copy(
                     agents = _state.value.agents.map { if (it.id == agentId) updated else it },
                     savingAgentId = null,
@@ -130,6 +141,7 @@ internal fun AgentsSettingsPanel() {
                 AgentCard(
                     agent = agent,
                     saving = state.savingAgentId == agent.id,
+                    signingKeyEnrolled = agent.id in state.enrolledKeyAgentIds,
                     onUpdateName = { vm.updateDisplayName(agent.id, it) },
                     onUpdateHandle = { vm.updateHandle(agent.id, it) },
                 )
@@ -148,6 +160,7 @@ internal fun AgentsSettingsPanel() {
 private fun AgentCard(
     agent: UserAgent,
     saving: Boolean,
+    signingKeyEnrolled: Boolean,
     onUpdateName: (String) -> Unit,
     onUpdateHandle: (String) -> Unit,
 ) {
@@ -176,6 +189,11 @@ private fun AgentCard(
             "Status: ${agent.status} · ownership: ${agent.currentOwnership?.ownershipState ?: "not verified"}",
             style = MaterialTheme.typography.bodySmall,
             color = PirateTokens.colors.textSecondary,
+        )
+        Text(
+            if (signingKeyEnrolled) "Signing key: encrypted on this device" else "Signing key: not enrolled on this device",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (signingKeyEnrolled) PirateTokens.colors.accentSuccess else PirateTokens.colors.textSecondary,
         )
         agent.currentOwnership?.let {
             Text(
