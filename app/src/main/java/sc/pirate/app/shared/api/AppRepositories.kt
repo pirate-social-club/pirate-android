@@ -115,6 +115,12 @@ interface CommunityRepository {
         request: CreateSongArtifactUploadRequest,
     ): SongArtifactUpload
     suspend fun uploadArtifactContent(communityId: String, uploadId: String, bytes: ByteArray): SongArtifactUpload
+    suspend fun uploadArtifactMultipart(
+        communityId: String,
+        intent: SongArtifactUpload,
+        bytes: ByteArray,
+        mimeType: String,
+    ): SongArtifactUpload
     suspend fun createSongArtifactBundle(
         communityId: String,
         request: CreateSongArtifactBundleRequest,
@@ -406,6 +412,15 @@ class ApiCommunityRepository(
         bytes: ByteArray,
     ): SongArtifactUpload {
         return apiClient.communities.uploadArtifactContent(communityId, uploadId, bytes)
+    }
+
+    override suspend fun uploadArtifactMultipart(
+        communityId: String,
+        intent: SongArtifactUpload,
+        bytes: ByteArray,
+        mimeType: String,
+    ): SongArtifactUpload {
+        return apiClient.communities.uploadArtifactMultipart(communityId, intent, bytes, mimeType)
     }
 
     override suspend fun createSongArtifactBundle(
