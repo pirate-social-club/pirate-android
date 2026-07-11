@@ -32,3 +32,13 @@ data class AgentOwnershipRecord(
     @SerialName("verified_at") val verifiedAt: Long? = null,
     @SerialName("expires_at") val expiresAt: Long? = null,
 )
+
+@Serializable
+data class UpdateUserAgentRequest(
+    @SerialName("display_name") val displayName: String,
+)
+
+@Serializable
+data class UpdateAgentHandleRequest(
+    @SerialName("desired_label") val desiredLabel: String,
+)

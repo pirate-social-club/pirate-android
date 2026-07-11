@@ -343,6 +343,24 @@ class ApiClient(private val sessionStore: SessionStore) {
             )
             return api.json.decodeFromString(UserAgentListResponse.serializer(), response)
         }
+
+        suspend fun updateDisplayName(agentId: String, displayName: String): UserAgent {
+            val body = api.json.encodeToString(
+                UpdateUserAgentRequest.serializer(),
+                UpdateUserAgentRequest(displayName),
+            )
+            val response = api.postString("/agents/${api.encodePathSegment(agentId)}", body)
+            return api.json.decodeFromString(UserAgent.serializer(), response)
+        }
+
+        suspend fun updateHandle(agentId: String, desiredLabel: String): AgentHandle {
+            val body = api.json.encodeToString(
+                UpdateAgentHandleRequest.serializer(),
+                UpdateAgentHandleRequest(desiredLabel),
+            )
+            val response = api.postString("/agents/${api.encodePathSegment(agentId)}/handle", body)
+            return api.json.decodeFromString(AgentHandle.serializer(), response)
+        }
     }
 
     class OnboardingEndpoints internal constructor(private val api: ApiClient) {
