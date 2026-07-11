@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -39,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +60,7 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -1122,6 +1125,7 @@ fun PostScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val listState = rememberLazyListState()
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
@@ -1182,6 +1186,17 @@ fun PostScreen(
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             viewModel.clearReportMessage()
         }
+    }
+
+    LaunchedEffect(state.nextCommentsCursor, state.commentsLoadingMore) {
+        if (state.nextCommentsCursor == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd -> if (nearEnd) viewModel.loadMoreComments() }
     }
 
     reportTarget?.let { target ->
@@ -1287,6 +1302,7 @@ fun PostScreen(
                 val postResponse = state.post!!
                 val post = postResponse.post
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .background(PirateTokens.colors.bgPage),
@@ -1452,15 +1468,11 @@ fun PostScreen(
                         }
                     }
 
-                    if (state.nextCommentsCursor != null) {
+                    if (state.commentsLoadingMore) {
                         item {
-                            PirateButton(
-                                text = if (state.commentsLoadingMore) "Loading" else "Load more",
-                                onClick = viewModel::loadMoreComments,
-                                loading = state.commentsLoadingMore,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                            CircularProgressIndicator(
+                                color = PirateTokens.colors.accentBrand,
+                                modifier = Modifier.padding(20.dp).size(24.dp),
                             )
                         }
                     }

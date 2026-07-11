@@ -23,8 +23,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,6 +50,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -75,6 +79,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
@@ -798,6 +803,7 @@ fun HomeScreen(
 ) {
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val feed = state.feed
@@ -805,6 +811,17 @@ fun HomeScreen(
     var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
     var actionItem by remember { mutableStateOf<HomeFeedItem?>(null) }
     var reportItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+
+    LaunchedEffect(feed?.nextCursor, state.loadingMore) {
+        if (feed?.nextCursor == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd -> if (nearEnd) viewModel.loadMore() }
+    }
 
     LaunchedEffect(state.reportMessage) {
         state.reportMessage?.let { message ->
@@ -900,6 +917,10 @@ fun HomeScreen(
                         )
                     },
                     actions = {
+                        HomeSortMenu(state.activeSort, viewModel::setSort)
+                        if (state.activeSort == "top") {
+                            HomeTimeRangeMenu(state.topTimeRange, viewModel::setTopTimeRange)
+                        }
                         IconButton(onClick = {
                             if (hasSession) onNavigateToCompose() else authPromptAction = "Creating a post"
                         }) {
@@ -925,6 +946,7 @@ fun HomeScreen(
                     .padding(innerPadding),
             ) {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .background(PirateTokens.colors.bgPage),
@@ -1032,13 +1054,11 @@ fun HomeScreen(
                             )
                         }
 
-                        if (feed.nextCursor != null) {
+                        if (state.loadingMore) {
                             item {
-                                PirateButton(
-                                    text = if (state.loadingMore) "Loading" else "Load more",
-                                    onClick = viewModel::loadMore,
-                                    loading = state.loadingMore,
-                                    modifier = Modifier.fillMaxWidth(),
+                                CircularProgressIndicator(
+                                    color = PirateTokens.colors.accentBrand,
+                                    modifier = Modifier.padding(20.dp).size(24.dp),
                                 )
                             }
                         }
@@ -1047,6 +1067,69 @@ fun HomeScreen(
                 }
             }
         }
+}
+
+private val homeSortOptions = listOf(
+    "best" to "Best",
+    "new" to "New",
+    "top" to "Top",
+)
+
+@Composable
+private fun HomeSortMenu(selectedValue: String, onSelected: (String) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(PhosphorIcons.SlidersHorizontal, contentDescription = "Sort feed")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            homeSortOptions.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelected(value)
+                    },
+                    trailingIcon = if (value == selectedValue) {
+                        { Text("Selected", style = MaterialTheme.typography.labelSmall) }
+                    } else null,
+                )
+            }
+        }
+    }
+}
+
+private val homeTimeRangeOptions = listOf(
+    "hour" to "This hour",
+    "day" to "Today",
+    "week" to "This week",
+    "month" to "This month",
+    "year" to "This year",
+    "all" to "All time",
+)
+
+@Composable
+private fun HomeTimeRangeMenu(selectedValue: String, onSelected: (String) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(homeTimeRangeOptions.firstOrNull { it.first == selectedValue }?.second ?: "Today")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            homeTimeRangeOptions.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelected(value)
+                    },
+                    trailingIcon = if (value == selectedValue) {
+                        { Text("Selected", style = MaterialTheme.typography.labelSmall) }
+                    } else null,
+                )
+            }
+        }
+    }
 }
 
 private fun HomeFeedItem.homeCommunityId(): String =

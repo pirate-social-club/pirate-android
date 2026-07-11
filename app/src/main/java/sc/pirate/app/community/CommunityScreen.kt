@@ -539,6 +539,17 @@ fun CommunityScreen(
             }
     }
 
+    LaunchedEffect(activeTab, state.nextPostsCursor, state.postsLoadingMore) {
+        if (activeTab != "feed" || state.nextPostsCursor == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd -> if (nearEnd) viewModel.loadMorePosts() }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -758,15 +769,11 @@ fun CommunityScreen(
                                 }
                             }
 
-                            if (state.nextPostsCursor != null) {
+                            if (state.postsLoadingMore) {
                                 item {
-                                    PirateButton(
-                                        text = if (state.postsLoadingMore) "Loading" else "Load more",
-                                        onClick = viewModel::loadMorePosts,
-                                        loading = state.postsLoadingMore,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    CircularProgressIndicator(
+                                        color = PirateTokens.colors.accentBrand,
+                                        modifier = Modifier.padding(20.dp).size(24.dp),
                                     )
                                 }
                             }
