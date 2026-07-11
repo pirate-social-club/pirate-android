@@ -186,7 +186,8 @@ private fun LiveRoomStatusMessage(
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
+// The concrete bridge method is annotated; lint loses that type through AndroidView's factory.
+@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
 @Composable
 fun LiveRoomViewerWebView(
     attach: LiveRoomViewerAttachResponse,
