@@ -33,6 +33,9 @@ import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.security.AgentKeyStore
+import sc.pirate.app.security.StoredAgentKey
+import sc.pirate.app.security.agentPublicKeysMatch
+import sc.pirate.app.security.parseAgentSigningBundle
 
 private data class AgentsSettingsState(
     val loading: Boolean = true,
@@ -94,6 +97,43 @@ private class AgentsSettingsViewModel(application: Application) : AndroidViewMod
         }
     }
 
+    fun enrollSigningKey(agent: UserAgent, rawBundle: String) {
+        viewModelScope.launch {
+            _state.value = _state.value.copy(savingAgentId = agent.id, saveError = null)
+            try {
+                val ownership = requireNotNull(agent.currentOwnership) { "Verified agent ownership is required." }
+                val expectedPublicKey = requireNotNull(ownership.publicKey) {
+                    "This ownership record has no public key to verify against."
+                }
+                val bundle = parseAgentSigningBundle(rawBundle)
+                require(agentPublicKeysMatch(bundle.publicKeyPem, expectedPublicKey)) {
+                    "The imported private key does not match this agent's verified public key."
+                }
+                val now = java.time.Instant.now().toString()
+                keyStore.save(
+                    StoredAgentKey(
+                        agentId = agent.id,
+                        displayName = agent.displayName,
+                        ownershipProvider = ownership.ownershipProvider,
+                        publicKeyPem = bundle.publicKeyPem,
+                        privateKeyPem = bundle.privateKeyPem,
+                        createdAt = now,
+                        updatedAt = now,
+                    ),
+                )
+                _state.value = _state.value.copy(
+                    savingAgentId = null,
+                    enrolledKeyAgentIds = _state.value.enrolledKeyAgentIds + agent.id,
+                )
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(
+                    savingAgentId = null,
+                    saveError = error.message ?: "Could not enroll the signing key.",
+                )
+            }
+        }
+    }
+
     private fun updateAgent(agentId: String, action: suspend () -> UserAgent) {
         viewModelScope.launch {
             _state.value = _state.value.copy(savingAgentId = agentId, saveError = null)
@@ -144,6 +184,7 @@ internal fun AgentsSettingsPanel() {
                     signingKeyEnrolled = agent.id in state.enrolledKeyAgentIds,
                     onUpdateName = { vm.updateDisplayName(agent.id, it) },
                     onUpdateHandle = { vm.updateHandle(agent.id, it) },
+                    onEnrollSigningKey = { vm.enrollSigningKey(agent, it) },
                 )
             }
         }
@@ -163,8 +204,10 @@ private fun AgentCard(
     signingKeyEnrolled: Boolean,
     onUpdateName: (String) -> Unit,
     onUpdateHandle: (String) -> Unit,
+    onEnrollSigningKey: (String) -> Unit,
 ) {
     var editMode by remember { mutableStateOf<String?>(null) }
+    var showKeyEnrollment by remember { mutableStateOf(false) }
     editMode?.let { mode ->
         AgentEditDialog(
             title = if (mode == "name") "Agent name" else "Agent handle",
@@ -175,6 +218,16 @@ private fun AgentCard(
                 editMode = null
             },
             onDismiss = { if (!saving) editMode = null },
+        )
+    }
+    if (showKeyEnrollment) {
+        SigningKeyEnrollmentDialog(
+            saving = saving,
+            onEnroll = {
+                onEnrollSigningKey(it)
+                showKeyEnrollment = false
+            },
+            onDismiss = { if (!saving) showKeyEnrollment = false },
         )
     }
     Column(
@@ -209,6 +262,14 @@ private fun AgentCard(
             variant = ButtonVariant.Outline,
             modifier = Modifier.fillMaxWidth(),
         )
+        if (!signingKeyEnrolled && agent.status == "active" && agent.currentOwnership?.ownershipState == "verified") {
+            PirateButton(
+                text = "Enroll signing key",
+                onClick = { showKeyEnrollment = true },
+                enabled = !saving && agent.currentOwnership.publicKey != null,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
         PirateButton(
             text = if (agent.handle == null) "Claim handle" else "Change handle",
             onClick = { editMode = "handle" },
@@ -217,6 +278,47 @@ private fun AgentCard(
             modifier = Modifier.fillMaxWidth(),
         )
     }
+}
+
+@Composable
+private fun SigningKeyEnrollmentDialog(
+    saving: Boolean,
+    onEnroll: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var bundle by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Enroll signing key") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Paste the agent registration JSON bundle. Android verifies its public key against the ownership record before encrypting the private key.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                )
+                OutlinedTextField(
+                    value = bundle,
+                    onValueChange = { bundle = it },
+                    enabled = !saving,
+                    minLines = 6,
+                    maxLines = 12,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            PirateButton(
+                text = "Verify and encrypt",
+                onClick = { onEnroll(bundle) },
+                loading = saving,
+                enabled = !saving && bundle.isNotBlank(),
+            )
+        },
+        dismissButton = {
+            PirateButton("Cancel", onDismiss, variant = ButtonVariant.Outline, enabled = !saving)
+        },
+    )
 }
 
 @Composable

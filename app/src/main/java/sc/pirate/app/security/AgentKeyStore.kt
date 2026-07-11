@@ -3,6 +3,7 @@ package sc.pirate.app.security
 import android.content.Context
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.SerialName
 
 @Serializable
 data class StoredAgentKey(
@@ -14,6 +15,38 @@ data class StoredAgentKey(
     val createdAt: String,
     val updatedAt: String,
 )
+
+@Serializable
+data class AgentSigningBundle(
+    @SerialName("display_name") val displayName: String? = null,
+    @SerialName("public_key_pem") val publicKeyPem: String,
+    @SerialName("private_key_pem") val privateKeyPem: String,
+)
+
+fun parseAgentSigningBundle(raw: String): AgentSigningBundle =
+    Json { ignoreUnknownKeys = true }.decodeFromString(AgentSigningBundle.serializer(), raw)
+
+fun agentPublicKeysMatch(left: String, right: String): Boolean =
+    canonicalPublicKeyBytes(left)?.contentEquals(canonicalPublicKeyBytes(right) ?: return false) == true
+
+private fun canonicalPublicKeyBytes(value: String): ByteArray? {
+    val normalized = value
+        .replace(Regex("-----BEGIN [^-]+-----"), "")
+        .replace(Regex("-----END [^-]+-----"), "")
+        .replace(Regex("\\s+"), "")
+    val decoded = runCatching { java.util.Base64.getUrlDecoder().decode(padBase64(normalized)) }
+        .recoverCatching { java.util.Base64.getDecoder().decode(padBase64(normalized)) }
+        .getOrNull()
+    if (decoded != null) return if (decoded.size >= 32) decoded.takeLast(32).toByteArray() else decoded
+    return normalized.takeIf { it.length == 64 && it.all(Char::isHexDigit) }
+        ?.chunked(2)
+        ?.map { it.toInt(16).toByte() }
+        ?.toByteArray()
+}
+
+private fun padBase64(value: String): String = value + "=".repeat((4 - value.length % 4) % 4)
+
+private fun Char.isHexDigit(): Boolean = this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
 
 internal interface AgentKeyPersistence {
     fun read(agentId: String): String?

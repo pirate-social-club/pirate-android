@@ -31,6 +31,7 @@ data class AgentOwnershipRecord(
     @SerialName("ownership_state") val ownershipState: String,
     @SerialName("verified_at") val verifiedAt: Long? = null,
     @SerialName("expires_at") val expiresAt: Long? = null,
+    @SerialName("public_key") val publicKey: String? = null,
 )
 
 @Serializable
