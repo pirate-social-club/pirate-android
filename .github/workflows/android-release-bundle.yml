@@ -42,6 +42,9 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Run unit tests and Android lint
+        run: ./scripts/androidw.sh --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug
+
       - name: Validate signing secrets
         env:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
