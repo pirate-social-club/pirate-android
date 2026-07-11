@@ -919,7 +919,6 @@ class ApiClient(private val sessionStore: SessionStore) {
             )
             return api.json.decodeFromString(KaraokeSession.serializer(), response)
         }
-        }
     }
 
     class PublicCommunitiesEndpoints internal constructor(private val api: ApiClient) {
