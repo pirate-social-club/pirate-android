@@ -650,6 +650,12 @@ data class CommentVoteResponse(
 }
 
 @Serializable
+data class CreateUserReportRequest(
+    @SerialName("reason_code") val reasonCode: String,
+    val note: String? = null,
+)
+
+@Serializable
 data class Comment(
     @SerialName("comment_id") private val contractCommentId: String? = null,
     @SerialName("id") private val feedCommentId: String? = null,

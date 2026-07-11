@@ -28,6 +28,7 @@ import sc.pirate.app.api.model.CreateCommunityListingRequest
 import sc.pirate.app.api.model.CreateCommunityRequest
 import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.CreatePostRequest
+import sc.pirate.app.api.model.CreateUserReportRequest
 import sc.pirate.app.api.model.CreateSongArtifactBundleRequest
 import sc.pirate.app.api.model.CreateSongArtifactUploadRequest
 import sc.pirate.app.api.model.DerivativeSourceListResponse
@@ -230,6 +231,8 @@ interface PostRepository {
         altchaHeader: String? = null,
     )
     suspend fun voteComment(commentId: String, value: Int): CommentVoteResponse
+    suspend fun reportPost(communityId: String, postId: String, request: CreateUserReportRequest)
+    suspend fun reportComment(communityId: String, commentId: String, request: CreateUserReportRequest)
 }
 
 interface ProfileRepository {
@@ -661,6 +664,14 @@ class ApiPostRepository(
 
     override suspend fun voteComment(commentId: String, value: Int): CommentVoteResponse {
         return apiClient.comments.vote(commentId, value)
+    }
+
+    override suspend fun reportPost(communityId: String, postId: String, request: CreateUserReportRequest) {
+        apiClient.communities.reportPost(communityId, postId, request)
+    }
+
+    override suspend fun reportComment(communityId: String, commentId: String, request: CreateUserReportRequest) {
+        apiClient.communities.reportComment(communityId, commentId, request)
     }
 }
 

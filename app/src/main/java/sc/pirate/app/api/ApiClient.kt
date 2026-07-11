@@ -817,6 +817,22 @@ class ApiClient(private val sessionStore: SessionStore) {
                 headers = altchaHeader.toAltchaHeader(),
             )
         }
+
+        suspend fun reportPost(communityId: String, postId: String, request: CreateUserReportRequest) {
+            val body = api.json.encodeToString(CreateUserReportRequest.serializer(), request)
+            api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/reports",
+                body,
+            )
+        }
+
+        suspend fun reportComment(communityId: String, commentId: String, request: CreateUserReportRequest) {
+            val body = api.json.encodeToString(CreateUserReportRequest.serializer(), request)
+            api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/comments/${api.encodePathSegment(commentId)}/reports",
+                body,
+            )
+        }
     }
 
     class PublicCommunitiesEndpoints internal constructor(private val api: ApiClient) {

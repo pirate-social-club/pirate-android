@@ -3,6 +3,7 @@ package sc.pirate.app.home
 import android.app.Application
 import android.net.Uri
 import android.view.LayoutInflater
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,6 +40,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -85,6 +87,7 @@ import java.nio.charset.StandardCharsets
 import sc.pirate.app.PirateApp
 import sc.pirate.app.R
 import sc.pirate.app.api.model.CommunityListing
+import sc.pirate.app.api.model.CreateUserReportRequest
 import sc.pirate.app.api.model.CommunityPurchase
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
@@ -105,6 +108,7 @@ import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.ReportContentSheet
 import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
@@ -120,6 +124,8 @@ data class HomeUiState(
     val refreshError: String? = null,
     val followError: String? = null,
     val voteError: String? = null,
+    val reportingPostIds: Set<String> = emptySet(),
+    val reportMessage: String? = null,
     val votingPostIds: Set<String> = emptySet(),
     val followingCommunityIds: Set<String> = emptySet(),
     val viewerUserId: String? = null,
@@ -259,6 +265,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun reportPost(communityId: String, postId: String, reasonCode: String) {
+        if (postId in _state.value.reportingPostIds) return
+        _state.value = _state.value.copy(
+            reportingPostIds = _state.value.reportingPostIds + postId,
+            reportMessage = null,
+        )
+        viewModelScope.launch {
+            try {
+                postRepository.reportPost(communityId, postId, CreateUserReportRequest(reasonCode))
+                _state.value = _state.value.copy(
+                    reportingPostIds = _state.value.reportingPostIds - postId,
+                    reportMessage = "Report submitted. Thank you for helping keep Pirate safe.",
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportingPostIds = _state.value.reportingPostIds - postId,
+                    reportMessage = e.message ?: "Could not submit report.",
+                )
+            }
+        }
+    }
+
+    fun clearReportMessage() {
+        _state.value = _state.value.copy(reportMessage = null)
     }
 
     private fun load(sort: String, timeRange: String) {
@@ -770,6 +804,14 @@ fun HomeScreen(
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
     var actionItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+    var reportItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+
+    LaunchedEffect(state.reportMessage) {
+        state.reportMessage?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            viewModel.clearReportMessage()
+        }
+    }
 
     authPromptAction?.let {
         signInDrawer { authPromptAction = null }
@@ -811,6 +853,10 @@ fun HomeScreen(
                 actionItem = null
                 sharePost(context, item.post.post.postId, item.post.post.title)
             },
+            onReport = {
+                actionItem = null
+                if (hasSession) reportItem = item else authPromptAction = "Reporting posts"
+            },
             onToggleFollow = {
                 actionItem = null
                 if (hasSession) {
@@ -818,6 +864,19 @@ fun HomeScreen(
                 } else {
                     authPromptAction = "Following communities"
                 }
+            },
+        )
+    }
+
+    reportItem?.let { item ->
+        val postId = item.post.post.postId
+        ReportContentSheet(
+            targetLabel = "post",
+            submitting = postId in state.reportingPostIds,
+            onDismiss = { if (postId !in state.reportingPostIds) reportItem = null },
+            onReasonSelected = { reason ->
+                viewModel.reportPost(item.homeCommunityId(), postId, reason)
+                reportItem = null
             },
         )
     }
@@ -1236,6 +1295,7 @@ private fun PostActionSheet(
     followLoading: Boolean,
     onDismiss: () -> Unit,
     onShare: () -> Unit,
+    onReport: () -> Unit,
     onToggleFollow: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -1269,8 +1329,7 @@ private fun PostActionSheet(
             SheetActionRow(
                 label = "Report post",
                 icon = PhosphorIcons.Flag,
-                enabled = false,
-                onClick = {},
+                onClick = onReport,
             )
             Spacer(modifier = Modifier.size(16.dp))
         }

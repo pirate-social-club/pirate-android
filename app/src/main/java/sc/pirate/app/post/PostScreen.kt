@@ -1,6 +1,7 @@
 package sc.pirate.app.post
 
 import android.app.Application
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -72,6 +73,7 @@ import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CommunityPurchase
 import sc.pirate.app.api.model.CommunityPurchaseSettlementFailureRequest
 import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
+import sc.pirate.app.api.model.CreateUserReportRequest
 import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
@@ -100,6 +102,7 @@ import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.ReportContentSheet
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
@@ -149,6 +152,8 @@ data class PostUiState(
     val repliesErrorByParentId: Map<String, String> = emptyMap(),
     val replySubmitErrorByParentId: Map<String, String> = emptyMap(),
     val commentVoteError: String? = null,
+    val reportingIds: Set<String> = emptySet(),
+    val reportMessage: String? = null,
 )
 
 private data class PostCommerceEnrichment(
@@ -428,6 +433,50 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+    }
+
+    fun reportPost(reasonCode: String) {
+        val post = _state.value.post?.post ?: return
+        report(
+            targetId = post.postId,
+            submit = { postRepository.reportPost(post.communityId, post.postId, CreateUserReportRequest(reasonCode)) },
+        )
+    }
+
+    fun reportComment(commentId: String, reasonCode: String) {
+        val comment = _state.value.comments.firstOrNull { it.comment.commentId == commentId }?.comment ?: return
+        report(
+            targetId = commentId,
+            submit = { postRepository.reportComment(comment.communityId, commentId, CreateUserReportRequest(reasonCode)) },
+        )
+    }
+
+    private fun report(targetId: String, submit: suspend () -> Unit) {
+        if (targetId in _state.value.reportingIds) return
+        _state.value = _state.value.copy(
+            reportingIds = _state.value.reportingIds + targetId,
+            reportMessage = null,
+        )
+        viewModelScope.launch {
+            try {
+                submit()
+                _state.value = _state.value.copy(
+                    reportingIds = _state.value.reportingIds - targetId,
+                    reportMessage = "Report submitted. Thank you for helping keep Pirate safe.",
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportingIds = _state.value.reportingIds - targetId,
+                    reportMessage = e.message ?: "Could not submit report.",
+                )
+            }
+        }
+    }
+
+    fun clearReportMessage() {
+        _state.value = _state.value.copy(reportMessage = null)
     }
 
     fun toggleSongPlayback(post: LocalizedPostResponse) {
@@ -1078,6 +1127,7 @@ fun PostScreen(
     val videoPlaybackState by viewModel.videoPlaybackState.collectAsState()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var reportTarget by remember { mutableStateOf<ReportTarget?>(null) }
     var observedFirstResume by rememberSaveable(postId, hasSession) { mutableStateOf(false) }
     val lifecycleOwner = LocalView.current.findViewTreeLifecycleOwner()
 
@@ -1126,6 +1176,28 @@ fun PostScreen(
         signInDrawer { authPromptAction = null }
     }
 
+    LaunchedEffect(state.reportMessage) {
+        state.reportMessage?.let { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            viewModel.clearReportMessage()
+        }
+    }
+
+    reportTarget?.let { target ->
+        ReportContentSheet(
+            targetLabel = target.label,
+            submitting = target.id in state.reportingIds,
+            onDismiss = { if (target.id !in state.reportingIds) reportTarget = null },
+            onReasonSelected = { reason ->
+                when (target) {
+                    is ReportTarget.Post -> viewModel.reportPost(reason)
+                    is ReportTarget.Comment -> viewModel.reportComment(target.id, reason)
+                }
+                reportTarget = null
+            },
+        )
+    }
+
     if (commentSortSheetOpen) {
         CommentSortSheet(
             selectedSort = state.commentSort,
@@ -1161,6 +1233,16 @@ fun PostScreen(
                             Icon(
                                 imageVector = PhosphorIcons.ShareNetwork,
                                 contentDescription = "Share post",
+                                tint = PirateTokens.colors.textPrimary,
+                            )
+                        }
+                        IconButton(onClick = {
+                            if (hasSession) reportTarget = ReportTarget.Post(post.postId)
+                            else authPromptAction = "Reporting posts"
+                        }) {
+                            Icon(
+                                imageVector = PhosphorIcons.Flag,
+                                contentDescription = "Report post",
                                 tint = PirateTokens.colors.textPrimary,
                             )
                         }
@@ -1359,6 +1441,10 @@ fun PostScreen(
                                     },
                                     onReply = {
                                         if (hasSession) viewModel.loadReplies(commentId) else authPromptAction = "Replying"
+                                    },
+                                    onReport = {
+                                        if (hasSession) reportTarget = ReportTarget.Comment(commentId)
+                                        else authPromptAction = "Reporting comments"
                                     },
                                 )
                             }
@@ -2040,6 +2126,7 @@ private fun CommentRow(
     isVoting: Boolean,
     onVote: (Int) -> Unit,
     onReply: () -> Unit,
+    onReport: () -> Unit,
 ) {
     val model = comment.comment
     val authorLabel = resolveAuthorLabel(
@@ -2105,10 +2192,26 @@ private fun CommentRow(
                         onVote = onVote,
                     )
                     ReplyPill(onClick = onReply)
+                    IconButton(onClick = onReport, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            imageVector = PhosphorIcons.Flag,
+                            contentDescription = "Report comment",
+                            tint = PirateTokens.colors.textSecondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+private sealed interface ReportTarget {
+    val id: String
+    val label: String
+
+    data class Post(override val id: String) : ReportTarget { override val label = "post" }
+    data class Comment(override val id: String) : ReportTarget { override val label = "comment" }
 }
 
 @Composable
