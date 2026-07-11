@@ -235,6 +235,7 @@ data class CreateCommunityRequest(
     @SerialName("default_age_gate_policy") val defaultAgeGatePolicy: String = "none",
     @SerialName("allow_anonymous_identity") val allowAnonymousIdentity: Boolean = false,
     @SerialName("anonymous_identity_scope") val anonymousIdentityScope: String? = null,
+    @SerialName("accepted_agent_ownership_providers") val acceptedAgentOwnershipProviders: List<String> = emptyList(),
     @SerialName("gate_policy") val gatePolicy: GatePolicy? = null,
     @SerialName("handle_policy") val handlePolicy: HandlePolicyInput = HandlePolicyInput(),
     @SerialName("community_bootstrap") val communityBootstrap: CreateCommunityBootstrapInput? = null,
@@ -739,6 +740,9 @@ data class CreatePostRequest(
     @SerialName("license_preset") val licensePreset: String? = null,
     @SerialName("commercial_rev_share_pct") val commercialRevSharePct: Int? = null,
     @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String>? = null,
+    @SerialName("authorship_mode") val authorshipMode: String? = null,
+    @SerialName("agent_id") val agentId: String? = null,
+    @SerialName("agent_action_proof") val agentActionProof: sc.pirate.app.security.AgentActionProof? = null,
 )
 
 @Serializable

@@ -23,7 +23,7 @@ private const val SIGNATURE_VERSION = "pirate-agent-action-signature-v2"
 @Serializable
 data class AgentActionProof(
     val nonce: String,
-    @SerialName("signed_at") val signedAt: Long,
+    @SerialName("signed_at") val signedAt: String,
     @SerialName("canonical_request_hash") val canonicalRequestHash: String,
     val signature: String,
 )
@@ -56,15 +56,15 @@ object AgentActionProofSigner {
             .digest(canonicalizeRequest(method, url, body).toByteArray(StandardCharsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
-    fun signaturePayload(nonce: String, signedAt: Long, canonicalRequestHash: String): String =
-        listOf(SIGNATURE_VERSION, nonce.trim(), signedAt.toString(), canonicalRequestHash.trim()).joinToString("\n")
+    fun signaturePayload(nonce: String, signedAt: String, canonicalRequestHash: String): String =
+        listOf(SIGNATURE_VERSION, nonce.trim(), signedAt.trim(), canonicalRequestHash.trim()).joinToString("\n")
 
     fun sign(
         method: String,
         url: String,
         body: String?,
         privateKeyPem: String,
-        signedAt: Long = System.currentTimeMillis() / 1000,
+        signedAt: String = java.time.Instant.now().toString(),
         nonce: String = UUID.randomUUID().toString(),
     ): AgentActionProof {
         val hash = requestHash(method, url, body)

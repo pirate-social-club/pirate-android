@@ -88,6 +88,9 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.VoteControl
 import java.util.UUID
+import kotlinx.serialization.encodeToString
+import sc.pirate.app.security.AgentActionProofSigner
+import sc.pirate.app.security.AgentKeyStore
 
 data class PostComposerUiState(
     val draftIdempotencyKey: String = UUID.randomUUID().toString(),
@@ -117,6 +120,10 @@ data class PostComposerUiState(
     val publicHandle: String? = null,
     val publicAvatarRef: String? = null,
     val identityMode: PostComposerIdentityMode = PostComposerIdentityMode.Public,
+    val signingAgentId: String? = null,
+    val signingAgentName: String? = null,
+    val signingAgentOwnershipProvider: String? = null,
+    val allowAgentIdentity: Boolean = false,
     val allowAnonymousIdentity: Boolean = false,
     val anonymousIdentityScope: String = "community_stable",
     val hasCommunityPostingRole: Boolean = false,
@@ -136,6 +143,7 @@ data class PostComposerUiState(
 enum class PostComposerIdentityMode(val apiValue: String) {
     Public("public"),
     Anonymous("anonymous"),
+    Agent("public"),
 }
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
@@ -145,11 +153,27 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     private val profileRepository get() = app.repositories.profileRepository
     private val powGate by lazy { PoWGate(app.apiClient) }
     private val draftStore by lazy { PostComposerDraftStore(app) }
+    private val agentKeyStore by lazy { AgentKeyStore.create(app) }
     private val _state = MutableStateFlow(PostComposerUiState())
     val state: StateFlow<PostComposerUiState> = _state.asStateFlow()
     private var submitJob: Job? = null
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            val agents = runCatching { app.apiClient.agents.list().items }.getOrDefault(emptyList())
+            val available = agents.firstOrNull { agent ->
+                agent.status == "active" &&
+                    agent.currentOwnership?.ownershipState == "verified" &&
+                    runCatching { agentKeyStore.find(agent.id) }.getOrNull() != null
+            }
+            if (available != null) {
+                _state.value = _state.value.copy(
+                    signingAgentId = available.id,
+                    signingAgentName = available.displayName,
+                    signingAgentOwnershipProvider = available.currentOwnership?.ownershipProvider,
+                )
+            }
+        }
         viewModelScope.launch {
             val restored = withContext(Dispatchers.IO) { draftStore.load() }
             if (restored != null) _state.value = restored.restoreInto(_state.value)
@@ -175,6 +199,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             selectedCommunityName = knownCommunity?.displayName,
             selectedCommunityRouteSlug = knownCommunity?.routeSlug,
             eligibility = null,
+            allowAgentIdentity = false,
             hasCommunityPostingRole = true,
             loadingEligibility = false,
             error = null,
@@ -191,6 +216,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             if (selectedCommunityId == null) {
                 _state.value = _state.value.copy(
                     eligibility = null,
+                    allowAgentIdentity = false,
                     hasCommunityPostingRole = false,
                     loadingEligibility = false,
                     error = null,
@@ -201,6 +227,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             if (!hasSession) {
                 _state.value = _state.value.copy(
                     eligibility = null,
+                    allowAgentIdentity = false,
                     hasCommunityPostingRole = false,
                     loadingEligibility = false,
                 )
@@ -212,10 +239,15 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 val profile = runCatching { profileRepository.getMe() }.getOrNull()
                 val viewerUserId = profile?.userId
                 val allowAnonymous = preview?.allowAnonymousIdentity == true && _state.value.postType.anonymousEligible()
-                val nextIdentityMode = if (allowAnonymous) {
-                    _state.value.identityMode
-                } else {
-                    PostComposerIdentityMode.Public
+                val allowAgent = _state.value.signingAgentOwnershipProvider?.let { provider ->
+                    provider in preview?.acceptedAgentOwnershipProviders.orEmpty()
+                } == true
+                val currentIdentity = _state.value.identityMode
+                val nextIdentityMode = when {
+                    currentIdentity == PostComposerIdentityMode.Agent && allowAgent && _state.value.signingAgentId != null &&
+                        _state.value.postType !in setOf(PostComposerMode.Live, PostComposerMode.Song) -> currentIdentity
+                    allowAnonymous -> currentIdentity
+                    else -> PostComposerIdentityMode.Public
                 }
                 _state.value = _state.value.copy(
                     selectedCommunityName = preview?.displayName ?: _state.value.selectedCommunityName,
@@ -226,6 +258,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     publicAvatarRef = profile?.avatarRef ?: _state.value.publicAvatarRef,
                     identityMode = nextIdentityMode,
                     allowAnonymousIdentity = allowAnonymous,
+                    allowAgentIdentity = allowAgent,
                     anonymousIdentityScope = preview?.anonymousIdentityScope?.takeIf { it.isNotBlank() } ?: "community_stable",
                     hasCommunityPostingRole = viewerHasCommunityPostingRole(viewerUserId, preview),
                     loadingEligibility = false,
@@ -387,6 +420,9 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     fun selectIdentityMode(identityMode: PostComposerIdentityMode) {
         val current = _state.value
         if (identityMode == PostComposerIdentityMode.Anonymous && !current.canUseAnonymousIdentity()) return
+        if (identityMode == PostComposerIdentityMode.Agent &&
+            (current.signingAgentId == null || !current.allowAgentIdentity || current.postType in setOf(PostComposerMode.Live, PostComposerMode.Song))
+        ) return
         _state.value = current.copy(identityMode = identityMode, error = null)
     }
 
@@ -498,9 +534,10 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                                 visibility = "public",
                             )
                         }
+                        val signedRequest = attachAgentAuthorship(communityId, request, current)
                         val createdPost = createPostWithProofOfWork(
                             communityId,
-                            request,
+                            signedRequest,
                         )
                         createdPost.post.postId
                     }
@@ -531,6 +568,31 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 submitJob = null
             }
         }
+    }
+
+    private fun attachAgentAuthorship(
+        communityId: String,
+        request: CreatePostRequest,
+        state: PostComposerUiState,
+    ): CreatePostRequest {
+        if (state.identityMode != PostComposerIdentityMode.Agent) return request
+        val agentId = requireNotNull(state.signingAgentId) { "No enrolled agent signing key is available." }
+        val key = requireNotNull(agentKeyStore.find(agentId)) { "The enrolled agent signing key is unavailable." }
+        val attributedRequest = request.copy(
+            authorshipMode = "user_agent",
+            agentId = agentId,
+        )
+        val body = app.apiClient.json.encodeToString(attributedRequest)
+        val path = "/communities/${app.apiClient.encodePathSegment(communityId)}/posts"
+        val proof = AgentActionProofSigner.sign(
+            method = "POST",
+            url = sc.pirate.app.BuildConfig.API_BASE_URL.trimEnd('/') + path,
+            body = body,
+            privateKeyPem = key.privateKeyPem,
+        )
+        return attributedRequest.copy(
+            agentActionProof = proof,
+        )
     }
 
     fun cancelSubmit() {
@@ -1810,6 +1872,22 @@ private fun PostComposerSettingsContent(
             onClick = { onIdentityModeChange(PostComposerIdentityMode.Anonymous) },
         )
     }
+    if (state.signingAgentId != null && state.allowAgentIdentity && state.postType !in setOf(PostComposerMode.Live, PostComposerMode.Song)) {
+        Spacer(modifier = Modifier.height(8.dp))
+        ComposerSettingsOptionRow(
+            checked = state.resolvedIdentityMode() == PostComposerIdentityMode.Agent,
+            title = state.signingAgentName ?: "Owned agent",
+            description = "Sign this post with the encrypted key on this device",
+            icon = {
+                AuthorPreviewAvatar(
+                    label = state.signingAgentName ?: "Agent",
+                    avatarSrc = null,
+                    anonymous = false,
+                )
+            },
+            onClick = { onIdentityModeChange(PostComposerIdentityMode.Agent) },
+        )
+    }
     Spacer(modifier = Modifier.height(28.dp))
     Text(
         text = "Visibility",
@@ -2249,10 +2327,11 @@ private fun PostComposerUiState.canUseAnonymousIdentity(): Boolean =
     allowAnonymousIdentity && postType.anonymousEligible()
 
 private fun PostComposerUiState.resolvedIdentityMode(): PostComposerIdentityMode =
-    if (identityMode == PostComposerIdentityMode.Anonymous && canUseAnonymousIdentity()) {
-        PostComposerIdentityMode.Anonymous
-    } else {
-        PostComposerIdentityMode.Public
+    when {
+        identityMode == PostComposerIdentityMode.Anonymous && canUseAnonymousIdentity() -> PostComposerIdentityMode.Anonymous
+        identityMode == PostComposerIdentityMode.Agent && signingAgentId != null && allowAgentIdentity &&
+            postType !in setOf(PostComposerMode.Live, PostComposerMode.Song) -> PostComposerIdentityMode.Agent
+        else -> PostComposerIdentityMode.Public
     }
 
 private fun PostComposerUiState.publicAuthorLabel(): String =
@@ -2262,13 +2341,17 @@ private fun PostComposerUiState.anonymousAuthorLabel(): String =
     "Pseudonym"
 
 private fun PostComposerUiState.previewAuthorLabel(): String =
-    if (resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) anonymousAuthorLabel() else publicAuthorLabel()
+    when (resolvedIdentityMode()) {
+        PostComposerIdentityMode.Anonymous -> anonymousAuthorLabel()
+        PostComposerIdentityMode.Agent -> signingAgentName ?: "Owned agent"
+        PostComposerIdentityMode.Public -> publicAuthorLabel()
+    }
 
 private fun PostComposerUiState.publicAvatarSrc(): String? =
     resolvePublicMediaSrc(publicAvatarRef) ?: buildDefaultUserAvatarSrc(publicAuthorLabel()).takeIf { it.isNotBlank() }
 
 private fun PostComposerUiState.previewAuthorAvatarSrc(): String? =
-    if (resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) null else publicAvatarSrc()
+    if (resolvedIdentityMode() == PostComposerIdentityMode.Public) publicAvatarSrc() else null
 
 private fun PostComposerMode.anonymousEligible(): Boolean =
     this == PostComposerMode.Text ||

@@ -40,7 +40,7 @@ class AgentActionProofTest {
             url = "https://pirate.test/communities/cmt_test/posts",
             body = """{"title":"Ship log"}""",
             privateKeyPem = pem,
-            signedAt = 1_700_000_000,
+            signedAt = "2026-04-19T12:00:00.000Z",
             nonce = "nonce-test",
         )
         val verifier = Signature.getInstance("Ed25519", provider).apply {
