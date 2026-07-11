@@ -54,6 +54,7 @@ object PhosphorIcons {
     val HandPalm: ImageVector = AdamPhosphorIcons.Regular.HandPalm
     val IdentificationCard: ImageVector = AdamPhosphorIcons.Regular.IdentificationCard
     val PaperPlaneRight: ImageVector = AdamPhosphorIcons.Regular.PaperPlaneRight
+    val ShareNetwork: ImageVector = AdamPhosphorIcons.Regular.ShareNetwork
     val SignOut: ImageVector = AdamPhosphorIcons.Regular.SignOut
     val CheckCircle: ImageVector = AdamPhosphorIcons.Regular.CheckCircle
     val WarningCircle: ImageVector = AdamPhosphorIcons.Fill.WarningCircle

@@ -98,6 +98,7 @@ import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.sharePost
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -762,6 +763,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val context = LocalContext.current
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val feed = state.feed
@@ -805,6 +807,10 @@ fun HomeScreen(
             isFollowing = item.community.viewerFollowing == true,
             followLoading = item.homeCommunityId() in state.followingCommunityIds,
             onDismiss = { actionItem = null },
+            onShare = {
+                actionItem = null
+                sharePost(context, item.post.post.postId, item.post.post.title)
+            },
             onToggleFollow = {
                 actionItem = null
                 if (hasSession) {
@@ -1229,6 +1235,7 @@ private fun PostActionSheet(
     isFollowing: Boolean,
     followLoading: Boolean,
     onDismiss: () -> Unit,
+    onShare: () -> Unit,
     onToggleFollow: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -1242,6 +1249,11 @@ private fun PostActionSheet(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            SheetActionRow(
+                label = "Share post",
+                icon = PhosphorIcons.ShareNetwork,
+                onClick = onShare,
+            )
             SheetActionRow(
                 label = if (isFollowing) "Unfollow" else "Follow",
                 icon = PhosphorIcons.Users,

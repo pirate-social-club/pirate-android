@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -89,6 +90,7 @@ import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.sharePost
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -1069,6 +1071,7 @@ fun PostScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
@@ -1153,6 +1156,15 @@ fun PostScreen(
                     }
                 },
                 actions = {
+                    state.post?.post?.let { post ->
+                        IconButton(onClick = { sharePost(context, post.postId, post.title) }) {
+                            Icon(
+                                imageVector = PhosphorIcons.ShareNetwork,
+                                contentDescription = "Share post",
+                                tint = PirateTokens.colors.textPrimary,
+                            )
+                        }
+                    }
                     if (onNavigateToCompose != null) {
                         val communityId = state.post?.post?.communityId
                         if (!communityId.isNullOrBlank()) {

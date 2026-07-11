@@ -29,14 +29,25 @@ object PirateRouteSections {
 
 object PirateDeepLinks {
     fun routeFromUri(uri: Uri?): String? {
-        if (uri == null || !uri.scheme.equals("pirate", ignoreCase = true)) return null
-        return when (uri.host) {
-            "post" -> uri.pathSegments.firstOrNull()
+        if (uri == null) return null
+        return routeFromParts(uri.scheme, uri.host, uri.pathSegments)
+    }
+
+    internal fun routeFromParts(scheme: String?, host: String?, pathSegments: List<String>): String? {
+        if (scheme.equals("pirate", ignoreCase = true)) return when (host?.lowercase()) {
+            "post" -> pathSegments.firstOrNull()
                 ?.takeIf { it.isNotBlank() }
                 ?.let(PirateRoute.Post::buildRoute)
-            "community" -> uri.pathSegments.firstOrNull()
+            "community" -> pathSegments.firstOrNull()
                 ?.takeIf { it.isNotBlank() }
                 ?.let(PirateRoute.Community::buildRoute)
+            else -> null
+        }
+        if (!scheme.equals("https", ignoreCase = true) || !host.equals("pirate.sc", ignoreCase = true)) return null
+        val id = pathSegments.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return null
+        return when (pathSegments.firstOrNull()?.lowercase()) {
+            "p" -> PirateRoute.Post.buildRoute(id)
+            "c" -> PirateRoute.Community.buildRoute(id)
             else -> null
         }
     }
