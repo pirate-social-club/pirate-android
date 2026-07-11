@@ -2,12 +2,16 @@ package sc.pirate.app.api
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -15,8 +19,11 @@ import okio.BufferedSink
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import sc.pirate.app.api.model.*
 import java.net.URLEncoder
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class ApiError(
     val code: String,
@@ -33,10 +40,17 @@ private fun StreamUpload.toRequestBody(): RequestBody = object : RequestBody() {
     override fun writeTo(sink: BufferedSink) {
         openStream().use { input ->
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var written = 0L
+            var lastReported = 0L
             while (true) {
                 val count = input.read(buffer)
                 if (count < 0) break
                 sink.write(buffer, 0, count)
+                written += count
+                if (written - lastReported >= 256L * 1024L || written == contentLength) {
+                    onProgress?.invoke(written, contentLength)
+                    lastReported = written
+                }
             }
         }
     }
@@ -162,26 +176,11 @@ class ApiClient(private val sessionStore: SessionStore) {
         parts: MultipartBody,
         requireAuth: Boolean = true,
     ): String {
-        val response = withContext(Dispatchers.IO) {
-            val requestBuilder = Request.Builder().url("$baseUrl$path")
-            if (requireAuth) {
-                val token = sessionStore.getAccessToken()
-                if (token != null) {
-                    requestBuilder.header("Authorization", "Bearer $token")
-                }
-            }
-            client.newCall(
-                requestBuilder
-                    .post(parts)
-                    .build(),
-            ).execute().use { rawResponse ->
-                ApiResponse(
-                    successful = rawResponse.isSuccessful,
-                    status = rawResponse.code,
-                    body = rawResponse.body?.string().orEmpty(),
-                )
-            }
+        val requestBuilder = Request.Builder().url("$baseUrl$path")
+        if (requireAuth) {
+            sessionStore.getAccessToken()?.let { requestBuilder.header("Authorization", "Bearer $it") }
         }
+        val response = executeCancellable(requestBuilder.post(parts).build())
 
         if (!response.successful) {
             val errorResponse = try {
@@ -251,21 +250,11 @@ class ApiClient(private val sessionStore: SessionStore) {
         upload: StreamUpload,
         requireAuth: Boolean = true,
     ): String {
-        val response = withContext(Dispatchers.IO) {
-            val requestBuilder = Request.Builder().url("$baseUrl$path")
-            if (requireAuth) {
-                sessionStore.getAccessToken()?.let { token ->
-                    requestBuilder.header("Authorization", "Bearer $token")
-                }
-            }
-            client.newCall(requestBuilder.put(upload.toRequestBody()).build()).execute().use { rawResponse ->
-                ApiResponse(
-                    successful = rawResponse.isSuccessful,
-                    status = rawResponse.code,
-                    body = rawResponse.body?.string().orEmpty(),
-                )
-            }
+        val requestBuilder = Request.Builder().url("$baseUrl$path")
+        if (requireAuth) {
+            sessionStore.getAccessToken()?.let { requestBuilder.header("Authorization", "Bearer $it") }
         }
+        val response = executeCancellable(requestBuilder.put(upload.toRequestBody()).build())
         if (!response.successful) {
             val errorResponse = try {
                 json.decodeFromString<ErrorResponse>(response.body)
@@ -282,6 +271,28 @@ class ApiClient(private val sessionStore: SessionStore) {
         }
         return response.body
     }
+
+    private suspend fun executeCancellable(request: Request): ApiResponse =
+        suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, error: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use {
+                        val result = ApiResponse(
+                            successful = it.isSuccessful,
+                            status = it.code,
+                            body = it.body?.string().orEmpty(),
+                        )
+                        if (continuation.isActive) continuation.resume(result)
+                    }
+                }
+            })
+        }
 
     internal fun buildQueryPath(path: String, params: List<Pair<String, String?>>): String {
         val query = params

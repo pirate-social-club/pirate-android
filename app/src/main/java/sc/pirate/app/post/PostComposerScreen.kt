@@ -53,6 +53,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import sc.pirate.app.api.PoWGate
 import sc.pirate.app.api.model.CreateLiveRoomRequest
@@ -116,6 +117,9 @@ data class PostComposerUiState(
     val loadingEligibility: Boolean = false,
     val submitting: Boolean = false,
     val solvingProofOfWork: Boolean = false,
+    val uploadLabel: String? = null,
+    val uploadBytesWritten: Long = 0L,
+    val uploadTotalBytes: Long = 0L,
     val error: String? = null,
     val submitted: Boolean = false,
     val createdPostId: String? = null,
@@ -133,6 +137,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
     private val powGate by lazy { PoWGate(app.apiClient) }
     private val _state = MutableStateFlow(PostComposerUiState())
     val state: StateFlow<PostComposerUiState> = _state.asStateFlow()
+    private var submitJob: Job? = null
 
     fun configureInitialCommunity(communityId: String?) {
         val id = communityId?.trim()?.takeIf { it.isNotBlank() }
@@ -401,8 +406,14 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             _state.value = current.copy(error = "Choose a community before posting.")
             return
         }
-        viewModelScope.launch {
-            _state.value = current.copy(submitting = true, error = null)
+        submitJob = viewModelScope.launch {
+            _state.value = current.copy(
+                submitting = true,
+                error = null,
+                uploadLabel = null,
+                uploadBytesWritten = 0L,
+                uploadTotalBytes = 0L,
+            )
             try {
                 val createdPostId = when (current.postType) {
                     PostComposerMode.Live -> submitLiveRoom(communityId, current)
@@ -472,16 +483,31 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     submitting = false,
                     submitted = true,
                     createdPostId = createdPostId,
+                    uploadLabel = null,
                 )
+            } catch (e: CancellationException) {
+                _state.value = _state.value.copy(
+                    submitting = false,
+                    solvingProofOfWork = false,
+                    uploadLabel = null,
+                    error = "Publishing canceled. Your draft is still here.",
+                )
+                throw e
             } catch (e: Exception) {
-                if (e is CancellationException) throw e
                 _state.value = _state.value.copy(
                     submitting = false,
                     solvingProofOfWork = false,
                     error = e.message ?: "Failed to create post",
+                    uploadLabel = null,
                 )
+            } finally {
+                submitJob = null
             }
         }
+    }
+
+    fun cancelSubmit() {
+        submitJob?.cancel()
     }
 
     private suspend fun createPostWithProofOfWork(
@@ -591,6 +617,9 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         } else {
             communityRepository.getSongArtifactBundle(communityId, pendingBundleId)
         }
+        if (_state.value.song.pendingBundleId != bundle.id) {
+            _state.value = _state.value.copy(song = _state.value.song.copy(pendingBundleId = bundle.id))
+        }
         if (songBundleRequiresSourceReference(bundle)) {
             throw IllegalStateException("Your uploaded song is too similar to an existing song.")
         }
@@ -650,6 +679,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "video/mp4"
         val name = uri.displayName()
+        setUploadProgress("Uploading video", 0L, uri.sizeBytes() ?: 0L)
         val sizeBytes = uri.requireUploadSize("primary_video")
         val intent = communityRepository.createArtifactUpload(
             communityId,
@@ -676,7 +706,16 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
         val name = uri.displayName()
+        val label = when (kind) {
+            "primary_audio" -> "Uploading primary audio"
+            "cover_art" -> "Uploading cover art"
+            "canvas_video" -> "Uploading canvas video"
+            "instrumental_audio" -> "Uploading instrumental audio"
+            "vocal_audio" -> "Uploading vocal audio"
+            else -> "Uploading media"
+        }
         val sizeBytes = uri.requireUploadSize(kind)
+        setUploadProgress(label, 0L, sizeBytes)
         val intent = communityRepository.createArtifactUpload(
             communityId,
             CreateSongArtifactUploadRequest(
@@ -764,13 +803,23 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             app.contentResolver.openInputStream(this)
                 ?: throw IllegalStateException("Could not read the selected file.")
         },
+        onProgress = { written, total -> setUploadProgress(_state.value.uploadLabel ?: "Uploading media", written, total) },
     )
+
+    private fun setUploadProgress(label: String, written: Long, total: Long) {
+        _state.value = _state.value.copy(
+            uploadLabel = label,
+            uploadBytesWritten = written,
+            uploadTotalBytes = total,
+        )
+    }
 
     private suspend fun Uri.uploadCommunityMedia(kind: String): String {
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(this) ?: "image/jpeg"
         val name = displayName()
         val sizeBytes = requireUploadSize(kind)
+        setUploadProgress("Uploading image", 0L, sizeBytes)
         return communityRepository.uploadMedia(kind, streamUpload(sizeBytes, mimeType), name)
     }
 }
@@ -882,6 +931,13 @@ fun PostComposerScreen(
                     color = PirateTokens.colors.bgPage,
                     border = BorderStroke(0.5.dp, PirateTokens.colors.borderSoft),
                 ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
                     PirateButton(
                         onClick = {
                             when {
@@ -898,10 +954,17 @@ fun PostComposerScreen(
                         },
                         enabled = canAdvanceStep && !state.submitting,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(16.dp),
+                            .fillMaxWidth(),
                     )
+                    if (state.submitting) {
+                        PirateButton(
+                            text = "Cancel publishing",
+                            onClick = viewModel::cancelSubmit,
+                            variant = ButtonVariant.Outline,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    }
                 }
             }
         },
@@ -1834,6 +1897,18 @@ private fun PostComposerPublishContent(
         Spacer(modifier = Modifier.height(12.dp))
         FormNote(
             message = "Verifying community access...",
+            tone = FormTone.Warning,
+        )
+    } else if (state.uploadLabel != null) {
+        Spacer(modifier = Modifier.height(12.dp))
+        val percent = if (state.uploadTotalBytes > 0L) {
+            ((state.uploadBytesWritten * 100L) / state.uploadTotalBytes).coerceIn(0L, 100L)
+        } else null
+        FormNote(
+            message = buildString {
+                append(state.uploadLabel)
+                if (percent != null) append(" · $percent%")
+            },
             tone = FormTone.Warning,
         )
     } else if (!hasSession) {
