@@ -26,8 +26,11 @@ data class AgentSigningBundle(
 fun parseAgentSigningBundle(raw: String): AgentSigningBundle =
     Json { ignoreUnknownKeys = true }.decodeFromString(AgentSigningBundle.serializer(), raw)
 
-fun agentPublicKeysMatch(left: String, right: String): Boolean =
-    canonicalPublicKeyBytes(left)?.contentEquals(canonicalPublicKeyBytes(right) ?: return false) == true
+fun agentPublicKeysMatch(left: String, right: String): Boolean {
+    val leftBytes = canonicalPublicKeyBytes(left) ?: return false
+    val rightBytes = canonicalPublicKeyBytes(right) ?: return false
+    return leftBytes.contentEquals(rightBytes)
+}
 
 private fun canonicalPublicKeyBytes(value: String): ByteArray? {
     val normalized = value
