@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -20,11 +21,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.api.model.SessionExchangeResponse
@@ -49,11 +53,14 @@ fun WalletScreen(
     onDisconnectWallet: () -> Unit,
     onSignIn: () -> Unit,
     onLoadNativeBalance: (String, String) -> Unit,
+    onSendNativeAsset: (String, String, String, String) -> Unit,
+    onClearSendFeedback: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     var receiveAddress by remember { mutableStateOf<String?>(null) }
+    var showSend by rememberSaveable { mutableStateOf(false) }
     val linkedWallet = session?.primaryWalletAttachment()
     val connectedAddress = walletConnectState.connectedAddress?.takeIf { it.isNotBlank() }
     val connectedWalletIsLinked = connectedAddress != null && session?.walletAttachments.orEmpty().any {
@@ -85,6 +92,26 @@ fun WalletScreen(
                 )
             },
             onDismiss = { receiveAddress = null },
+        )
+    }
+
+    if (showSend && connectedAddress != null && walletConnectState.selectedChain != null) {
+        SendNativeAssetDialog(
+            from = connectedAddress,
+            chainId = walletConnectState.selectedChain,
+            symbol = nativeSymbol(walletConnectState.selectedChain),
+            sending = walletUiState.sending,
+            transactionHash = walletUiState.sendTransactionHash,
+            error = walletUiState.sendError,
+            onSend = { recipient, amount ->
+                onSendNativeAsset(connectedAddress, recipient, amount, walletConnectState.selectedChain)
+            },
+            onDismiss = {
+                if (!walletUiState.sending) {
+                    showSend = false
+                    onClearSendFeedback()
+                }
+            },
         )
     }
 
@@ -207,6 +234,14 @@ fun WalletScreen(
                         )
                     }
                 }
+                item {
+                    PirateButton(
+                        text = "Send ${walletUiState.nativeBalanceSymbol ?: nativeSymbol(walletConnectState.selectedChain)}",
+                        onClick = { showSend = true },
+                        enabled = !walletUiState.sending,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
         }
 
@@ -261,6 +296,73 @@ fun WalletScreen(
             )
         }
     }
+}
+
+@Composable
+private fun SendNativeAssetDialog(
+    from: String,
+    chainId: String,
+    symbol: String,
+    sending: Boolean,
+    transactionHash: String?,
+    error: String?,
+    onSend: (recipient: String, amount: String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var recipient by rememberSaveable { mutableStateOf("") }
+    var amount by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Send $symbol") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Network: $chainId", color = PirateTokens.colors.textSecondary)
+                Text("From: ${shortWalletAddress(from)}", color = PirateTokens.colors.textSecondary)
+                Text(
+                    "Your wallet will show the final network fee and require confirmation.",
+                    color = PirateTokens.colors.textSecondary,
+                )
+                OutlinedTextField(
+                    value = recipient,
+                    onValueChange = { recipient = it },
+                    label = { Text("Recipient address") },
+                    enabled = !sending && transactionHash == null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Amount ($symbol)") },
+                    enabled = !sending && transactionHash == null,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { StatusCard("Could not send", it, StatusTone.Warning) }
+                transactionHash?.let {
+                    StatusCard("Transaction submitted", shortWalletAddress(it), StatusTone.Success)
+                }
+            }
+        },
+        confirmButton = {
+            if (transactionHash == null) {
+                PirateButton(
+                    text = "Review in wallet",
+                    onClick = { onSend(recipient, amount) },
+                    loading = sending,
+                    enabled = !sending && recipient.isNotBlank() && amount.isNotBlank(),
+                )
+            } else {
+                PirateButton("Done", onDismiss)
+            }
+        },
+        dismissButton = {
+            if (transactionHash == null) {
+                PirateButton("Cancel", onDismiss, variant = ButtonVariant.Outline, enabled = !sending)
+            }
+        },
+    )
 }
 
 @Composable

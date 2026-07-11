@@ -10,6 +10,8 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.math.RoundingMode
+import org.web3j.crypto.WalletUtils
+import sc.pirate.app.walletconnect.EvmTransactionRequest
 import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.auth.PrivyClientStore
 import sc.pirate.app.auth.PrivyRuntimeConfig
@@ -22,6 +24,9 @@ data class WalletLinkUiState(
     val nativeBalance: String? = null,
     val nativeBalanceSymbol: String? = null,
     val balanceError: String? = null,
+    val sending: Boolean = false,
+    val sendTransactionHash: String? = null,
+    val sendError: String? = null,
 )
 
 class WalletViewModel(application: Application) : AndroidViewModel(application) {
@@ -97,6 +102,44 @@ class WalletViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
     }
+
+    fun sendNativeAsset(from: String, recipient: String, amount: String, chainId: String) {
+        if (_state.value.sending) return
+        val normalizedRecipient = recipient.trim()
+        val value = runCatching { nativeAmountToAtomic(amount) }.getOrElse { error ->
+            _state.value = _state.value.copy(sendError = error.message ?: "Enter a valid amount.")
+            return
+        }
+        if (!WalletUtils.isValidAddress(normalizedRecipient)) {
+            _state.value = _state.value.copy(sendError = "Enter a valid EVM wallet address.")
+            return
+        }
+        viewModelScope.launch {
+            _state.value = _state.value.copy(sending = true, sendError = null, sendTransactionHash = null)
+            try {
+                val hash = app.reownManager.sendEvmTransaction(
+                    EvmTransactionRequest(
+                        from = from,
+                        to = normalizedRecipient,
+                        value = "0x${value.toString(16)}",
+                    ),
+                    chainId,
+                )
+                _state.value = _state.value.copy(sending = false, sendTransactionHash = hash)
+                loadNativeBalance(from, chainId)
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(
+                    sending = false,
+                    sendError = error.message ?: "Wallet transaction failed.",
+                )
+            }
+        }
+    }
+
+    fun clearSendFeedback() {
+        if (_state.value.sending) return
+        _state.value = _state.value.copy(sendTransactionHash = null, sendError = null)
+    }
 }
 
 internal fun formatNativeBalance(atomic: BigInteger): String =
@@ -111,4 +154,11 @@ internal fun nativeSymbol(chainId: String): String = when (chainId.substringAfte
     "56", "97" -> "BNB"
     "43114", "43113" -> "AVAX"
     else -> "ETH"
+}
+
+internal fun nativeAmountToAtomic(value: String): BigInteger {
+    val amount = value.trim().toBigDecimalOrNull() ?: throw IllegalArgumentException("Enter a valid amount.")
+    require(amount > BigDecimal.ZERO) { "Amount must be greater than zero." }
+    require(amount.scale().coerceAtLeast(0) <= 18) { "Use no more than 18 decimal places." }
+    return amount.movePointRight(18).toBigIntegerExact()
 }
