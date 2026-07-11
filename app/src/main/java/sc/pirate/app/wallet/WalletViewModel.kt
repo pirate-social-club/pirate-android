@@ -10,7 +10,6 @@ import kotlinx.coroutines.launch
 import java.math.BigDecimal
 import java.math.BigInteger
 import java.math.RoundingMode
-import org.web3j.crypto.WalletUtils
 import sc.pirate.app.walletconnect.EvmTransactionRequest
 import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.auth.PrivyClientStore
@@ -110,7 +109,7 @@ class WalletViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = _state.value.copy(sendError = error.message ?: "Enter a valid amount.")
             return
         }
-        if (!WalletUtils.isValidAddress(normalizedRecipient)) {
+        if (!isValidEvmAddress(normalizedRecipient)) {
             _state.value = _state.value.copy(sendError = "Enter a valid EVM wallet address.")
             return
         }
@@ -162,3 +161,8 @@ internal fun nativeAmountToAtomic(value: String): BigInteger {
     require(amount.scale().coerceAtLeast(0) <= 18) { "Use no more than 18 decimal places." }
     return amount.movePointRight(18).toBigIntegerExact()
 }
+
+internal fun isValidEvmAddress(value: String): Boolean =
+    value.length == 42 &&
+        value.startsWith("0x") &&
+        value.drop(2).all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }

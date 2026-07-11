@@ -30,4 +30,11 @@ class WalletBalanceTest {
         assertFailsWith<IllegalArgumentException> { nativeAmountToAtomic("-1") }
         assertFailsWith<IllegalArgumentException> { nativeAmountToAtomic("0.0000000000000000001") }
     }
+
+    @Test
+    fun `validates exact EVM address shape`() {
+        assertEquals(true, isValidEvmAddress("0x000000000000000000000000000000000000dEaD"))
+        assertEquals(false, isValidEvmAddress("000000000000000000000000000000000000dEaD"))
+        assertEquals(false, isValidEvmAddress("0x000000000000000000000000000000000000xyz0"))
+    }
 }
