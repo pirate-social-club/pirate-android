@@ -7,6 +7,7 @@ import sc.pirate.app.api.model.LiveRoomPerformerAllocationInput
 import sc.pirate.app.api.model.LiveRoomSetlistInput
 import sc.pirate.app.api.model.LiveRoomSetlistItemInput
 import sc.pirate.app.api.model.PostMediaRef
+import sc.pirate.app.api.model.RoyaltyAllocationInput
 import sc.pirate.app.api.model.SongArtifactBundle
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -149,6 +150,15 @@ data class SongComposerState(
     val regionalPricingEnabled: Boolean = false,
     val pendingBundleId: String? = null,
     val upstreamAssetRefs: List<String> = emptyList(),
+    val royaltyAllocations: List<RoyaltyAllocationState> = emptyList(),
+)
+
+@Serializable
+data class RoyaltyAllocationState(
+    val id: String,
+    val recipientKind: String,
+    val walletAddress: String,
+    val sharePercent: String,
 )
 
 enum class PostComposerStep {
@@ -428,8 +438,47 @@ fun buildSongPostRequest(
             null
         },
         upstreamAssetRefs = if (song.songMode == SongMode.Remix) song.upstreamAssetRefs else null,
+        royaltyAllocations = buildRoyaltyAllocationInputs(song),
     )
 }
+
+fun buildRoyaltyAllocationInputs(song: SongComposerState): List<RoyaltyAllocationInput>? {
+    val allocations = song.royaltyAllocations
+    if (allocations.isEmpty()) return null
+    if (allocations.size == 1 && allocations[0].recipientKind == "creator" &&
+        allocations[0].sharePercent.trim().toBigDecimalOrNull()?.compareTo(BigDecimal("100")) == 0
+    ) return null
+    require(allocations.size <= 10) { "Royalty split supports at most 10 recipients." }
+    require(allocations.count { it.recipientKind == "creator" } == 1) {
+        "Royalty split must include exactly one creator recipient."
+    }
+    require(song.licensePreset != AssetLicensePreset.NonCommercial || allocations.size == 1) {
+        "Collaborator royalty splits require a commercial song license."
+    }
+    val seenWallets = mutableSetOf<String>()
+    var totalBps = 0
+    val result = allocations.map { allocation ->
+        val wallet = allocation.walletAddress.trim()
+        require(isValidRoyaltyWallet(wallet)) { "Enter a valid wallet address for every royalty recipient." }
+        require(seenWallets.add(wallet.lowercase())) { "Each royalty recipient wallet must be unique." }
+        val percent = allocation.sharePercent.trim().toBigDecimalOrNull()
+            ?: throw IllegalArgumentException("Enter a valid percentage for every royalty recipient.")
+        val bps = try {
+            percent.movePointRight(2).intValueExact()
+        } catch (_: ArithmeticException) {
+            throw IllegalArgumentException("Royalty shares must use at most two decimal places.")
+        }
+        require(bps in 1..10_000) { "Royalty shares must be greater than 0%." }
+        totalBps += bps
+        RoyaltyAllocationInput(allocation.recipientKind, wallet, bps)
+    }
+    require(totalBps == 10_000) { "Royalty shares must total 100% before publishing." }
+    return result
+}
+
+private fun isValidRoyaltyWallet(value: String): Boolean =
+    value.length == 42 && value.startsWith("0x") &&
+        value.drop(2).all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
 fun buildVideoPostRequest(
     anonymousScope: String? = null,

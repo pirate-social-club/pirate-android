@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -544,5 +545,42 @@ class PostComposerStateTest {
     fun normalizeLiveRoomGuestHandle_acceptsHandleForms() {
         assertEquals("guest.pirate", normalizeLiveRoomGuestHandle("@guest.pirate"))
         assertEquals("guest.pirate", normalizeLiveRoomGuestHandle("/u/guest.pirate"))
+    }
+
+    @Test
+    fun royaltyAllocations_validateAndConvertToBasisPoints() {
+        val song = SongComposerState(
+            licensePreset = AssetLicensePreset.CommercialUse,
+            royaltyAllocations = listOf(
+                RoyaltyAllocationState("creator", "creator", "0x0000000000000000000000000000000000000001", "62.5"),
+                RoyaltyAllocationState("collab", "collaborator", "0x0000000000000000000000000000000000000002", "37.5"),
+            ),
+        )
+        val result = buildRoyaltyAllocationInputs(song).orEmpty()
+        assertEquals(listOf(6250, 3750), result.map { it.shareBps })
+        assertEquals(listOf("creator", "collaborator"), result.map { it.recipientKind })
+    }
+
+    @Test
+    fun royaltyAllocations_rejectInvalidTotalsDuplicatesAndNonCommercialCollaborators() {
+        val base = listOf(
+            RoyaltyAllocationState("creator", "creator", "0x0000000000000000000000000000000000000001", "60"),
+            RoyaltyAllocationState("collab", "collaborator", "0x0000000000000000000000000000000000000002", "30"),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            buildRoyaltyAllocationInputs(SongComposerState(licensePreset = AssetLicensePreset.CommercialUse, royaltyAllocations = base))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            buildRoyaltyAllocationInputs(SongComposerState(
+                licensePreset = AssetLicensePreset.CommercialUse,
+                royaltyAllocations = base.mapIndexed { index, it -> if (index == 1) it.copy(walletAddress = base[0].walletAddress, sharePercent = "40") else it },
+            ))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            buildRoyaltyAllocationInputs(SongComposerState(
+                licensePreset = AssetLicensePreset.NonCommercial,
+                royaltyAllocations = base.mapIndexed { index, it -> if (index == 1) it.copy(sharePercent = "40") else it },
+            ))
+        }
     }
 }

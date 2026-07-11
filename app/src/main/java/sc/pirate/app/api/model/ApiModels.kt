@@ -379,6 +379,7 @@ data class CommunityPreview(
     @SerialName("viewer_following") val viewerFollowing: Boolean? = null,
     @SerialName("allow_anonymous_identity") val allowAnonymousIdentity: Boolean = false,
     @SerialName("anonymous_identity_scope") val anonymousIdentityScope: String? = null,
+    @SerialName("accepted_agent_ownership_providers") val acceptedAgentOwnershipProviders: List<String> = emptyList(),
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
 ) {
@@ -743,6 +744,14 @@ data class CreatePostRequest(
     @SerialName("authorship_mode") val authorshipMode: String? = null,
     @SerialName("agent_id") val agentId: String? = null,
     @SerialName("agent_action_proof") val agentActionProof: sc.pirate.app.security.AgentActionProof? = null,
+    @SerialName("royalty_allocations") val royaltyAllocations: List<RoyaltyAllocationInput>? = null,
+)
+
+@Serializable
+data class RoyaltyAllocationInput(
+    @SerialName("recipient_kind") val recipientKind: String,
+    @SerialName("wallet_address") val walletAddress: String,
+    @SerialName("share_bps") val shareBps: Int,
 )
 
 @Serializable

@@ -256,6 +256,20 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     viewerUserId = viewerUserId,
                     publicHandle = profile?.displayPirateHandle() ?: _state.value.publicHandle,
                     publicAvatarRef = profile?.avatarRef ?: _state.value.publicAvatarRef,
+                    song = if (_state.value.song.royaltyAllocations.isEmpty() && !profile?.primaryWalletAddress.isNullOrBlank()) {
+                        _state.value.song.copy(
+                            royaltyAllocations = listOf(
+                                RoyaltyAllocationState(
+                                    id = "creator",
+                                    recipientKind = "creator",
+                                    walletAddress = profile?.primaryWalletAddress.orEmpty(),
+                                    sharePercent = "100",
+                                ),
+                            ),
+                        )
+                    } else {
+                        _state.value.song
+                    },
                     identityMode = nextIdentityMode,
                     allowAnonymousIdentity = allowAnonymous,
                     allowAgentIdentity = allowAgent,
@@ -1592,6 +1606,12 @@ private fun SongComposerFields(
                 enabled = enabled,
             )
         }
+        RoyaltySplitEditor(
+            allocations = song.royaltyAllocations,
+            commercialLicense = song.licensePreset != AssetLicensePreset.NonCommercial,
+            enabled = enabled,
+            onChange = { onChange(song.copy(royaltyAllocations = it)) },
+        )
 
         OutlinedTextField(
             value = song.paidSongPriceUsd,
@@ -1654,6 +1674,93 @@ private fun SongComposerFields(
         )
     }
 }
+
+@Composable
+private fun RoyaltySplitEditor(
+    allocations: List<RoyaltyAllocationState>,
+    commercialLicense: Boolean,
+    enabled: Boolean,
+    onChange: (List<RoyaltyAllocationState>) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Royalty split", style = MaterialTheme.typography.titleMedium, color = PirateTokens.colors.textSecondary)
+        if (allocations.isEmpty()) {
+            FormNote("Link a primary wallet to configure royalties.", FormTone.Warning)
+            return@Column
+        }
+        allocations.forEachIndexed { index, allocation ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    if (allocation.recipientKind == "creator") "Creator" else "Collaborator $index",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = PirateTokens.colors.textPrimary,
+                )
+                OutlinedTextField(
+                    value = allocation.walletAddress,
+                    onValueChange = { value -> onChange(allocations.map { if (it.id == allocation.id) it.copy(walletAddress = value) else it }) },
+                    label = { Text("Wallet address") },
+                    enabled = enabled,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = allocation.sharePercent,
+                    onValueChange = { value -> onChange(allocations.map { if (it.id == allocation.id) it.copy(sharePercent = value) else it }) },
+                    label = { Text("Share %") },
+                    enabled = enabled,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (allocation.recipientKind != "creator") {
+                    PirateButton(
+                        text = "Remove collaborator",
+                        onClick = {
+                            val remaining = allocations.filterNot { it.id == allocation.id }
+                            onChange(remaining.map { if (it.recipientKind == "creator" && remaining.size == 1) it.copy(sharePercent = "100") else it })
+                        },
+                        variant = ButtonVariant.Outline,
+                        enabled = enabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+        if (commercialLicense && allocations.size < 10) {
+            PirateButton(
+                text = "Add collaborator",
+                onClick = {
+                    val count = allocations.size + 1
+                    val baseBps = 10000 / count
+                    var assigned = 0
+                    val redistributed = allocations.map { allocation ->
+                        assigned += baseBps
+                        allocation.copy(sharePercent = formatShareBps(baseBps))
+                    }
+                    onChange(redistributed + RoyaltyAllocationState(
+                        id = UUID.randomUUID().toString(),
+                        recipientKind = "collaborator",
+                        walletAddress = "",
+                        sharePercent = formatShareBps(10000 - assigned),
+                    ))
+                },
+                enabled = enabled,
+                variant = ButtonVariant.Outline,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        val totalBps = allocations.sumOf {
+            runCatching { it.sharePercent.trim().toBigDecimal().movePointRight(2).intValueExact() }.getOrDefault(0)
+        }
+        Text(
+            "Total: ${formatShareBps(totalBps)}%",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (totalBps == 10000) PirateTokens.colors.accentSuccess else PirateTokens.colors.accentDanger,
+        )
+    }
+}
+
+private fun formatShareBps(bps: Int): String =
+    java.math.BigDecimal(bps).movePointLeft(2).stripTrailingZeros().toPlainString()
 
 @Composable
 private fun SongUploadButton(
