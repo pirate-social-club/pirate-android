@@ -114,7 +114,7 @@ internal fun StudyAudioRecorder(
                 }
             },
             enabled = enabled && !transcribing,
-            variant = ButtonVariant.Secondary,
+            variant = ButtonVariant.Outline,
             modifier = Modifier.fillMaxWidth(),
         )
         error?.let { FormNote(message = it, tone = FormTone.Error) }
