@@ -579,6 +579,7 @@ fun PirateNavHost(
                 onSignIn = {
                     showSignInDrawer = true
                 },
+                onLoadNativeBalance = vm::loadNativeBalance,
             )
             if (showSignInDrawer) {
                 SignInDrawer(

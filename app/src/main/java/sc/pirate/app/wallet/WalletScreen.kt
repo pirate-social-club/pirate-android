@@ -15,6 +15,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +48,7 @@ fun WalletScreen(
     onClearWalletFeedback: () -> Unit,
     onDisconnectWallet: () -> Unit,
     onSignIn: () -> Unit,
+    onLoadNativeBalance: (String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -58,6 +60,14 @@ fun WalletScreen(
         it.walletAddress.equals(connectedAddress, ignoreCase = true)
     }
     val safeReceiveAddress = linkedWallet?.walletAddress ?: connectedAddress?.takeIf { connectedWalletIsLinked }
+
+    LaunchedEffect(connectedAddress, walletConnectState.selectedChain, connectedWalletIsLinked) {
+        val address = connectedAddress
+        val chain = walletConnectState.selectedChain
+        if (address != null && chain != null && connectedWalletIsLinked) {
+            onLoadNativeBalance(address, chain)
+        }
+    }
 
     receiveAddress?.let { address ->
         ReceiveWalletDialog(
@@ -171,6 +181,31 @@ fun WalletScreen(
                         variant = ButtonVariant.Outline,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+            }
+
+            if (connectedWalletIsLinked && walletConnectState.selectedChain != null) {
+                item {
+                    when {
+                        walletUiState.balanceLoading -> StatusCard(
+                            title = "Loading balance",
+                            description = "Reading the connected network's native-asset balance.",
+                            tone = StatusTone.Default,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        walletUiState.nativeBalance != null -> StatusCard(
+                            title = "Native balance",
+                            description = "${walletUiState.nativeBalance} ${walletUiState.nativeBalanceSymbol.orEmpty()} · ${walletConnectState.selectedChain}",
+                            tone = StatusTone.Default,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        walletUiState.balanceError != null -> StatusCard(
+                            title = "Balance unavailable",
+                            description = walletUiState.balanceError,
+                            tone = StatusTone.Warning,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
             }
         }

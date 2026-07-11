@@ -284,6 +284,35 @@ class ReownManager(
         )
     }
 
+    suspend fun getNativeBalance(
+        address: String,
+        chainId: String? = null,
+    ): BigInteger {
+        require(initialized) { "WalletConnect is not initialized." }
+        val account = requireNotNull(runCatching { AppKit.getAccount() }.getOrNull()) {
+            "Connect a wallet before loading its balance."
+        }
+        require(account.address.equals(address, ignoreCase = true)) {
+            "The requested address is not the connected wallet."
+        }
+        val resolvedChainId = chainId?.takeIf { it.isNotBlank() }
+            ?: runCatching { AppKit.getSelectedChain()?.id }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: account.chain.id
+        val result = requestStringResult(
+            method = "eth_getBalance",
+            params = Json.encodeToString(
+                ListSerializer(String.serializer()),
+                listOf(address, "latest"),
+            ),
+            chainId = resolvedChainId,
+            coinbaseMissingMessage = "Coinbase did not return a balance.",
+            walletConnectTypeMessage = "Wallet returned a non-string balance.",
+        )
+        return result.removePrefix("0x").takeIf { it.isNotEmpty() }
+            ?.let { BigInteger(it, 16) }
+            ?: BigInteger.ZERO
+    }
+
     suspend fun sendErc20Transfer(
         tokenAddress: String,
         recipientAddress: String,

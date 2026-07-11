@@ -7,6 +7,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.math.BigDecimal
+import java.math.BigInteger
+import java.math.RoundingMode
 import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.auth.PrivyClientStore
 import sc.pirate.app.auth.PrivyRuntimeConfig
@@ -15,6 +18,10 @@ data class WalletLinkUiState(
     val linking: Boolean = false,
     val linkedWalletAddress: String? = null,
     val error: String? = null,
+    val balanceLoading: Boolean = false,
+    val nativeBalance: String? = null,
+    val nativeBalanceSymbol: String? = null,
+    val balanceError: String? = null,
 )
 
 class WalletViewModel(application: Application) : AndroidViewModel(application) {
@@ -63,6 +70,45 @@ class WalletViewModel(application: Application) : AndroidViewModel(application) 
 
     fun clearFeedback() {
         if (_state.value.linking) return
-        _state.value = WalletLinkUiState()
+        _state.value = _state.value.copy(linkedWalletAddress = null, error = null)
     }
+
+    fun loadNativeBalance(address: String, chainId: String) {
+        if (_state.value.balanceLoading) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                balanceLoading = true,
+                nativeBalance = null,
+                nativeBalanceSymbol = null,
+                balanceError = null,
+            )
+            try {
+                val atomic = app.reownManager.getNativeBalance(address, chainId)
+                _state.value = _state.value.copy(
+                    balanceLoading = false,
+                    nativeBalance = formatNativeBalance(atomic),
+                    nativeBalanceSymbol = nativeSymbol(chainId),
+                )
+            } catch (error: Exception) {
+                _state.value = _state.value.copy(
+                    balanceLoading = false,
+                    balanceError = error.message ?: "Could not load wallet balance.",
+                )
+            }
+        }
+    }
+}
+
+internal fun formatNativeBalance(atomic: BigInteger): String =
+    BigDecimal(atomic)
+        .movePointLeft(18)
+        .setScale(6, RoundingMode.DOWN)
+        .stripTrailingZeros()
+        .toPlainString()
+
+internal fun nativeSymbol(chainId: String): String = when (chainId.substringAfter(':')) {
+    "137", "80002" -> "POL"
+    "56", "97" -> "BNB"
+    "43114", "43113" -> "AVAX"
+    else -> "ETH"
 }
