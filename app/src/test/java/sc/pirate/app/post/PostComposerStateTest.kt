@@ -13,6 +13,41 @@ import sc.pirate.app.api.model.SongArtifactBundle
 
 class PostComposerStateTest {
     @Test
+    fun `draft snapshot restores text identity and stable idempotency key`() {
+        val state = PostComposerUiState(
+            draftIdempotencyKey = "draft-key",
+            postType = PostComposerMode.Link,
+            selectedCommunityId = "com_test",
+            title = "Saved title",
+            body = "Saved body",
+            linkUrl = "https://pirate.sc",
+            identityMode = PostComposerIdentityMode.Anonymous,
+        )
+
+        val restored = state.toDraftSnapshot().restoreInto(PostComposerUiState())
+
+        assertEquals("draft-key", restored.draftIdempotencyKey)
+        assertEquals(PostComposerMode.Link, restored.postType)
+        assertEquals("com_test", restored.selectedCommunityId)
+        assertEquals("Saved title", restored.title)
+        assertEquals(PostComposerIdentityMode.Anonymous, restored.identityMode)
+    }
+
+    @Test
+    fun `media draft restoration requires safe reselection`() {
+        val snapshot = PostComposerDraftSnapshot(
+            draftIdempotencyKey = "draft-key",
+            postType = PostComposerMode.Video,
+            hadMediaSelection = true,
+        )
+
+        val restored = snapshot.restoreInto(PostComposerUiState())
+
+        assertNull(restored.mediaUri)
+        assertTrue(restored.draftNotice.orEmpty().contains("reselect"))
+    }
+
+    @Test
     fun `upload limits mirror server media policies`() {
         assertNull(validateUploadSize("post_image", 20L * 1024L * 1024L))
         assertNull(validateUploadSize("cover_art", 12L * 1024L * 1024L))

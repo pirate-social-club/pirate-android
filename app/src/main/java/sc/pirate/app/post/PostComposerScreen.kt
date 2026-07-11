@@ -52,10 +52,15 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import sc.pirate.app.api.PoWGate
 import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.CreateSongArtifactBundleRequest
@@ -122,23 +127,43 @@ data class PostComposerUiState(
     val uploadBytesWritten: Long = 0L,
     val uploadTotalBytes: Long = 0L,
     val error: String? = null,
+    val draftNotice: String? = null,
     val submitted: Boolean = false,
     val createdPostId: String? = null,
 )
 
+@kotlinx.serialization.Serializable
 enum class PostComposerIdentityMode(val apiValue: String) {
     Public("public"),
     Anonymous("anonymous"),
 }
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 class PostComposerViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val communityRepository get() = app.repositories.communityRepository
     private val profileRepository get() = app.repositories.profileRepository
     private val powGate by lazy { PoWGate(app.apiClient) }
+    private val draftStore by lazy { PostComposerDraftStore(app) }
     private val _state = MutableStateFlow(PostComposerUiState())
     val state: StateFlow<PostComposerUiState> = _state.asStateFlow()
     private var submitJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            val restored = withContext(Dispatchers.IO) { draftStore.load() }
+            if (restored != null) _state.value = restored.restoreInto(_state.value)
+            state.drop(1).debounce(650L).collectLatest { composerState ->
+                withContext(Dispatchers.IO) {
+                    when {
+                        composerState.submitted -> draftStore.clear()
+                        composerState.hasPersistableDraft() -> draftStore.save(composerState.toDraftSnapshot())
+                        else -> draftStore.clear()
+                    }
+                }
+            }
+        }
+    }
 
     fun configureInitialCommunity(communityId: String?) {
         val id = communityId?.trim()?.takeIf { it.isNotBlank() }
@@ -480,6 +505,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                         createdPost.post.postId
                     }
                 }
+                withContext(Dispatchers.IO) { draftStore.clear() }
                 _state.value = _state.value.copy(
                     submitting = false,
                     submitted = true,
@@ -1894,6 +1920,10 @@ private fun PostComposerPublishContent(
         state = state,
         modifier = Modifier.fillMaxWidth(),
     )
+    state.draftNotice?.let { notice ->
+        Spacer(modifier = Modifier.height(12.dp))
+        FormNote(message = notice, tone = FormTone.Warning)
+    }
     if (state.solvingProofOfWork) {
         Spacer(modifier = Modifier.height(12.dp))
         FormNote(

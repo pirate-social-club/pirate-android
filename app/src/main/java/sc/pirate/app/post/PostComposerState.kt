@@ -11,6 +11,7 @@ import sc.pirate.app.api.model.SongArtifactBundle
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.Serializable
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.net.URI
@@ -37,6 +38,7 @@ internal fun validateUploadSize(kind: String, sizeBytes: Long): String? {
 
 const val POST_COMPOSER_TITLE_MAX_LENGTH = 300
 
+@Serializable
 enum class PostComposerMode(val apiValue: String) {
     Text("text"),
     Image("image"),
@@ -46,33 +48,39 @@ enum class PostComposerMode(val apiValue: String) {
     Live("live"),
 }
 
+@Serializable
 enum class SongMode(val apiValue: String) {
     Original("original"),
     Remix("remix"),
 }
 
+@Serializable
 enum class AssetLicensePreset(val apiValue: String) {
     NonCommercial("non-commercial"),
     CommercialUse("commercial-use"),
     CommercialRemix("commercial-remix"),
 }
 
+@Serializable
 enum class LiveRoomKind(val apiValue: String) {
     Solo("solo"),
     Duet("duet"),
 }
 
+@Serializable
 enum class LiveAccessMode(val apiValue: String) {
     Free("free"),
     Gated("gated"),
     Paid("paid"),
 }
 
+@Serializable
 enum class LiveVisibility(val apiValue: String) {
     Public("public"),
     Unlisted("unlisted"),
 }
 
+@Serializable
 enum class LiveSetlistItemKind(val apiValue: String) {
     Original("original"),
     Cover("cover"),
@@ -81,12 +89,14 @@ enum class LiveSetlistItemKind(val apiValue: String) {
     Unknown("unknown"),
 }
 
+@Serializable
 data class LivePerformerAllocationState(
     val userId: String = "",
     val role: String,
     val sharePct: Int,
 )
 
+@Serializable
 data class LiveSetlistItemState(
     val titleText: String = "",
     val artistText: String = "",
@@ -94,11 +104,13 @@ data class LiveSetlistItemState(
     val performanceKind: LiveSetlistItemKind = LiveSetlistItemKind.Unknown,
 )
 
+@Serializable
 data class LiveCoverUploadState(
     val mediaRef: String,
     val label: String,
 )
 
+@Serializable
 data class LiveComposerState(
     val roomKind: LiveRoomKind = LiveRoomKind.Solo,
     val accessMode: LiveAccessMode = LiveAccessMode.Free,
@@ -119,6 +131,7 @@ data class LiveComposerState(
     val regionalPricingEnabled: Boolean = false,
 )
 
+@Serializable
 data class SongComposerState(
     val songTitle: String = "",
     val lyrics: String = "",

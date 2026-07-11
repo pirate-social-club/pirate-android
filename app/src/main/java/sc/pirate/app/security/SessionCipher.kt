@@ -35,7 +35,9 @@ internal interface SessionCipher {
     fun decrypt(payload: String): String
 }
 
-internal class AndroidKeystoreSessionCipher : SessionCipher {
+internal class AndroidKeystoreSessionCipher(
+    private val keyAlias: String = DEFAULT_KEY_ALIAS,
+) : SessionCipher {
     override fun encrypt(plaintext: String): String {
         val cipher = Cipher.getInstance(CIPHER_ALGORITHM)
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey())
@@ -58,11 +60,11 @@ internal class AndroidKeystoreSessionCipher : SessionCipher {
 
     private fun getOrCreateKey(): SecretKey {
         val keyStore = KeyStore.getInstance(KEYSTORE_PROVIDER).apply { load(null) }
-        (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
+        (keyStore.getKey(keyAlias, null) as? SecretKey)?.let { return it }
         val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KEYSTORE_PROVIDER)
         generator.init(
             KeyGenParameterSpec.Builder(
-                KEY_ALIAS,
+                keyAlias,
                 KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
             )
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
@@ -75,7 +77,7 @@ internal class AndroidKeystoreSessionCipher : SessionCipher {
 
     private companion object {
         const val KEYSTORE_PROVIDER = "AndroidKeyStore"
-        const val KEY_ALIAS = "pirate_session_v1"
+        const val DEFAULT_KEY_ALIAS = "pirate_session_v1"
         const val CIPHER_ALGORITHM = "AES/GCM/NoPadding"
         const val GCM_TAG_BITS = 128
     }
