@@ -3,7 +3,6 @@ package sc.pirate.app.home
 import android.app.Application
 import android.net.Uri
 import android.view.LayoutInflater
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -34,6 +33,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -113,6 +114,7 @@ import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
+import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.ReportContentSheet
 import sc.pirate.app.ui.VoteControl
@@ -805,6 +807,7 @@ fun HomeScreen(
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val feed = state.feed
@@ -826,7 +829,7 @@ fun HomeScreen(
 
     LaunchedEffect(state.reportMessage) {
         state.reportMessage?.let { message ->
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            snackbarHostState.showSnackbar(message)
             viewModel.clearReportMessage()
         }
     }
@@ -900,6 +903,7 @@ fun HomeScreen(
     }
 
     Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     navigationIcon = {
@@ -956,15 +960,7 @@ fun HomeScreen(
                     when {
                         state.loading -> {
                             item {
-                                Box(
-                                    modifier = Modifier.fillParentMaxSize(),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    CircularProgressIndicator(
-                                        color = PirateTokens.colors.accentBrand,
-                                        modifier = Modifier.size(28.dp),
-                                    )
-                                }
+                                FeedSkeletons(count = 4, modifier = Modifier.fillMaxWidth())
                             }
                         }
 

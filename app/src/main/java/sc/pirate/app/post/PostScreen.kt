@@ -1,7 +1,6 @@
 package sc.pirate.app.post
 
 import android.app.Application
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -28,6 +27,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -104,6 +105,7 @@ import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
+import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.ReportContentSheet
@@ -1126,6 +1128,7 @@ fun PostScreen(
 ) {
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
@@ -1183,7 +1186,7 @@ fun PostScreen(
 
     LaunchedEffect(state.reportMessage) {
         state.reportMessage?.let { message ->
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            snackbarHostState.showSnackbar(message)
             viewModel.clearReportMessage()
         }
     }
@@ -1226,6 +1229,7 @@ fun PostScreen(
     }
 
     androidx.compose.material3.Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -1289,9 +1293,7 @@ fun PostScreen(
                 .fillMaxSize(),
         ) {
             if (state.loading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
-                }
+                FeedSkeletons(count = 2, modifier = Modifier.fillMaxSize())
             } else if (state.error != null) {
                 FormNote(
                     message = state.error!!,

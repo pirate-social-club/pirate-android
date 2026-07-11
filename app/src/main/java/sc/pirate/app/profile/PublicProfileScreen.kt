@@ -35,6 +35,7 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
+import sc.pirate.app.ui.FeedSkeletons
 
 data class PublicProfileUiState(
     val loading: Boolean = true,
@@ -151,10 +152,7 @@ fun PublicProfileScreen(
         ) {
             when {
                 state.loading -> {
-                    CircularProgressIndicator(
-                        color = PirateTokens.colors.accentBrand,
-                        modifier = Modifier.align(Alignment.Center),
-                    )
+                    FeedSkeletons(count = 2, modifier = Modifier.fillMaxSize())
                 }
 
                 state.error != null -> {

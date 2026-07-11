@@ -89,6 +89,7 @@ import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.EmptyFeedState
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
+import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
@@ -594,9 +595,7 @@ fun CommunityScreen(
         ) {
             when {
                 state.loading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
-                    }
+                    FeedSkeletons(count = 3, modifier = Modifier.fillMaxSize())
                 }
 
                 state.error != null -> {
