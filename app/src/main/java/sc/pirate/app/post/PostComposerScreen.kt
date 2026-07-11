@@ -82,6 +82,7 @@ import sc.pirate.app.ui.VoteControl
 import java.util.UUID
 
 data class PostComposerUiState(
+    val draftIdempotencyKey: String = UUID.randomUUID().toString(),
     val postType: PostComposerMode = PostComposerMode.Text,
     val step: PostComposerStep = PostComposerStep.Write,
     val selectedCommunityId: String? = null,
@@ -421,7 +422,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                                 } else {
                                     null
                                 },
-                                idempotencyKey = UUID.randomUUID().toString(),
+                                idempotencyKey = current.draftIdempotencyKey,
                                 title = current.title,
                                 caption = current.body,
                                 identityMode = current.resolvedIdentityMode().apiValue,
@@ -430,7 +431,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                             )
                         } else {
                             CreatePostRequest(
-                                idempotencyKey = UUID.randomUUID().toString(),
+                                idempotencyKey = current.draftIdempotencyKey,
                                 title = current.title.trim().ifBlank { null },
                                 body = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
                                     null
@@ -600,7 +601,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             buildSongPostRequest(
                 bundleId = bundle.id,
                 caption = current.body,
-                idempotencyKey = UUID.randomUUID().toString(),
+                idempotencyKey = current.draftIdempotencyKey,
                 song = song,
                 title = current.title,
                 visibility = "public",

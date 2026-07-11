@@ -2,6 +2,7 @@ package sc.pirate.app.post
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -11,6 +12,25 @@ import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.SongArtifactBundle
 
 class PostComposerStateTest {
+    @Test
+    fun `draft idempotency key survives state updates and retry snapshots`() {
+        val initial = PostComposerUiState()
+
+        val edited = initial.copy(title = "A title", body = "A body")
+        val retry = edited.copy(submitting = false, error = "Timed out")
+
+        assertEquals(initial.draftIdempotencyKey, edited.draftIdempotencyKey)
+        assertEquals(initial.draftIdempotencyKey, retry.draftIdempotencyKey)
+    }
+
+    @Test
+    fun `new composer draft receives a new idempotency key`() {
+        val first = PostComposerUiState()
+        val second = PostComposerUiState()
+
+        assertNotEquals(first.draftIdempotencyKey, second.draftIdempotencyKey)
+    }
+
     @Test
     fun defaultPostComposerState_doesNotWaitForEligibilityWithoutCommunity() {
         val state = PostComposerUiState()
