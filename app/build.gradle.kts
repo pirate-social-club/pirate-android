@@ -196,6 +196,7 @@ dependencies {
   implementation("org.bouncycastle:bcprov-jdk18on:1.83")
   implementation("org.web3j:abi:4.12.2")
   implementation("org.web3j:crypto:4.12.2")
+  implementation("com.google.zxing:core:3.5.3")
   implementation("org.xmtp:android:4.9.0")
   implementation("io.agora.rtc:full-sdk:4.6.3")
   implementation("org.very:sdk:1.0.29") {

@@ -1,6 +1,10 @@
 package sc.pirate.app.wallet
 
+import android.content.Intent
+import android.graphics.Bitmap
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,9 +12,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.api.model.SessionExchangeResponse
@@ -21,6 +34,8 @@ import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.walletconnect.ReownUiState
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
 
 @Composable
 fun WalletScreen(
@@ -34,10 +49,33 @@ fun WalletScreen(
     onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    var receiveAddress by remember { mutableStateOf<String?>(null) }
     val linkedWallet = session?.primaryWalletAttachment()
     val connectedAddress = walletConnectState.connectedAddress?.takeIf { it.isNotBlank() }
     val connectedWalletIsLinked = connectedAddress != null && session?.walletAttachments.orEmpty().any {
         it.walletAddress.equals(connectedAddress, ignoreCase = true)
+    }
+    val safeReceiveAddress = linkedWallet?.walletAddress ?: connectedAddress?.takeIf { connectedWalletIsLinked }
+
+    receiveAddress?.let { address ->
+        ReceiveWalletDialog(
+            address = address,
+            onCopy = { clipboard.setText(AnnotatedString(address)) },
+            onShare = {
+                context.startActivity(
+                    Intent.createChooser(
+                        Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, address)
+                        },
+                        "Share wallet address",
+                    ),
+                )
+            },
+            onDismiss = { receiveAddress = null },
+        )
     }
 
     LazyColumn(
@@ -124,6 +162,17 @@ fun WalletScreen(
                     )
                 }
             }
+
+            safeReceiveAddress?.let { address ->
+                item {
+                    PirateButton(
+                        text = "Receive",
+                        onClick = { receiveAddress = address },
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
 
         walletUiState.linkedWalletAddress?.let { address ->
@@ -170,11 +219,58 @@ fun WalletScreen(
 
         item {
             StatusCard(
-                title = "Balances and transfers are not available yet",
-                description = "Pirate will show live balances, Send, Receive, and royalty claims only after those flows are fully connected and verified.",
+                title = "Balances and sending are not available yet",
+                description = "Pirate will enable live balances, Send, and royalty claims only after chain, asset, and settlement support are fully connected and verified.",
                 tone = StatusTone.Default,
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+    }
+}
+
+@Composable
+private fun ReceiveWalletDialog(
+    address: String,
+    onCopy: () -> Unit,
+    onShare: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val qrBitmap = remember(address) { walletQrBitmap(address) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Receive") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Only send assets supported by this EVM wallet and its active network.",
+                    color = PirateTokens.colors.textSecondary,
+                )
+                Image(
+                    bitmap = qrBitmap.asImageBitmap(),
+                    contentDescription = "QR code for wallet address",
+                    modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                )
+                Text(address, style = MaterialTheme.typography.bodySmall)
+                PirateButton("Copy address", onCopy, modifier = Modifier.fillMaxWidth())
+                PirateButton(
+                    "Share address",
+                    onShare,
+                    variant = ButtonVariant.Outline,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            PirateButton("Done", onDismiss, variant = ButtonVariant.Outline)
+        },
+    )
+}
+
+private fun walletQrBitmap(address: String, size: Int = 768): Bitmap {
+    val matrix = QRCodeWriter().encode("ethereum:$address", BarcodeFormat.QR_CODE, size, size)
+    return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
+        for (x in 0 until size) for (y in 0 until size) {
+            setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
         }
     }
 }
