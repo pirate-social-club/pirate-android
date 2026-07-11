@@ -803,12 +803,7 @@ private fun DomainsSettings() {
 
 @Composable
 private fun AgentsSettings() {
-    StatusCard(
-        title = "Agents are not wired on Android yet",
-        description = "Agent registration and ownership controls remain web-only for this v0.",
-        tone = StatusTone.Default,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    AgentsSettingsPanel()
 }
 
 private fun SettingsUiState.profileHasChanges(): Boolean {

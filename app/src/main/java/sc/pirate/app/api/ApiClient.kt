@@ -323,12 +323,25 @@ class ApiClient(private val sessionStore: SessionStore) {
     val publicComments = PublicCommentsEndpoints(this)
     val profiles = ProfilesEndpoints(this)
     val notifications = NotificationsEndpoints(this)
+    val agents = AgentsEndpoints(this)
 
     class AuthEndpoints internal constructor(private val api: ApiClient) {
         suspend fun sessionExchange(proof: SessionExchangeProof): SessionExchangeResponse {
             val body = api.json.encodeToString(SessionExchangeRequest.serializer(), SessionExchangeRequest(proof))
             val response = api.postString("/auth/session/exchange", body, requireAuth = false)
             return api.json.decodeFromString(SessionExchangeResponse.serializer(), response)
+        }
+    }
+
+    class AgentsEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun list(cursor: String? = null, limit: Int = 50): UserAgentListResponse {
+            val response = api.getString(
+                api.buildQueryPath(
+                    "/agents",
+                    listOf("cursor" to cursor, "limit" to limit.toString()),
+                ),
+            )
+            return api.json.decodeFromString(UserAgentListResponse.serializer(), response)
         }
     }
 
