@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -331,6 +332,10 @@ fun SettingsScreen(
 ) {
     val viewModel: SettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
+    val uriHandler = LocalUriHandler.current
+    val openAccountDeletion = {
+        uriHandler.openUri("${sc.pirate.app.BuildConfig.WEB_BASE_URL.trimEnd('/')}/delete-account")
+    }
 
     LaunchedEffect(Unit) {
         viewModel.load()
@@ -401,12 +406,19 @@ fun SettingsScreen(
                         onClick = viewModel::load,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    PirateButton(
+                        text = "Delete account",
+                        onClick = openAccountDeletion,
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
 
             section == null -> {
                 SettingsIndex(
                     onNavigateToSection = onNavigateToSection,
+                    onOpenAccountDeletion = openAccountDeletion,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding),
@@ -456,6 +468,7 @@ fun SettingsScreen(
 @Composable
 private fun SettingsIndex(
     onNavigateToSection: (String) -> Unit,
+    onOpenAccountDeletion: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -467,6 +480,8 @@ private fun SettingsIndex(
         item { SettingsIndexRow("Domains", onClick = { onNavigateToSection("domains") }) }
         item { SettingsIndexRow("Preferences", onClick = { onNavigateToSection("preferences") }) }
         item { SettingsIndexRow("Agents", onClick = { onNavigateToSection("agents") }) }
+        item { Spacer(modifier = Modifier.height(24.dp)) }
+        item { SettingsIndexRow("Delete account", onClick = onOpenAccountDeletion) }
     }
 }
 
