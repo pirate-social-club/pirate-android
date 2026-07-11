@@ -18,6 +18,11 @@ jobs:
       REOWN_PROJECT_ID: 08db15bf8bdb09d1cbc714f4c39d11a8
       REOWN_REDIRECT_URI: pirate://wallet-connect
       VERY_SDK_KEY: ${{ secrets.VERY_SDK_KEY }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
+      SENTRY_ENVIRONMENT: production
       PIRATE_ANDROID_SLOW: "1"
       PIRATE_ANDROID_MAX_WORKERS: "1"
       GRADLE_OPTS: "-Dorg.gradle.parallel=false -Dorg.gradle.workers.max=1 -Dorg.gradle.priority=low"

@@ -4,6 +4,7 @@ import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.SvgDecoder
+import io.sentry.android.core.SentryAndroid
 import sc.pirate.app.api.ApiClient
 import sc.pirate.app.api.SessionRefresher
 import sc.pirate.app.api.SessionStore
@@ -56,8 +57,25 @@ class PirateApp : Application(), ImageLoaderFactory {
 
     override fun onCreate() {
         super.onCreate()
+        initializeCrashReporting()
         reownManager.initialize()
         sessionRefresher.start()
+    }
+
+    private fun initializeCrashReporting() {
+        val dsn = BuildConfig.SENTRY_DSN.trim()
+        if (dsn.isEmpty()) return
+        SentryAndroid.init(this) { options ->
+            options.dsn = dsn
+            options.environment = BuildConfig.SENTRY_ENVIRONMENT
+            options.release = "${BuildConfig.APPLICATION_ID}@${BuildConfig.VERSION_NAME}+${BuildConfig.VERSION_CODE}"
+            options.isSendDefaultPii = false
+            options.isAttachScreenshot = false
+            options.isAttachViewHierarchy = false
+            options.tracesSampleRate = 0.0
+            options.isAnrEnabled = true
+            options.isEnableUserInteractionBreadcrumbs = false
+        }
     }
 
     override fun newImageLoader(): ImageLoader =

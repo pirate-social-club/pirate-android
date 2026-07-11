@@ -7,6 +7,7 @@ plugins {
   id("org.jetbrains.kotlin.android")
   id("org.jetbrains.kotlin.plugin.compose")
   id("org.jetbrains.kotlin.plugin.serialization")
+  id("io.sentry.android.gradle")
 }
 
 val localProps = Properties().apply {
@@ -109,6 +110,12 @@ android {
 
     val verySdkKey = runtimeProp("VERY_SDK_KEY") ?: ""
     buildConfigField("String", "VERY_SDK_KEY", buildConfigString(verySdkKey))
+
+    val sentryDsn = runtimeProp("SENTRY_DSN") ?: ""
+    buildConfigField("String", "SENTRY_DSN", buildConfigString(sentryDsn))
+    val sentryEnvironment = runtimeProp("SENTRY_ENVIRONMENT")
+      ?: if (apiBaseUrl.contains("staging")) "staging" else "production"
+    buildConfigField("String", "SENTRY_ENVIRONMENT", buildConfigString(sentryEnvironment))
   }
 
   buildTypes {
@@ -160,6 +167,7 @@ android {
 }
 
 dependencies {
+  implementation("io.sentry:sentry-android:8.43.0")
   implementation(platform("com.reown:android-bom:1.6.10"))
   implementation(platform("androidx.compose:compose-bom:2026.02.00"))
   implementation("androidx.activity:activity-compose:1.12.4")
@@ -200,4 +208,13 @@ dependencies {
 
   testImplementation("junit:junit:4.13.2")
   debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+sentry {
+  includeProguardMapping.set(true)
+  autoUploadProguardMapping.set(!System.getenv("SENTRY_AUTH_TOKEN").isNullOrBlank())
+  org.set(System.getenv("SENTRY_ORG") ?: "")
+  projectName.set(System.getenv("SENTRY_PROJECT") ?: "")
+  authToken.set(System.getenv("SENTRY_AUTH_TOKEN") ?: "")
+  telemetry.set(false)
 }
