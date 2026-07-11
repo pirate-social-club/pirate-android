@@ -1,9 +1,9 @@
 package sc.pirate.app.wallet
 
 import java.math.BigInteger
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
+import org.junit.Test
 
 class WalletBalanceTest {
     @Test
@@ -26,9 +26,9 @@ class WalletBalanceTest {
     fun `converts native amount to atomic units exactly`() {
         assertEquals(BigInteger("1000000000000000000"), nativeAmountToAtomic("1"))
         assertEquals(BigInteger.ONE, nativeAmountToAtomic("0.000000000000000001"))
-        assertFailsWith<IllegalArgumentException> { nativeAmountToAtomic("0") }
-        assertFailsWith<IllegalArgumentException> { nativeAmountToAtomic("-1") }
-        assertFailsWith<IllegalArgumentException> { nativeAmountToAtomic("0.0000000000000000001") }
+        assertThrows(IllegalArgumentException::class.java) { nativeAmountToAtomic("0") }
+        assertThrows(IllegalArgumentException::class.java) { nativeAmountToAtomic("-1") }
+        assertThrows(IllegalArgumentException::class.java) { nativeAmountToAtomic("0.0000000000000000001") }
     }
 
     @Test

@@ -3,9 +3,9 @@ package sc.pirate.app.security
 import java.security.KeyPairGenerator
 import java.security.Signature
 import java.util.Base64
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 
 class AgentActionProofTest {
