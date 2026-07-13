@@ -79,6 +79,7 @@ import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.MembershipGateSummary
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.safety.withoutBlockedPostAuthors
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryRow
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -137,6 +138,18 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
     private var currentCommunityId: String? = null
     private var currentHasSession: Boolean = false
     private var joinJob: Job? = null
+    private var blockedUserIds: Set<String> = emptySet()
+
+    init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                blockedUserIds = blockState.userIds
+                _state.value = _state.value.copy(
+                    posts = _state.value.posts.withoutBlockedPostAuthors(blockedUserIds),
+                )
+            }
+        }
+    }
 
     fun loadCommunity(communityId: String, hasSession: Boolean, sort: String = _state.value.activeSort) {
         currentCommunityId = communityId
@@ -165,7 +178,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                     _state.value = CommunityUiState(
                         preview = preview,
-                        posts = posts.items,
+                        posts = posts.items.withoutBlockedPostAuthors(blockedUserIds),
                         nextPostsCursor = posts.nextCursor,
                         activeSort = sort,
                         loading = false,
@@ -184,7 +197,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     CommunityUiState(
                         preview = preview,
                         eligibility = eligibility,
-                        posts = posts.items,
+                        posts = posts.items.withoutBlockedPostAuthors(blockedUserIds),
                         nextPostsCursor = posts.nextCursor,
                         activeSort = sort,
                         loading = false,
@@ -200,7 +213,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                         community = community,
                         preview = preview,
                         eligibility = eligibility,
-                        posts = posts.items,
+                        posts = posts.items.withoutBlockedPostAuthors(blockedUserIds),
                         nextPostsCursor = posts.nextCursor,
                         activeSort = sort,
                         loading = false,
@@ -259,7 +272,9 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
                 _state.value = _state.value.copy(
-                    posts = (_state.value.posts + page.items).distinctBy { it.post.postId },
+                    posts = (_state.value.posts + page.items)
+                        .distinctBy { it.post.postId }
+                        .withoutBlockedPostAuthors(blockedUserIds),
                     nextPostsCursor = page.nextCursor,
                     postsLoadingMore = false,
                 )

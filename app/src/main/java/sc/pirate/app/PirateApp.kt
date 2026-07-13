@@ -22,6 +22,7 @@ import sc.pirate.app.chat.XmtpChatService
 import sc.pirate.app.communities.KnownCommunitiesStore
 import sc.pirate.app.home.HomeFeedCache
 import sc.pirate.app.post.PostPreviewCache
+import sc.pirate.app.safety.UserBlockStore
 import sc.pirate.app.song.SongPlaybackController
 import sc.pirate.app.video.VideoPlaybackController
 import sc.pirate.app.verification.VerificationCoordinator
@@ -29,6 +30,7 @@ import sc.pirate.app.walletconnect.ReownManager
 
 class PirateApp : Application(), ImageLoaderFactory {
     val sessionStore by lazy { SessionStore(this) }
+    val userBlockStore by lazy { UserBlockStore(this, sessionStore) }
     val apiClient by lazy { ApiClient(sessionStore) }
     val repositories by lazy {
         AppRepositories(
@@ -45,7 +47,7 @@ class PirateApp : Application(), ImageLoaderFactory {
     val verificationCoordinator by lazy { VerificationCoordinator(this) }
     val sessionRefresher by lazy { SessionRefresher(this) }
     val reownManager by lazy { ReownManager(this) }
-    val chatService by lazy { XmtpChatService(this) }
+    val chatService by lazy { XmtpChatService(this, userBlockStore) }
     val knownCommunitiesStore by lazy { KnownCommunitiesStore(this) }
     val homeFeedCache by lazy { HomeFeedCache() }
     val postPreviewCache by lazy { PostPreviewCache() }

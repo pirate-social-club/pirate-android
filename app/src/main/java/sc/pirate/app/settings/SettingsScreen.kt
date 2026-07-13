@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 import sc.pirate.app.api.ProfileUpdateInput
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.profile.displayHandle
+import sc.pirate.app.safety.BlockedUser
 import sc.pirate.app.shared.buildDefaultProfileCoverSrc
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.resolvePublicMediaSrc
@@ -93,15 +94,27 @@ data class SettingsUiState(
     val message: String? = null,
     val error: String? = null,
     val displayNameError: String? = null,
+    val blockedUsers: List<BlockedUser> = emptyList(),
+    val unblockingUserIds: Set<String> = emptySet(),
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val profileRepository get() = app.repositories.profileRepository
     private val contentResolver get() = getApplication<Application>().contentResolver
+    private var observedBlockedUsers: List<BlockedUser> = emptyList()
 
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                observedBlockedUsers = blockState.users
+                _state.value = _state.value.copy(blockedUsers = blockState.users)
+            }
+        }
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -113,6 +126,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     profile = profile,
                     displayName = profile.displayName.orEmpty(),
                     bio = profile.bio.orEmpty(),
+                    blockedUsers = observedBlockedUsers,
                     handleLabel = profile.globalHandle?.label.orEmpty(),
                     preferredLocale = profile.preferredLocale.orEmpty(),
                 )
@@ -120,6 +134,30 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _state.value = SettingsUiState(
                     loading = false,
                     error = e.message ?: "Could not load settings",
+                )
+            }
+        }
+    }
+
+    fun unblockUser(blockedUser: BlockedUser) {
+        if (blockedUser.userId in _state.value.unblockingUserIds) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                unblockingUserIds = _state.value.unblockingUserIds + blockedUser.userId,
+                error = null,
+                message = null,
+            )
+            try {
+                app.userBlockStore.unblock(blockedUser.userId)
+                app.chatService.unblockPeer(blockedUser.xmtpInbox)
+                _state.value = _state.value.copy(
+                    unblockingUserIds = _state.value.unblockingUserIds - blockedUser.userId,
+                    message = "User unblocked.",
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    unblockingUserIds = _state.value.unblockingUserIds - blockedUser.userId,
+                    error = e.message ?: "Could not unblock this user.",
                 )
             }
         }
@@ -346,6 +384,7 @@ fun SettingsScreen(
         "preferences" -> "Preferences"
         "domains" -> "Domains"
         "agents" -> "Agents"
+        "blocked" -> "Blocked users"
         else -> "Settings"
     }
 
@@ -456,6 +495,7 @@ fun SettingsScreen(
                         "preferences" -> item { PreferencesSettings(state, viewModel) }
                         "domains" -> item { DomainsSettings() }
                         "agents" -> item { AgentsSettings() }
+                        "blocked" -> item { BlockedUsersSettings(state, viewModel) }
                         else -> item { ProfileSettings(state, viewModel) }
                     }
                     item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -480,8 +520,52 @@ private fun SettingsIndex(
         item { SettingsIndexRow("Domains", onClick = { onNavigateToSection("domains") }) }
         item { SettingsIndexRow("Preferences", onClick = { onNavigateToSection("preferences") }) }
         item { SettingsIndexRow("Agents", onClick = { onNavigateToSection("agents") }) }
+        item { SettingsIndexRow("Blocked users", onClick = { onNavigateToSection("blocked") }) }
         item { Spacer(modifier = Modifier.height(24.dp)) }
         item { SettingsIndexRow("Delete account", onClick = onOpenAccountDeletion) }
+    }
+}
+
+@Composable
+private fun BlockedUsersSettings(state: SettingsUiState, viewModel: SettingsViewModel) {
+    SettingsSection(title = "Blocked users") {
+        if (state.blockedUsers.isEmpty()) {
+            StatusCard(
+                title = "No blocked users",
+                description = "People you block will appear here so you can unblock them later.",
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                state.blockedUsers.forEach { blockedUser ->
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = PirateTokens.colors.bgElevated,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = blockedUser.handleLabel ?: blockedUser.userId,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = PirateTokens.colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            PirateButton(
+                                text = "Unblock",
+                                onClick = { viewModel.unblockUser(blockedUser) },
+                                loading = blockedUser.userId in state.unblockingUserIds,
+                                variant = ButtonVariant.Outline,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

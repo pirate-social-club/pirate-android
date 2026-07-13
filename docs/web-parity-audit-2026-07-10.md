@@ -19,8 +19,10 @@ Blacksmith-verified; do not rebuild it:
 - **Release integrity:** post/comment reporting, account-deletion entry point,
   encrypted session migration, streaming/cancellable uploads with stable draft
   idempotency, privacy-safe Sentry crash/ANR reporting, verified App Links and
-  native sharing, honest Play metadata/wallet presentation, and a test+lint CI
-  gate.
+  native sharing, honest Play metadata/wallet presentation, a test+lint CI gate,
+  and account-scoped encrypted user blocking with feed/comment suppression,
+  settings-based unblock management, and XMTP consent enforcement. Cross-device
+  blocking still needs the sibling API contract in `docs/user-blocking-api-contract.md`.
 - **Reddit-tier interaction pass:** automatic pagination and visible home sorting,
   skeleton/Snackbar states, motion and haptics, expandable comment threads,
   RTL/font-scaling/semantics fixes, and encrypted composer draft recovery.
@@ -37,7 +39,8 @@ Latest verified moderation commits and runs:
 - `be2fb3c` community rules — `android-ci` run `29237278305`.
 - `efe4f9f` active moderation queue — `android-ci` run `29238926469`.
 
-Still-open release blockers remain: user blocking and first-UGC terms acceptance;
+Still-open release blockers remain: server-backed cross-device block enforcement
+and first-UGC terms acceptance;
 the Play Billing/alternative-billing/geo-gating decision for digital goods; the
 API-event and XMTP push systems; and interactive device QA for study/karaoke.
 Paid booking settlement and paid/included replay publishing remain deliberately
@@ -131,6 +134,8 @@ shell.
 1. **UGC compliance:** wire "Report post" (+ comment report) to the existing API
    endpoints; design+implement user blocking (backend sibling task or persisted
    local block, spec first); terms-of-service acceptance before first UGC upload.
+   **Android local enforcement is implemented; the documented server sibling task
+   remains open for cross-device and query-layer enforcement.**
 2. **Account deletion:** in-app entry point (settings) linking the flow; reuse web's
    `/delete-account` resource; meet Play's in-app + web requirement.
 3. **Payments decision (owner decision, blocks Play production):** Play Billing vs

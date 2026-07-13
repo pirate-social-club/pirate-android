@@ -16,8 +16,12 @@ import org.xmtp.android.library.ConsentState
 import org.xmtp.android.library.Conversation
 import org.xmtp.android.library.XMTPEnvironment
 import org.xmtp.android.library.libxmtp.GroupPermissionPreconfiguration
+import sc.pirate.app.safety.UserBlockStore
 
-class XmtpChatService(private val appContext: Context) {
+class XmtpChatService(
+    private val appContext: Context,
+    private val userBlockStore: UserBlockStore,
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val peerResolver = XmtpPeerResolver(appContext)
     private var client: Client? = null
@@ -61,6 +65,7 @@ class XmtpChatService(private val appContext: Context) {
             connectedAddress = normalizedAddress
             _connected.value = true
             Log.i(TAG, "XMTP connected for $normalizedAddress")
+            enforceBlockedDmConsent(safeClient = requireNotNull(client))
             refreshConversations()
             startMessageStream()
         }
@@ -94,9 +99,12 @@ class XmtpChatService(private val appContext: Context) {
         val safeClient = client ?: return
         runCatching {
             safeClient.conversations.syncAllConversations()
+            val blockedInboxes = userBlockStore.getState().xmtpInboxes
             val dms = safeClient.conversations.listDms()
             val groups = safeClient.conversations.listGroups()
-            val dmItems = dms.mapNotNull { toDmConversationItem(safeClient, it, peerResolver, TAG) }
+            val dmItems = dms
+                .filterNot { it.peerInboxId.trim().lowercase() in blockedInboxes }
+                .mapNotNull { toDmConversationItem(safeClient, it, peerResolver, TAG) }
             val groupItems = groups.mapNotNull { toGroupConversationItem(it, TAG) }
             _conversations.value = (dmItems + groupItems).sortedByDescending { it.lastMessageTimestampMs }
         }.onFailure {
@@ -145,10 +153,49 @@ class XmtpChatService(private val appContext: Context) {
 
     private suspend fun createDmConversation(safeClient: Client, peerAddressOrInboxId: String): String {
         val inboxId = peerResolver.resolveInboxId(safeClient, peerAddressOrInboxId)
+        check(!userBlockStore.getState().blocksXmtpInbox(inboxId)) {
+            "Unblock this user before starting a conversation."
+        }
         Log.i(TAG, "Opening DM target=$peerAddressOrInboxId resolvedInboxId=$inboxId")
         val dm = safeClient.conversations.findOrCreateDm(inboxId)
         refreshConversations()
         return dm.id
+    }
+
+    suspend fun blockPeer(inboxId: String?) {
+        val normalizedInbox = inboxId?.trim()?.takeIf { it.isNotBlank() } ?: return
+        val safeClient = client ?: return
+        runCatching {
+            safeClient.conversations.findDmByInboxId(normalizedInbox)?.let { dm ->
+                dm.updateConsentState(ConsentState.DENIED)
+                if (_activeConversationId.value == dm.id) closeConversation()
+            }
+            refreshConversations()
+        }.onFailure {
+            Log.w(TAG, "Could not deny blocked XMTP peer", it)
+        }
+    }
+
+    suspend fun unblockPeer(inboxId: String?) {
+        val normalizedInbox = inboxId?.trim()?.takeIf { it.isNotBlank() } ?: return
+        val safeClient = client ?: return
+        runCatching {
+            safeClient.conversations.findDmByInboxId(normalizedInbox)?.updateConsentState(ConsentState.ALLOWED)
+            refreshConversations()
+        }.onFailure {
+            Log.w(TAG, "Could not allow unblocked XMTP peer", it)
+        }
+    }
+
+    private suspend fun enforceBlockedDmConsent(safeClient: Client) {
+        val blockedInboxes = userBlockStore.getState().xmtpInboxes
+        blockedInboxes.forEach { inboxId ->
+            runCatching {
+                safeClient.conversations.findDmByInboxId(inboxId)?.updateConsentState(ConsentState.DENIED)
+            }.onFailure {
+                Log.w(TAG, "Could not enforce blocked XMTP peer consent", it)
+            }
+        }
     }
 
     suspend fun newGroup(

@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +31,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -93,11 +95,13 @@ import sc.pirate.app.live.LiveRoomProducerRole
 import sc.pirate.app.live.LiveRoomUiState
 import sc.pirate.app.live.LiveRoomViewerWebView
 import sc.pirate.app.live.buildLiveRoomPresentation
+import sc.pirate.app.profile.displayHandle
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.shared.sharePost
+import sc.pirate.app.safety.withoutBlockedCommentAuthors
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -186,6 +190,21 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     private var currentHasSession: Boolean = false
     private var loadGeneration = 0
     private val postPreviewCache get() = app.postPreviewCache
+    private var blockedUserIds: Set<String> = emptySet()
+
+    init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                blockedUserIds = blockState.userIds
+                _state.value = _state.value.copy(
+                    comments = _state.value.comments.withoutBlockedCommentAuthors(blockedUserIds),
+                    repliesByParentId = _state.value.repliesByParentId.mapValues { (_, replies) ->
+                        replies.withoutBlockedCommentAuthors(blockedUserIds)
+                    },
+                )
+            }
+        }
+    }
 
     fun loadPost(postId: String, hasSession: Boolean, commentSort: String = _state.value.commentSort) {
         currentPostId = postId
@@ -490,6 +509,34 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         _state.value = _state.value.copy(reportMessage = null)
     }
 
+    fun blockAuthor(authorUserId: String, identityMode: String?) {
+        val targetUserId = authorUserId.trim()
+        if (targetUserId.isBlank() || targetUserId.equals(_state.value.viewerUserId, ignoreCase = true)) return
+        viewModelScope.launch {
+            try {
+                val anonymous = identityMode.equals("anonymous", ignoreCase = true)
+                val profile = if (anonymous) {
+                    null
+                } else {
+                    runCatching { profileRepository.getByUserId(targetUserId) }.getOrNull()
+                }
+                app.userBlockStore.block(
+                    userId = targetUserId,
+                    handleLabel = if (anonymous) "Anonymous user" else profile?.displayHandle(),
+                    xmtpInbox = profile?.xmtpInbox,
+                )
+                app.chatService.blockPeer(profile?.xmtpInbox)
+                _state.value = _state.value.copy(
+                    reportMessage = "User blocked. Their posts, comments, and direct messages are hidden.",
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportMessage = e.message ?: "Could not block this user.",
+                )
+            }
+        }
+    }
+
     fun toggleSongPlayback(post: LocalizedPostResponse) {
         app.songPlaybackController.toggle(post)
     }
@@ -538,7 +585,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 _state.value = _state.value.copy(
-                    comments = (_state.value.comments + response.items).distinctBy { it.comment.commentId },
+                    comments = (_state.value.comments + response.items)
+                        .distinctBy { it.comment.commentId }
+                        .withoutBlockedCommentAuthors(blockedUserIds),
                     authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
                         response.items.mapNotNull { it.comment.authorUserId },
                     ),
@@ -579,7 +628,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 _state.value = _state.value.copy(
-                    repliesByParentId = _state.value.repliesByParentId + (parentCommentId to response.items),
+                    repliesByParentId = _state.value.repliesByParentId + (
+                        parentCommentId to response.items.withoutBlockedCommentAuthors(blockedUserIds)
+                    ),
                     nextRepliesCursorByParentId = _state.value.nextRepliesCursorByParentId +
                         (parentCommentId to response.nextCursor),
                     loadingRepliesParentIds = _state.value.loadingRepliesParentIds - parentCommentId,
@@ -624,7 +675,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 val currentReplies = _state.value.repliesByParentId[parentCommentId].orEmpty()
                 _state.value = _state.value.copy(
                     repliesByParentId = _state.value.repliesByParentId + (
-                        parentCommentId to (currentReplies + response.items).distinctBy { it.comment.commentId }
+                        parentCommentId to (currentReplies + response.items)
+                            .distinctBy { it.comment.commentId }
+                            .withoutBlockedCommentAuthors(blockedUserIds)
                     ),
                     nextRepliesCursorByParentId = _state.value.nextRepliesCursorByParentId +
                         (parentCommentId to response.nextCursor),
@@ -939,7 +992,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
             }
             if (currentPostId != postId) return
             _state.value = _state.value.copy(
-                comments = response.items,
+                comments = response.items.withoutBlockedCommentAuthors(blockedUserIds),
                 authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
                     response.items.mapNotNull { it.comment.authorUserId },
                 ),
@@ -1150,6 +1203,7 @@ fun PostScreen(
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
     var reportTarget by remember { mutableStateOf<ReportTarget?>(null) }
+    var blockAuthorTarget by remember { mutableStateOf<BlockAuthorTarget?>(null) }
     var observedFirstResume by rememberSaveable(postId, hasSession) { mutableStateOf(false) }
     val lifecycleOwner = LocalView.current.findViewTreeLifecycleOwner()
 
@@ -1227,6 +1281,25 @@ fun PostScreen(
                     is ReportTarget.Comment -> viewModel.reportComment(target.id, reason)
                 }
                 reportTarget = null
+            },
+        )
+    }
+
+    blockAuthorTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { blockAuthorTarget = null },
+            title = { Text("Block this user?") },
+            text = { Text("Their posts and comments will be hidden, and their direct messages will be denied when an XMTP inbox is available.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        blockAuthorTarget = null
+                        viewModel.blockAuthor(target.userId, target.identityMode)
+                    },
+                ) { Text("Block") }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockAuthorTarget = null }) { Text("Cancel") }
             },
         )
     }
@@ -1516,6 +1589,19 @@ fun PostScreen(
                                             if (hasSession) reportTarget = ReportTarget.Comment(commentId)
                                             else authPromptAction = "Reporting comments"
                                         },
+                                        onBlock = {
+                                            if (hasSession) {
+                                                comment.comment.authorUserId?.let { authorUserId ->
+                                                    blockAuthorTarget = BlockAuthorTarget(
+                                                        userId = authorUserId,
+                                                        identityMode = comment.comment.identityMode,
+                                                    )
+                                                }
+                                            }
+                                            else authPromptAction = "Blocking users"
+                                        },
+                                        canBlock = !comment.comment.authorUserId.isNullOrBlank() &&
+                                            !comment.comment.authorUserId.equals(state.viewerUserId, ignoreCase = true),
                                     )
                                     if (expanded) {
                                         InlineReplyComposer(
@@ -1541,6 +1627,16 @@ fun PostScreen(
                                                 onVote = { value -> viewModel.voteComment(replyId, value) },
                                                 onReply = {},
                                                 onReport = { reportTarget = ReportTarget.Comment(replyId) },
+                                                onBlock = {
+                                                    reply.comment.authorUserId?.let { authorUserId ->
+                                                        blockAuthorTarget = BlockAuthorTarget(
+                                                            userId = authorUserId,
+                                                            identityMode = reply.comment.identityMode,
+                                                        )
+                                                    }
+                                                },
+                                                canBlock = !reply.comment.authorUserId.isNullOrBlank() &&
+                                                    !reply.comment.authorUserId.equals(state.viewerUserId, ignoreCase = true),
                                                 showReplyAction = false,
                                                 modifier = Modifier.padding(start = 32.dp),
                                             )
@@ -2292,6 +2388,8 @@ private fun CommentRow(
     onVote: (Int) -> Unit,
     onReply: () -> Unit,
     onReport: () -> Unit,
+    onBlock: () -> Unit,
+    canBlock: Boolean,
     showReplyAction: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
@@ -2367,6 +2465,16 @@ private fun CommentRow(
                             modifier = Modifier.size(18.dp),
                         )
                     }
+                    if (canBlock) {
+                        IconButton(onClick = onBlock, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                imageVector = PhosphorIcons.HandPalm,
+                                contentDescription = "Block comment author",
+                                tint = PirateTokens.colors.textSecondary,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2380,6 +2488,11 @@ private sealed interface ReportTarget {
     data class Post(override val id: String) : ReportTarget { override val label = "post" }
     data class Comment(override val id: String) : ReportTarget { override val label = "comment" }
 }
+
+private data class BlockAuthorTarget(
+    val userId: String,
+    val identityMode: String?,
+)
 
 @Composable
 private fun CommentAvatar(

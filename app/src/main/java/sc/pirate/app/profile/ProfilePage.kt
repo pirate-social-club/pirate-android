@@ -72,6 +72,9 @@ fun PirateProfilePage(
     onEditProfile: (() -> Unit)? = null,
     onMessage: ((String) -> Unit)? = null,
     onBook: (() -> Unit)? = null,
+    isBlocked: Boolean = false,
+    blockUpdating: Boolean = false,
+    onToggleBlock: (() -> Unit)? = null,
 ) {
     val hasWalletTab = !data.walletAddress.isNullOrBlank()
     val tabs = buildList {
@@ -92,6 +95,9 @@ fun PirateProfilePage(
                 onEditProfile = onEditProfile,
                 onMessage = onMessage,
                 onBook = onBook,
+                isBlocked = isBlocked,
+                blockUpdating = blockUpdating,
+                onToggleBlock = onToggleBlock,
             )
         }
         item {
@@ -118,6 +124,9 @@ private fun ProfileIdentityHero(
     onEditProfile: (() -> Unit)?,
     onMessage: ((String) -> Unit)?,
     onBook: (() -> Unit)?,
+    isBlocked: Boolean,
+    blockUpdating: Boolean,
+    onToggleBlock: (() -> Unit)?,
 ) {
     val profile = data.profile
     val displayHandle = profile.displayHandle()
@@ -224,19 +233,28 @@ private fun ProfileIdentityHero(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else if (data.viewerContext == ViewerContext.Public) {
-                    if (data.profile.isBookable && onBook != null) {
+                    if (!isBlocked && data.profile.isBookable && onBook != null) {
                         PirateButton(
                             text = "View availability",
                             onClick = onBook,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    if (onMessage != null && !data.messageTarget().isNullOrBlank()) {
+                    if (!isBlocked && onMessage != null && !data.messageTarget().isNullOrBlank()) {
                         PirateButton(
                             text = "Message",
                             onClick = { data.messageTarget()?.let(onMessage) },
                             modifier = Modifier.fillMaxWidth(),
                             leadingIcon = PhosphorIcons.ChatCircle,
+                        )
+                    }
+                    if (onToggleBlock != null) {
+                        PirateButton(
+                            text = if (isBlocked) "Unblock user" else "Block user",
+                            onClick = onToggleBlock,
+                            modifier = Modifier.fillMaxWidth(),
+                            loading = blockUpdating,
+                            variant = sc.pirate.app.ui.ButtonVariant.Outline,
                         )
                     }
                 }

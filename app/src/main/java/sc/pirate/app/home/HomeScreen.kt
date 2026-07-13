@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -107,10 +108,12 @@ import sc.pirate.app.live.LiveRoomPresentation
 import sc.pirate.app.live.LiveRoomPresentationInput
 import sc.pirate.app.live.LiveRoomUiState
 import sc.pirate.app.live.buildLiveRoomPresentation
+import sc.pirate.app.profile.displayHandle
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.shared.sharePost
+import sc.pirate.app.safety.withoutBlockedAuthors
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -165,6 +168,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val feedRepository get() = app.repositories.feedRepository
     private val postRepository get() = app.repositories.postRepository
     private val communityRepository get() = app.repositories.communityRepository
+    private val profileRepository get() = app.repositories.profileRepository
     private val homeFeedCache get() = app.homeFeedCache
     private val postPreviewCache get() = app.postPreviewCache
 
@@ -172,8 +176,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
     val playbackState: StateFlow<SongPlaybackState> = app.songPlaybackController.state
     private val enrichmentJobs = mutableSetOf<Job>()
+    private var blockedUserIds: Set<String> = emptySet()
 
     init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                blockedUserIds = blockState.userIds
+                _state.value = _state.value.copy(
+                    feed = _state.value.feed?.withoutBlockedAuthors(blockedUserIds),
+                )
+            }
+        }
         load()
     }
 
@@ -199,7 +212,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _state.value = _state.value.withFeed(
                     refreshing = false,
                     loading = false,
-                    feed = feed,
+                    feed = feed.withoutBlockedAuthors(blockedUserIds),
                     activeSort = sort,
                     topTimeRange = timeRange,
                     voteError = null,
@@ -306,6 +319,34 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _state.value = _state.value.copy(reportMessage = null)
     }
 
+    fun blockAuthor(authorUserId: String, identityMode: String?) {
+        val targetUserId = authorUserId.trim()
+        if (targetUserId.isBlank() || targetUserId.equals(_state.value.viewerUserId, ignoreCase = true)) return
+        viewModelScope.launch {
+            try {
+                val anonymous = identityMode.equals("anonymous", ignoreCase = true)
+                val profile = if (anonymous) {
+                    null
+                } else {
+                    runCatching { profileRepository.getByUserId(targetUserId) }.getOrNull()
+                }
+                app.userBlockStore.block(
+                    userId = targetUserId,
+                    handleLabel = if (anonymous) "Anonymous user" else profile?.displayHandle(),
+                    xmtpInbox = profile?.xmtpInbox,
+                )
+                app.chatService.blockPeer(profile?.xmtpInbox)
+                _state.value = _state.value.copy(
+                    reportMessage = "User blocked. Their posts, comments, and direct messages are hidden.",
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportMessage = e.message ?: "Could not block this user.",
+                )
+            }
+        }
+    }
+
     private fun load(sort: String, timeRange: String) {
         viewModelScope.launch {
             val key = cacheKey(sort, timeRange)
@@ -314,7 +355,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 cacheFeedItems(cached.feed.items)
                 _state.value = _state.value.withFeed(
                     loading = false,
-                    feed = cached.feed,
+                    feed = cached.feed.withoutBlockedAuthors(blockedUserIds),
                     activeSort = sort,
                     topTimeRange = timeRange,
                     viewerUserId = app.sessionStore.get()?.user?.userId,
@@ -340,7 +381,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 cacheFeedItems(feed.items)
                 _state.value = _state.value.withFeed(
                     loading = false,
-                    feed = feed,
+                    feed = feed.withoutBlockedAuthors(blockedUserIds),
                     activeSort = sort,
                     topTimeRange = timeRange,
                     viewerUserId = app.sessionStore.get()?.user?.userId,
@@ -384,7 +425,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     sort = currentState.activeSort,
                     timeRange = if (currentState.activeSort == "top") currentState.topTimeRange else null,
                 )
-                val nextFeed = _state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage)
+                val nextFeed = (_state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage))
+                    .withoutBlockedAuthors(blockedUserIds)
                 homeFeedCache.put(
                     cacheKey(currentState.activeSort, currentState.topTimeRange),
                     nextFeed,
@@ -820,6 +862,7 @@ fun HomeScreen(
     var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
     var actionItem by remember { mutableStateOf<HomeFeedItem?>(null) }
     var reportItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+    var blockItem by remember { mutableStateOf<HomeFeedItem?>(null) }
 
     LaunchedEffect(feed?.nextCursor, state.loadingMore) {
         if (feed?.nextCursor == null) return@LaunchedEffect
@@ -875,6 +918,8 @@ fun HomeScreen(
             canCrosspost = item.post.post.postType != "crosspost" && item.post.post.parentPost == null,
             isFollowing = item.community.viewerFollowing == true,
             followLoading = item.homeCommunityId() in state.followingCommunityIds,
+            canBlock = !item.post.post.authorUserId.isNullOrBlank() &&
+                !item.post.post.authorUserId.equals(state.viewerUserId, ignoreCase = true),
             onDismiss = { actionItem = null },
             onShare = {
                 actionItem = null
@@ -883,6 +928,10 @@ fun HomeScreen(
             onReport = {
                 actionItem = null
                 if (hasSession) reportItem = item else authPromptAction = "Reporting posts"
+            },
+            onBlock = {
+                actionItem = null
+                if (hasSession) blockItem = item else authPromptAction = "Blocking users"
             },
             onCrosspost = {
                 actionItem = null
@@ -903,6 +952,27 @@ fun HomeScreen(
                 } else {
                     authPromptAction = "Following communities"
                 }
+            },
+        )
+    }
+
+    blockItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { blockItem = null },
+            title = { Text("Block this user?") },
+            text = { Text("Their posts and comments will be hidden, and their direct messages will be denied when an XMTP inbox is available.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        blockItem = null
+                        item.post.post.authorUserId?.let { authorUserId ->
+                            viewModel.blockAuthor(authorUserId, item.post.post.identityMode)
+                        }
+                    },
+                ) { Text("Block") }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockItem = null }) { Text("Cancel") }
             },
         )
     }
@@ -1393,12 +1463,14 @@ private fun MediaPreviewDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PostActionSheet(
     canCrosspost: Boolean,
+    canBlock: Boolean,
     isFollowing: Boolean,
     followLoading: Boolean,
     onDismiss: () -> Unit,
     onShare: () -> Unit,
     onCrosspost: () -> Unit,
     onReport: () -> Unit,
+    onBlock: () -> Unit,
     onToggleFollow: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -1439,6 +1511,12 @@ private fun PostActionSheet(
                 label = "Report post",
                 icon = PhosphorIcons.Flag,
                 onClick = onReport,
+            )
+            SheetActionRow(
+                label = "Block author",
+                icon = PhosphorIcons.HandPalm,
+                enabled = canBlock,
+                onClick = onBlock,
             )
             Spacer(modifier = Modifier.size(16.dp))
         }

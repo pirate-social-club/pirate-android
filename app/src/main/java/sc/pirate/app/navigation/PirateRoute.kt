@@ -8,7 +8,7 @@ private fun encodeDeepLinkSegment(value: String): String =
     URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
 
 object PirateRouteSections {
-    val settings = setOf("profile", "domains", "preferences", "agents")
+    val settings = setOf("profile", "domains", "preferences", "agents", "blocked")
     val selfCapabilities = setOf("unique_human", "age_over_18", "nationality", "gender")
     val verificationIntents = setOf(
         "profile_verification",
