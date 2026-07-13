@@ -24,4 +24,20 @@ class SongSummaryTest {
         assertNull(songDurationLabel(0))
         assertEquals("3:30", songDurationLabel(210_000))
     }
+
+    @Test
+    fun songSeekPosition_mapsTrackBoundsAndMidpoint() {
+        assertEquals(
+            0L,
+            songSeekPosition(pointerX = 5f, width = 105f, durationMs = 200_000, thumbRadiusPx = 5f),
+        )
+        assertEquals(
+            100_000L,
+            songSeekPosition(pointerX = 52.5f, width = 105f, durationMs = 200_000, thumbRadiusPx = 5f),
+        )
+        assertEquals(
+            200_000L,
+            songSeekPosition(pointerX = 100f, width = 105f, durationMs = 200_000, thumbRadiusPx = 5f),
+        )
+    }
 }

@@ -1,21 +1,23 @@
 package sc.pirate.app.song
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,7 +25,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -68,8 +76,8 @@ fun SongSummaryCard(
                 onPlayPause = onPlayPause,
                 body = body,
                 artworkSize = 84.dp,
-                titleStyle = MaterialTheme.typography.titleSmall,
-                durationStyle = MaterialTheme.typography.bodyMedium,
+                titleStyle = MaterialTheme.typography.titleMedium,
+                durationStyle = MaterialTheme.typography.bodySmall,
                 bodyStyle = MaterialTheme.typography.bodyMedium,
                 positionMs = positionMs,
                 durationMs = durationMs,
@@ -105,8 +113,6 @@ fun SongSummaryRow(
     val resolvedPositionMs = positionMs.coerceAtLeast(0).let { position ->
         resolvedDurationMs?.let { position.coerceAtMost(it) } ?: position
     }
-    val sliderMax = resolvedDurationMs?.toFloat()?.coerceAtLeast(1f) ?: 1f
-    val sliderValue = resolvedPositionMs.toFloat().coerceIn(0f, sliderMax)
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -126,7 +132,7 @@ fun SongSummaryRow(
                 text = title,
                 style = titleStyle,
                 color = PirateTokens.colors.textPrimary,
-                maxLines = 2,
+                maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Row(
@@ -140,20 +146,15 @@ fun SongSummaryRow(
                     isPlaying = isPlaying,
                     onPlayPause = onPlayPause,
                 )
-                Column(modifier = Modifier.weight(1f)) {
-                    Slider(
-                        value = sliderValue,
-                        onValueChange = { onSeek?.invoke(it.toLong()) },
-                        valueRange = 0f..sliderMax,
-                        enabled = canPlay && onSeek != null && resolvedDurationMs != null,
-                        colors = SliderDefaults.colors(
-                            thumbColor = PirateTokens.colors.accentBrand,
-                            activeTrackColor = PirateTokens.colors.accentBrand,
-                            inactiveTrackColor = PirateTokens.colors.borderSoft,
-                            disabledThumbColor = PirateTokens.colors.textSecondary,
-                            disabledActiveTrackColor = PirateTokens.colors.borderSoft,
-                            disabledInactiveTrackColor = PirateTokens.colors.borderSoft,
-                        ),
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(1.dp),
+                ) {
+                    SongSeekBar(
+                        positionMs = resolvedPositionMs,
+                        durationMs = resolvedDurationMs,
+                        enabled = canPlay && onSeek != null,
+                        onSeek = { position -> onSeek?.invoke(position) },
                     )
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -164,11 +165,13 @@ fun SongSummaryRow(
                             style = durationStyle,
                             color = PirateTokens.colors.textSecondary,
                         )
-                        Text(
-                            text = resolvedDurationMs?.let(::formatSongTime) ?: "--:--",
-                            style = durationStyle,
-                            color = PirateTokens.colors.textSecondary,
-                        )
+                        resolvedDurationMs?.let { duration ->
+                            Text(
+                                text = formatSongTime(duration),
+                                style = durationStyle,
+                                color = PirateTokens.colors.textSecondary,
+                            )
+                        }
                     }
                 }
             }
@@ -186,6 +189,92 @@ fun SongSummaryRow(
 }
 
 @Composable
+private fun SongSeekBar(
+    positionMs: Long,
+    durationMs: Long?,
+    enabled: Boolean,
+    onSeek: (Long) -> Unit,
+) {
+    val duration = durationMs?.takeIf { it > 0 }
+    val seekEnabled = enabled && duration != null
+    val progress = duration?.let { positionMs.coerceIn(0, it).toFloat() / it.toFloat() } ?: 0f
+    val activeColor = PirateTokens.colors.accentBrand
+    val inactiveColor = PirateTokens.colors.borderSoft
+    val disabledThumbColor = PirateTokens.colors.textSecondary
+    val semanticsMax = duration?.toFloat()?.coerceAtLeast(1f) ?: 1f
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(28.dp)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = positionMs.toFloat().coerceIn(0f, semanticsMax),
+                    range = 0f..semanticsMax,
+                )
+                if (seekEnabled) {
+                    setProgress { target ->
+                        onSeek(target.toLong().coerceIn(0, duration!!))
+                        true
+                    }
+                }
+            }
+            .pointerInput(seekEnabled, duration) {
+                if (seekEnabled) {
+                    detectTapGestures { offset ->
+                        onSeek(songSeekPosition(offset.x, size.width.toFloat(), duration!!, 5.dp.toPx()))
+                    }
+                }
+            }
+            .pointerInput(seekEnabled, duration) {
+                if (seekEnabled) {
+                    detectDragGestures { change, _ ->
+                        change.consume()
+                        onSeek(songSeekPosition(change.position.x, size.width.toFloat(), duration!!, 5.dp.toPx()))
+                    }
+                }
+            },
+    ) {
+        val thumbRadius = 5.dp.toPx()
+        val trackStart = thumbRadius
+        val trackEnd = (size.width - thumbRadius).coerceAtLeast(trackStart)
+        val progressX = trackStart + (trackEnd - trackStart) * progress
+        val centerY = size.height / 2f
+        val strokeWidth = 2.dp.toPx()
+
+        drawLine(
+            color = inactiveColor,
+            start = androidx.compose.ui.geometry.Offset(trackStart, centerY),
+            end = androidx.compose.ui.geometry.Offset(trackEnd, centerY),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        if (progressX > trackStart) {
+            drawLine(
+                color = activeColor,
+                start = androidx.compose.ui.geometry.Offset(trackStart, centerY),
+                end = androidx.compose.ui.geometry.Offset(progressX, centerY),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round,
+            )
+        }
+        drawCircle(
+            color = if (seekEnabled) activeColor else disabledThumbColor,
+            radius = thumbRadius,
+            center = androidx.compose.ui.geometry.Offset(progressX, centerY),
+        )
+    }
+}
+
+internal fun songSeekPosition(pointerX: Float, width: Float, durationMs: Long, thumbRadiusPx: Float): Long {
+    if (width <= 0f || durationMs <= 0) return 0
+    val trackStart = thumbRadiusPx.coerceIn(0f, width / 2f)
+    val trackWidth = (width - 2f * trackStart).coerceAtLeast(0.0001f)
+    val progress = ((pointerX - trackStart) / trackWidth).coerceIn(0f, 1f)
+    return (durationMs * progress).toLong().coerceIn(0, durationMs)
+}
+
+@Composable
 private fun SongPlayButton(
     canPlay: Boolean,
     isBuffering: Boolean,
@@ -193,29 +282,33 @@ private fun SongPlayButton(
     onPlayPause: () -> Unit,
 ) {
     Surface(
-        modifier = Modifier.clickable(
-            enabled = canPlay,
-            onClick = onPlayPause,
-        ),
+        modifier = Modifier
+            .size(40.dp)
+            .clickable(
+                enabled = canPlay,
+                onClick = onPlayPause,
+            ),
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = if (canPlay) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceDisabled,
     ) {
-        Icon(
-            imageVector = when {
-                !canPlay -> PhosphorIcons.Lock
-                isBuffering -> PhosphorIcons.MusicNotes
-                isPlaying -> PhosphorIcons.Pause
-                else -> PhosphorIcons.Play
-            },
-            contentDescription = when {
-                !canPlay -> "Song locked"
-                isBuffering -> "Loading song"
-                isPlaying -> "Pause song"
-                else -> "Play song"
-            },
-            tint = Color.White,
-            modifier = Modifier.padding(10.dp),
-        )
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = when {
+                    !canPlay -> PhosphorIcons.Lock
+                    isBuffering -> PhosphorIcons.MusicNotes
+                    isPlaying -> PhosphorIcons.Pause
+                    else -> PhosphorIcons.Play
+                },
+                contentDescription = when {
+                    !canPlay -> "Song locked"
+                    isBuffering -> "Loading song"
+                    isPlaying -> "Pause song"
+                    else -> "Play song"
+                },
+                tint = Color.White,
+                modifier = Modifier.size(19.dp),
+            )
+        }
     }
 }
 
