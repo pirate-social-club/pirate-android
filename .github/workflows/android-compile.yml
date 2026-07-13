@@ -55,6 +55,16 @@ jobs:
       - name: Run unit tests and Android lint
         run: ./gradlew --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug
 
+      - name: Build production-API debug APK
+        run: ./gradlew --no-daemon --console=plain :app:assembleDebug
+
+      - name: Upload production-API debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-debug-apk
+          path: app/build/outputs/apk/debug/
+          if-no-files-found: error
+
       - name: Upload quality reports
         if: always()
         uses: actions/upload-artifact@v4
