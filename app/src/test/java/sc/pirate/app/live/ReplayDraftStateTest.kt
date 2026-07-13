@@ -63,8 +63,8 @@ class ReplayDraftStateTest {
         assertEquals("Friday set", request.title)
         assertEquals("Recorded live.", request.caption)
         assertEquals("free", request.accessMode)
-        val payload = Json { encodeDefaults = false }.encodeToString(request)
-        assertTrue(payload.contains("\"caption\":null"))
-        assertTrue(payload.contains("\"access_mode\":\"free\""))
+        val clearedPayload = Json.encodeToString(buildFreeReplayDraftUpdate("Friday set", ""))
+        assertTrue(clearedPayload.contains("\"caption\":null"))
+        assertTrue(clearedPayload.contains("\"access_mode\":\"free\""))
     }
 }
