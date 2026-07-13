@@ -47,6 +47,9 @@ Latest verified release-safety commits and runs:
 
 - `2a57ddc` account-scoped user blocking — `android-ci` run `29240802645`.
 - `ff285b0` versioned first-UGC Terms gate — `android-ci` run `29243366968`.
+- `a273512` safe manual Sentry initialization when no DSN is configured —
+  `android-ci` run `29244502377`; verified on a Pixel 8 with a force-stop/cold
+  launch, a live app process, `MainActivity` creation, and an empty crash buffer.
 
 Latest verified structural-polish commit and run:
 
