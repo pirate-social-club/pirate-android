@@ -48,6 +48,11 @@ Latest verified release-safety commits and runs:
 - `2a57ddc` account-scoped user blocking — `android-ci` run `29240802645`.
 - `ff285b0` versioned first-UGC Terms gate — `android-ci` run `29243366968`.
 
+Latest verified structural-polish commit and run:
+
+- `d2f1940` persisted System/Light/Dark appearance modes — `android-ci` run
+  `29243881785`.
+
 Still-open release blockers remain: server-backed cross-device block and Terms
 enforcement, and legal finalization of the published Terms dispute section;
 the Play Billing/alternative-billing/geo-gating decision for digital goods; the
