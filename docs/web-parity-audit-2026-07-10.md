@@ -28,7 +28,8 @@ Blacksmith-verified; do not rebuild it:
   status; server enforcement is specified in `docs/terms-acceptance-api-contract.md`.
 - **Reddit-tier interaction pass:** automatic pagination and visible home sorting,
   skeleton/Snackbar states, motion and haptics, expandable comment threads,
-  RTL/font-scaling/semantics fixes, and encrypted composer draft recovery.
+  RTL/font-scaling/semantics fixes, encrypted composer draft recovery, and a
+  persisted System/Light/Dark appearance control backed by web-aligned light tokens.
 - **Parity rocks:** native Song Study audio transcription; native karaoke capture,
   playback, timed lyrics, reconnect and protocol handling; wallet receive,
   connected-chain balance and guarded native send; owned-agent settings and
@@ -219,6 +220,8 @@ shell.
 
 26. Room/offline read layer (replaces in-memory-only caches).
 27. Light/system theme + dynamic color (tokens centralized in `theme/PirateTokens.kt`).
+    **System/Light/Dark is implemented; dynamic color is deliberately not applied
+    because Pirate's brand/web token parity takes precedence.**
 28. Broader moderation sections; Domains settings.
 29. Baseline profiles, Compose compiler metrics, tighten over-broad proguard keeps.
 30. Fuller localization; non-EVM wallet support.

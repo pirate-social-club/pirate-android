@@ -26,6 +26,7 @@ import sc.pirate.app.legal.TermsAcceptanceStore
 import sc.pirate.app.post.PostPreviewCache
 import sc.pirate.app.safety.UserBlockStore
 import sc.pirate.app.song.SongPlaybackController
+import sc.pirate.app.theme.AppearanceStore
 import sc.pirate.app.video.VideoPlaybackController
 import sc.pirate.app.verification.VerificationCoordinator
 import sc.pirate.app.walletconnect.ReownManager
@@ -35,6 +36,7 @@ class PirateApp : Application(), ImageLoaderFactory {
     val userBlockStore by lazy { UserBlockStore(this, sessionStore) }
     val termsAcceptanceStore by lazy { TermsAcceptanceStore(this, sessionStore) }
     val termsAcceptanceManager by lazy { TermsAcceptanceManager(termsAcceptanceStore) }
+    val appearanceStore by lazy { AppearanceStore(this) }
     val apiClient by lazy { ApiClient(sessionStore) }
     val repositories by lazy {
         AppRepositories(

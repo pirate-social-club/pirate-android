@@ -65,6 +65,7 @@ import sc.pirate.app.shared.buildDefaultProfileCoverSrc
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.theme.AppearanceMode
 import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
@@ -99,6 +100,7 @@ data class SettingsUiState(
     val blockedUsers: List<BlockedUser> = emptyList(),
     val unblockingUserIds: Set<String> = emptySet(),
     val termsAcceptance: TermsAcceptance? = null,
+    val appearanceMode: AppearanceMode = AppearanceMode.System,
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -106,6 +108,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val profileRepository get() = app.repositories.profileRepository
     private val contentResolver get() = getApplication<Application>().contentResolver
     private var observedBlockedUsers: List<BlockedUser> = emptyList()
+    private var observedAppearanceMode: AppearanceMode = AppearanceMode.System
 
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
@@ -115,6 +118,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             app.userBlockStore.observe().collect { blockState ->
                 observedBlockedUsers = blockState.users
                 _state.value = _state.value.copy(blockedUsers = blockState.users)
+            }
+        }
+        viewModelScope.launch {
+            app.appearanceStore.observe().collect { mode ->
+                observedAppearanceMode = mode
+                _state.value = _state.value.copy(appearanceMode = mode)
             }
         }
     }
@@ -134,6 +143,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     handleLabel = profile.globalHandle?.label.orEmpty(),
                     preferredLocale = profile.preferredLocale.orEmpty(),
                     termsAcceptance = termsAcceptance,
+                    appearanceMode = observedAppearanceMode,
                 )
             } catch (e: Exception) {
                 _state.value = SettingsUiState(
@@ -191,6 +201,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun updatePreferredLocale(value: String) {
         _state.value = _state.value.copy(preferredLocale = value, error = null, message = null)
+    }
+
+    fun setAppearanceMode(mode: AppearanceMode) {
+        if (mode == _state.value.appearanceMode) return
+        _state.value = _state.value.copy(appearanceMode = mode, error = null, message = null)
+        viewModelScope.launch {
+            try {
+                app.appearanceStore.set(mode)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    appearanceMode = observedAppearanceMode,
+                    error = e.message ?: "Could not save appearance preference.",
+                )
+            }
+        }
     }
 
     fun selectAvatar(uri: Uri?) {
@@ -900,24 +925,49 @@ private fun PreferencesSettings(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
 ) {
-    SettingsSection(title = "Language") {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            OutlinedTextField(
-                value = state.preferredLocale,
-                onValueChange = viewModel::updatePreferredLocale,
-                label = { Text("App language") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !state.savingPreferences,
+    Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
+        SettingsSection(title = "Appearance") {
+            Text(
+                text = "Use your device setting or choose a theme for Pirate.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.textSecondary,
             )
-            PirateButton(
-                text = "Save preferences",
-                onClick = viewModel::savePreferences,
-                loading = state.savingPreferences,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppearanceMode.entries.forEach { mode ->
+                    PirateButton(
+                        text = mode.displayLabel(),
+                        onClick = { viewModel.setAppearanceMode(mode) },
+                        variant = if (state.appearanceMode == mode) ButtonVariant.Default else ButtonVariant.Outline,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+        SettingsSection(title = "Language") {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                OutlinedTextField(
+                    value = state.preferredLocale,
+                    onValueChange = viewModel::updatePreferredLocale,
+                    label = { Text("App language") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !state.savingPreferences,
+                )
+                PirateButton(
+                    text = "Save preferences",
+                    onClick = viewModel::savePreferences,
+                    loading = state.savingPreferences,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
+}
+
+private fun AppearanceMode.displayLabel(): String = when (this) {
+    AppearanceMode.System -> "System"
+    AppearanceMode.Light -> "Light"
+    AppearanceMode.Dark -> "Dark"
 }
 
 @Composable

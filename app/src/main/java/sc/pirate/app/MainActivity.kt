@@ -26,6 +26,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.SideEffect
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -34,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.core.view.WindowCompat
 import com.reown.appkit.ui.openAppKit
 import kotlinx.coroutines.delay
 import sc.pirate.app.auth.AuthViewModel
@@ -42,6 +45,7 @@ import sc.pirate.app.navigation.PirateDeepLinks
 import sc.pirate.app.navigation.PirateNavHost
 import sc.pirate.app.navigation.PirateRoute
 import sc.pirate.app.theme.PirateTheme
+import sc.pirate.app.theme.AppearanceMode
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.BottomNavItem
 import sc.pirate.app.ui.PhosphorIcons
@@ -58,7 +62,16 @@ class MainActivity : ComponentActivity() {
         handleAppDeepLink(intent)
         enableEdgeToEdge()
         setContent {
-            PirateTheme {
+            val appearanceMode by (application as PirateApp).appearanceStore.observe()
+                .collectAsState(initial = AppearanceMode.System)
+            val useDarkTheme = appearanceMode.usesDarkTheme(isSystemInDarkTheme())
+            SideEffect {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = !useDarkTheme
+                    isAppearanceLightNavigationBars = !useDarkTheme
+                }
+            }
+            PirateTheme(appearanceMode = appearanceMode) {
                 PirateAppShell(
                     pendingDeepLinkRoute = pendingDeepLinkRoute,
                     onDeepLinkRouteConsumed = { pendingDeepLinkRoute.value = null },
