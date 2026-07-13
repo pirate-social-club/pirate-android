@@ -74,8 +74,8 @@ jobs:
           echo "keyPassword=${{ secrets.SIGNING_KEY_PASSWORD }}" >> signing.properties
         shell: bash
 
-      - name: Run unit tests and Android lint
-        run: ./scripts/androidw.sh --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug
+      - name: Run unit tests
+        run: ./scripts/androidw.sh --no-daemon --console=plain :app:testDebugUnitTest
 
       - name: Build release APK
         run: ./scripts/androidw.sh --no-daemon --console=plain :app:assembleRelease

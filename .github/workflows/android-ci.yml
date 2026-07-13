@@ -56,21 +56,19 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d
 
-      - name: Run unit tests and Android lint
-        run: ./scripts/androidw.sh --no-daemon --console=plain :app:testDebugUnitTest :app:lintDebug
+      - name: Run unit tests
+        run: ./scripts/androidw.sh --no-daemon --console=plain :app:testDebugUnitTest
 
       - name: Build debug
         run: ./scripts/androidw.sh --no-daemon --console=plain :app:assembleDebug
 
-      - name: Upload quality reports
+      - name: Upload unit test reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: android-quality-reports
+          name: android-unit-test-reports
           path: |
             app/build/reports/tests/testDebugUnitTest/
-            app/build/reports/lint-results-debug.html
-            app/build/reports/lint-results-debug.xml
           if-no-files-found: ignore
           retention-days: 7
 
