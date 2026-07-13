@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,6 +52,7 @@ internal fun CommunityRulesScreen(
     communityId: String,
     onBack: () -> Unit,
     onOpenRequests: () -> Unit,
+    onOpenQueue: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: CommunityModerationViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -91,20 +91,8 @@ internal fun CommunityRulesScreen(
                     TextButton(onClick = onOpenRequests) {
                         Text("Requests", color = PirateTokens.colors.textPrimary)
                     }
-                    TextButton(
-                        onClick = {
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            viewModel.addRule()
-                        },
-                        enabled = !state.loading && !state.saving,
-                    ) {
-                        Icon(
-                            imageVector = PhosphorIcons.Plus,
-                            contentDescription = null,
-                            tint = PirateTokens.colors.textPrimary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                        Text(" Add rule", color = PirateTokens.colors.textPrimary)
+                    TextButton(onClick = onOpenQueue) {
+                        Text("Queue", color = PirateTokens.colors.textPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = PirateTokens.colors.bgPage),
@@ -178,16 +166,33 @@ internal fun CommunityRulesScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item {
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                text = "Set the standard",
-                                style = MaterialTheme.typography.titleLarge,
-                                color = PirateTokens.colors.textPrimary,
-                            )
-                            Text(
-                                text = "Rules appear in order on the community page and can power report reasons.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = PirateTokens.colors.textSecondary,
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = "Set the standard",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = PirateTokens.colors.textPrimary,
+                                )
+                                Text(
+                                    text = "Rules appear in order and can power report reasons.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = PirateTokens.colors.textSecondary,
+                                )
+                            }
+                            PirateButton(
+                                text = "Add rule",
+                                onClick = {
+                                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                    viewModel.addRule()
+                                },
+                                enabled = !state.saving,
                             )
                         }
                     }

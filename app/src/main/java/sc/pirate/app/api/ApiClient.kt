@@ -560,6 +560,38 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(Community.serializer(), response)
         }
 
+        suspend fun listModerationCases(communityId: String): ModerationCaseListResponse {
+            val response = api.getString(
+                "/communities/${api.encodePathSegment(communityId)}/moderation/cases",
+            )
+            return api.json.decodeFromString(ModerationCaseListResponse.serializer(), response)
+        }
+
+        suspend fun getModerationCase(
+            communityId: String,
+            moderationCaseId: String,
+        ): ModerationCaseDetail {
+            val response = api.getString(
+                "/communities/${api.encodePathSegment(communityId)}/moderation/cases/" +
+                    api.encodePathSegment(moderationCaseId),
+            )
+            return api.json.decodeFromString(ModerationCaseDetail.serializer(), response)
+        }
+
+        suspend fun resolveModerationCase(
+            communityId: String,
+            moderationCaseId: String,
+            request: CreateModerationActionRequest,
+        ): ModerationCaseDetail {
+            val body = api.json.encodeToString(CreateModerationActionRequest.serializer(), request)
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/moderation/cases/" +
+                    "${api.encodePathSegment(moderationCaseId)}/actions",
+                body,
+            )
+            return api.json.decodeFromString(ModerationCaseDetail.serializer(), response)
+        }
+
         suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
             val body = api.json.encodeToString(
                 AttachNamespaceRequest.serializer(),

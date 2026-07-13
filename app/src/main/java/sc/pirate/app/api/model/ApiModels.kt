@@ -376,6 +376,73 @@ data class MembershipRequestListResponse(
 )
 
 @Serializable
+data class ModerationCasePostPreview(
+    @SerialName("post_id") val postId: String,
+    @SerialName("post_type") val postType: String,
+    val status: String,
+    val title: String? = null,
+    val body: String? = null,
+    val caption: String? = null,
+    @SerialName("media_refs_json") val mediaRefsJson: String? = null,
+    @SerialName("author_handle") val authorHandle: String? = null,
+)
+
+@Serializable
+data class ModerationCaseSummary(
+    @SerialName("moderation_case_id") val moderationCaseId: String,
+    @SerialName("community_id") val communityId: String,
+    @SerialName("post_id") val postId: String? = null,
+    @SerialName("comment_id") val commentId: String? = null,
+    val status: String,
+    @SerialName("queue_scope") val queueScope: String,
+    val priority: String,
+    @SerialName("opened_by") val openedBy: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("resolved_at") val resolvedAt: String? = null,
+    val post: ModerationCasePostPreview? = null,
+)
+
+@Serializable
+data class ModerationCaseListResponse(
+    val items: List<ModerationCaseSummary> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class ModerationSignalSummary(
+    @SerialName("moderation_signal_id") val moderationSignalId: String,
+    @SerialName("signal_type") val signalType: String,
+    val severity: String,
+    @SerialName("provider_label") val providerLabel: String,
+    @SerialName("evidence_ref") val evidenceRef: String? = null,
+)
+
+@Serializable
+data class ModerationReportSummary(
+    @SerialName("user_report_id") val userReportId: String,
+    @SerialName("reason_code") val reasonCode: String,
+    val note: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+)
+
+@Serializable
+data class ModerationCaseDetail(
+    val case: ModerationCaseSummary,
+    val post: JsonObject? = null,
+    val comment: JsonObject? = null,
+    val signals: List<ModerationSignalSummary> = emptyList(),
+    val reports: List<ModerationReportSummary> = emptyList(),
+    val actions: List<JsonObject> = emptyList(),
+)
+
+@Serializable
+data class CreateModerationActionRequest(
+    @SerialName("action_type") val actionType: String,
+    val note: String? = null,
+)
+
+@Serializable
 data class MembershipGateSummary(
     @SerialName("gate_type") val gateType: String,
     @SerialName("accepted_providers") val acceptedProviders: List<String>? = null,

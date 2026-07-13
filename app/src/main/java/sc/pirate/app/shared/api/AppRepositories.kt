@@ -45,6 +45,8 @@ import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
 import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.MembershipRequestListResponse
 import sc.pirate.app.api.model.MembershipRequestSummary
+import sc.pirate.app.api.model.ModerationCaseDetail
+import sc.pirate.app.api.model.ModerationCaseListResponse
 import sc.pirate.app.api.model.NotificationFeedResponse
 import sc.pirate.app.api.model.NotificationSummary
 import sc.pirate.app.api.model.NotificationTasksResponse
@@ -58,6 +60,7 @@ import sc.pirate.app.api.model.PublishLiveRoomResponse
 import sc.pirate.app.api.model.PublishLiveRoomReplayDraftRequest
 import sc.pirate.app.api.model.UpdateLiveRoomReplayDraftRequest
 import sc.pirate.app.api.model.UpdateCommunityRulesRequest
+import sc.pirate.app.api.model.CreateModerationActionRequest
 import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.api.model.PublicCommunitySearchResponse
 import sc.pirate.app.api.model.SessionExchangeResponse
@@ -107,6 +110,13 @@ interface CommunityRepository {
         approve: Boolean,
     ): MembershipRequestSummary
     suspend fun updateRules(communityId: String, request: UpdateCommunityRulesRequest): Community
+    suspend fun listModerationCases(communityId: String): ModerationCaseListResponse
+    suspend fun getModerationCase(communityId: String, moderationCaseId: String): ModerationCaseDetail
+    suspend fun resolveModerationCase(
+        communityId: String,
+        moderationCaseId: String,
+        request: CreateModerationActionRequest,
+    ): ModerationCaseDetail
     suspend fun listPosts(
         communityId: String,
         limit: Int? = null,
@@ -397,6 +407,25 @@ class ApiCommunityRepository(
 
     override suspend fun updateRules(communityId: String, request: UpdateCommunityRulesRequest): Community {
         return apiClient.communities.updateRules(communityId, request)
+    }
+
+    override suspend fun listModerationCases(communityId: String): ModerationCaseListResponse {
+        return apiClient.communities.listModerationCases(communityId)
+    }
+
+    override suspend fun getModerationCase(
+        communityId: String,
+        moderationCaseId: String,
+    ): ModerationCaseDetail {
+        return apiClient.communities.getModerationCase(communityId, moderationCaseId)
+    }
+
+    override suspend fun resolveModerationCase(
+        communityId: String,
+        moderationCaseId: String,
+        request: CreateModerationActionRequest,
+    ): ModerationCaseDetail {
+        return apiClient.communities.resolveModerationCase(communityId, moderationCaseId, request)
     }
 
     override suspend fun listPosts(

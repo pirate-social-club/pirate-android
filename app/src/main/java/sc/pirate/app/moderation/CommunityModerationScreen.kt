@@ -424,11 +424,23 @@ fun CommunityModerationScreen(
         return
     }
 
+    if (section == "queue") {
+        ModerationQueueScreen(
+            communityId = communityId,
+            onBack = onBack,
+            onOpenRequests = { onNavigateToSection("requests") },
+            onOpenRules = { onNavigateToSection("rules") },
+            modifier = modifier,
+        )
+        return
+    }
+
     if (section == "rules") {
         CommunityRulesScreen(
             communityId = communityId,
             onBack = onBack,
             onOpenRequests = { onNavigateToSection("requests") },
+            onOpenQueue = { onNavigateToSection("queue") },
             modifier = modifier,
         )
         return
