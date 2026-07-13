@@ -521,6 +521,33 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(CommunityFollowResponse.serializer(), response)
         }
 
+        suspend fun listMembershipRequests(
+            communityId: String,
+            cursor: String? = null,
+            limit: Int = 50,
+        ): MembershipRequestListResponse {
+            val communityPath = api.encodePathSegment(communityId)
+            val path = api.buildQueryPath(
+                "/communities/$communityPath/membership-requests",
+                listOf("cursor" to cursor, "limit" to limit.toString()),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(MembershipRequestListResponse.serializer(), response)
+        }
+
+        suspend fun reviewMembershipRequest(
+            communityId: String,
+            requestId: String,
+            approve: Boolean,
+        ): MembershipRequestSummary {
+            val decision = if (approve) "approve" else "reject"
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/membership-requests/" +
+                    "${api.encodePathSegment(requestId)}/$decision",
+            )
+            return api.json.decodeFromString(MembershipRequestSummary.serializer(), response)
+        }
+
         suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
             val body = api.json.encodeToString(
                 AttachNamespaceRequest.serializer(),

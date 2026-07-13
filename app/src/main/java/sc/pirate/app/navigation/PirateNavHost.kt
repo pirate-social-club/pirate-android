@@ -638,11 +638,11 @@ fun PirateNavHost(
                     onOpenPost = { postId ->
                         navController.navigate(PirateRoute.Post.buildRoute(postId))
                     },
-                    onOpenCommunity = { communityId ->
-                        navController.navigate(PirateRoute.Community.buildRoute(communityId))
-                    },
                     onOpenCommunityNamespace = { communityId ->
                         navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
+                    },
+                    onOpenCommunityRequests = { communityId ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "requests"))
                     },
                     onOpenProfileSettings = {
                         navController.navigate(PirateRoute.SettingsIndex.route)

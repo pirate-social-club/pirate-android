@@ -20,6 +20,7 @@ object PirateRouteSections {
     )
     val communityModeration = setOf(
         "profile",
+        "requests",
         "rules",
         "links",
         "labels",

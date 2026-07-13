@@ -337,6 +337,25 @@ data class CommunityRule(
 )
 
 @Serializable
+data class MembershipRequestSummary(
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    val community: String,
+    @SerialName("applicant_user") val applicantUser: String,
+    @SerialName("applicant_handle") val applicantHandle: String? = null,
+    @SerialName("applicant_avatar_ref") val applicantAvatarRef: String? = null,
+    val status: String,
+    val note: String? = null,
+    val created: Long,
+)
+
+@Serializable
+data class MembershipRequestListResponse(
+    val items: List<MembershipRequestSummary> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
 data class MembershipGateSummary(
     @SerialName("gate_type") val gateType: String,
     @SerialName("accepted_providers") val acceptedProviders: List<String>? = null,

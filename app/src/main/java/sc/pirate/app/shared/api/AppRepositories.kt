@@ -43,6 +43,8 @@ import sc.pirate.app.api.model.LiveRoomReplayDraft
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
 import sc.pirate.app.api.model.LocalizedPostResponse
+import sc.pirate.app.api.model.MembershipRequestListResponse
+import sc.pirate.app.api.model.MembershipRequestSummary
 import sc.pirate.app.api.model.NotificationFeedResponse
 import sc.pirate.app.api.model.NotificationSummary
 import sc.pirate.app.api.model.NotificationTasksResponse
@@ -93,6 +95,16 @@ interface CommunityRepository {
     suspend fun joinCommunity(communityId: String, altchaHeader: String? = null): CommunityJoinResponse
     suspend fun followCommunity(communityId: String): CommunityFollowResponse
     suspend fun unfollowCommunity(communityId: String): CommunityFollowResponse
+    suspend fun listMembershipRequests(
+        communityId: String,
+        cursor: String? = null,
+        limit: Int = 50,
+    ): MembershipRequestListResponse
+    suspend fun reviewMembershipRequest(
+        communityId: String,
+        requestId: String,
+        approve: Boolean,
+    ): MembershipRequestSummary
     suspend fun listPosts(
         communityId: String,
         limit: Int? = null,
@@ -363,6 +375,22 @@ class ApiCommunityRepository(
 
     override suspend fun unfollowCommunity(communityId: String): CommunityFollowResponse {
         return apiClient.communities.unfollow(communityId)
+    }
+
+    override suspend fun listMembershipRequests(
+        communityId: String,
+        cursor: String?,
+        limit: Int,
+    ): MembershipRequestListResponse {
+        return apiClient.communities.listMembershipRequests(communityId, cursor, limit)
+    }
+
+    override suspend fun reviewMembershipRequest(
+        communityId: String,
+        requestId: String,
+        approve: Boolean,
+    ): MembershipRequestSummary {
+        return apiClient.communities.reviewMembershipRequest(communityId, requestId, approve)
     }
 
     override suspend fun listPosts(

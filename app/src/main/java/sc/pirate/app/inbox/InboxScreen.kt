@@ -197,8 +197,8 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
 @Composable
 fun InboxScreen(
     onOpenPost: (String) -> Unit,
-    onOpenCommunity: (String) -> Unit,
     onOpenCommunityNamespace: (String) -> Unit,
+    onOpenCommunityRequests: (String) -> Unit,
     onOpenProfileSettings: () -> Unit,
     onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
@@ -327,8 +327,8 @@ fun InboxScreen(
                                         onOpen = {
                                             openTask(
                                                 task = task,
-                                                onOpenCommunity = onOpenCommunity,
                                                 onOpenCommunityNamespace = onOpenCommunityNamespace,
+                                                onOpenCommunityRequests = onOpenCommunityRequests,
                                                 onOpenProfileSettings = onOpenProfileSettings,
                                                 onVerifyHuman = {
                                                     viewModel.startVeryHumanVerification(
@@ -509,8 +509,8 @@ private fun NotificationRow(
 
 private fun openTask(
     task: UserTask,
-    onOpenCommunity: (String) -> Unit,
     onOpenCommunityNamespace: (String) -> Unit,
+    onOpenCommunityRequests: (String) -> Unit,
     onOpenProfileSettings: () -> Unit,
     onVerifyHuman: () -> Unit,
 ) {
@@ -519,7 +519,7 @@ private fun openTask(
         "profile_completion_suggested",
         "global_handle_cleanup_suggested" -> onOpenProfileSettings()
         "namespace_verification_required" -> onOpenCommunityNamespace(task.subject)
-        "membership_review" -> onOpenCommunity(task.subject)
+        "membership_review" -> onOpenCommunityRequests(task.subject)
     }
 }
 
