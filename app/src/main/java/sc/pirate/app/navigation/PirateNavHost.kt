@@ -313,9 +313,6 @@ fun PirateNavHost(
             PostScreen(
                 postId = postId,
                 hasSession = hasSession,
-                onNavigateToCompose = { communityId ->
-                    navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
-                },
                 onNavigateToCrosspost = { sourceCommunityId, sourcePostId, sourceTitle ->
                     navController.navigate(
                         PirateRoute.CrosspostSelectCommunity.buildRoute(

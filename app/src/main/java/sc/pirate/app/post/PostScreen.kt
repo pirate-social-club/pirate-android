@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -32,7 +33,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -41,6 +41,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -97,6 +98,7 @@ import sc.pirate.app.live.LiveRoomViewerWebView
 import sc.pirate.app.live.buildLiveRoomPresentation
 import sc.pirate.app.profile.displayHandle
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
+import sc.pirate.app.shared.copyPostLink
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
@@ -550,6 +552,10 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleSongPlayback(post: LocalizedPostResponse) {
         app.songPlaybackController.toggle(post)
+    }
+
+    fun seekSongPlayback(postId: String, positionMs: Long) {
+        app.songPlaybackController.seek(postId, positionMs)
     }
 
     fun pauseSongPlayback() {
@@ -1162,6 +1168,123 @@ private fun SortSheetRow(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ThreadPostActionSheet(
+    canBlock: Boolean,
+    onDismiss: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Actions",
+                style = MaterialTheme.typography.titleLarge,
+                color = PirateTokens.colors.textPrimary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            ThreadSheetActionRow(
+                label = "Report post",
+                icon = PhosphorIcons.Flag,
+                onClick = onReport,
+            )
+            if (canBlock) {
+                ThreadSheetActionRow(
+                    label = "Block author",
+                    icon = PhosphorIcons.HandPalm,
+                    onClick = onBlock,
+                )
+            }
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ThreadShareSheet(
+    canCrosspost: Boolean,
+    onDismiss: () -> Unit,
+    onCrosspost: () -> Unit,
+    onCopyLink: () -> Unit,
+    onNativeShare: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Share",
+                style = MaterialTheme.typography.titleLarge,
+                color = PirateTokens.colors.textPrimary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            if (canCrosspost) {
+                ThreadSheetActionRow(
+                    label = "Crosspost",
+                    icon = PhosphorIcons.ArrowsClockwise,
+                    onClick = onCrosspost,
+                )
+            }
+            ThreadSheetActionRow(
+                label = "Copy link",
+                icon = PhosphorIcons.Copy,
+                onClick = onCopyLink,
+            )
+            ThreadSheetActionRow(
+                label = "Share…",
+                icon = PhosphorIcons.ShareNetwork,
+                onClick = onNativeShare,
+            )
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ThreadSheetActionRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = PirateTokens.colors.textSecondary,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = PirateTokens.colors.textPrimary,
+        )
+    }
+}
+
+@Composable
 private fun CommentSortPill(
     selectedSort: String,
     onClick: () -> Unit,
@@ -1203,7 +1326,6 @@ private fun CommentSortPill(
 fun PostScreen(
     postId: String,
     hasSession: Boolean,
-    onNavigateToCompose: ((String) -> Unit)? = null,
     onNavigateToCrosspost: (sourceCommunityId: String, sourcePostId: String, sourceTitle: String?) -> Unit,
     onNavigateToCommunity: (String) -> Unit,
     onWatchLiveRoom: () -> Unit,
@@ -1219,12 +1341,15 @@ fun PostScreen(
     val context = LocalContext.current
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val videoPlaybackState by viewModel.videoPlaybackState.collectAsState()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var postActionSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var shareSheetOpen by rememberSaveable { mutableStateOf(false) }
     var reportTarget by remember { mutableStateOf<ReportTarget?>(null) }
     var blockAuthorTarget by remember { mutableStateOf<BlockAuthorTarget?>(null) }
     var observedFirstResume by rememberSaveable(postId, hasSession) { mutableStateOf(false) }
@@ -1338,10 +1463,62 @@ fun PostScreen(
         )
     }
 
+    if (postActionSheetOpen) {
+        val post = state.post?.post
+        ThreadPostActionSheet(
+            canBlock = post?.let {
+                !it.authorUserId.isNullOrBlank() &&
+                    !it.authorUserId.equals(state.viewerUserId, ignoreCase = true)
+            } == true,
+            onDismiss = { postActionSheetOpen = false },
+            onReport = {
+                postActionSheetOpen = false
+                if (hasSession && post != null) reportTarget = ReportTarget.Post(post.postId)
+                else authPromptAction = "Reporting posts"
+            },
+            onBlock = {
+                postActionSheetOpen = false
+                val authorUserId = post?.authorUserId
+                if (hasSession && post != null && !authorUserId.isNullOrBlank()) {
+                    blockAuthorTarget = BlockAuthorTarget(authorUserId, post.identityMode)
+                } else {
+                    authPromptAction = "Blocking users"
+                }
+            },
+        )
+    }
+
+    if (shareSheetOpen) {
+        val post = state.post?.post
+        ThreadShareSheet(
+            canCrosspost = post != null && post.postType != "crosspost" && post.parentPost == null,
+            onDismiss = { shareSheetOpen = false },
+            onCrosspost = {
+                shareSheetOpen = false
+                if (hasSession && post != null) {
+                    onNavigateToCrosspost(post.communityId, post.postId, post.title)
+                } else {
+                    authPromptAction = "Crossposting"
+                }
+            },
+            onCopyLink = {
+                shareSheetOpen = false
+                post?.let {
+                    copyPostLink(context, it.postId)
+                    coroutineScope.launch { snackbarHostState.showSnackbar("Post link copied.") }
+                }
+            },
+            onNativeShare = {
+                shareSheetOpen = false
+                post?.let { sharePost(context, it.postId, it.title) }
+            },
+        )
+    }
+
     androidx.compose.material3.Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Text(
                         text = "Post",
@@ -1358,50 +1535,13 @@ fun PostScreen(
                     }
                 },
                 actions = {
-                    state.post?.post?.let { post ->
-                        if (post.postType != "crosspost" && post.parentPost == null) {
-                            IconButton(onClick = {
-                                if (hasSession) {
-                                    onNavigateToCrosspost(post.communityId, post.postId, post.title)
-                                } else {
-                                    authPromptAction = "Crossposting"
-                                }
-                            }) {
-                                Icon(
-                                    imageVector = PhosphorIcons.ShareNetwork,
-                                    contentDescription = "Crosspost",
-                                    tint = PirateTokens.colors.textPrimary,
-                                )
-                            }
-                        }
-                        IconButton(onClick = { sharePost(context, post.postId, post.title) }) {
+                    if (state.post != null) {
+                        IconButton(onClick = { commentSortSheetOpen = true }) {
                             Icon(
-                                imageVector = PhosphorIcons.ShareNetwork,
-                                contentDescription = "Share post",
+                                imageVector = PhosphorIcons.SlidersHorizontal,
+                                contentDescription = "Sort comments",
                                 tint = PirateTokens.colors.textPrimary,
                             )
-                        }
-                        IconButton(onClick = {
-                            if (hasSession) reportTarget = ReportTarget.Post(post.postId)
-                            else authPromptAction = "Reporting posts"
-                        }) {
-                            Icon(
-                                imageVector = PhosphorIcons.Flag,
-                                contentDescription = "Report post",
-                                tint = PirateTokens.colors.textPrimary,
-                            )
-                        }
-                    }
-                    if (onNavigateToCompose != null) {
-                        val communityId = state.post?.post?.communityId
-                        if (!communityId.isNullOrBlank()) {
-                            IconButton(onClick = { onNavigateToCompose(communityId) }) {
-                                Icon(
-                                    imageVector = PhosphorIcons.Plus,
-                                    contentDescription = "Create post",
-                                    tint = PirateTokens.colors.textPrimary,
-                                )
-                            }
                         }
                     }
                 },
@@ -1458,6 +1598,8 @@ fun PostScreen(
                             purchaseError = state.purchaseError,
                             purchaseMessage = state.purchaseMessage,
                             onOpenCommunity = onNavigateToCommunity,
+                            onOpenPostActions = { postActionSheetOpen = true },
+                            onOpenShare = { shareSheetOpen = true },
                             onVote = { value ->
                                 if (hasSession) viewModel.votePost(value) else authPromptAction = "Voting"
                             },
@@ -1493,6 +1635,9 @@ fun PostScreen(
                             onToggleSongPlayback = {
                                 viewModel.toggleSongPlayback(postResponse)
                             },
+                            onSeekSongPlayback = { positionMs ->
+                                viewModel.seekSongPlayback(post.postId, positionMs)
+                            },
                             onPlayVideoDetail = {
                                 viewModel.playVideoDetail(postResponse)
                             },
@@ -1521,15 +1666,6 @@ fun PostScreen(
                             onSubmit = {
                                 if (hasSession) viewModel.submitComment() else authPromptAction = "Commenting"
                             },
-                        )
-                    }
-
-                    item {
-                        CommentSortPill(
-                            selectedSort = state.commentSort,
-                            onClick = { commentSortSheetOpen = true },
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
                         )
                     }
 
@@ -1769,6 +1905,8 @@ private fun ThreadRootPost(
     purchaseError: String?,
     purchaseMessage: String?,
     onOpenCommunity: (String) -> Unit,
+    onOpenPostActions: () -> Unit,
+    onOpenShare: () -> Unit,
     onVote: (Int) -> Unit,
     onBuyLiveRoomTicket: () -> Unit,
     onWatchLiveRoom: () -> Unit,
@@ -1778,6 +1916,7 @@ private fun ThreadRootPost(
     onVerifyAge: () -> Unit,
     onStudy: () -> Unit,
     onToggleSongPlayback: () -> Unit,
+    onSeekSongPlayback: (Long) -> Unit,
     onPlayVideoDetail: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
@@ -1808,28 +1947,41 @@ private fun ThreadRootPost(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(PirateTokens.radius.sm))
-                    .clickable { onOpenCommunity(post.communityId) }
-                    .padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CommunityAvatar(label = communityPreview?.displayName ?: routeLabel)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = routeLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "$authorLabel · ${relativeTimeLabel(post.createdAt)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = PirateTokens.colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(PirateTokens.radius.sm))
+                        .clickable { onOpenCommunity(post.communityId) }
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CommunityAvatar(label = communityPreview?.displayName ?: routeLabel)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = routeLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PirateTokens.colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "$authorLabel · ${relativeTimeLabel(post.createdAt)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(onClick = onOpenPostActions) {
+                    Icon(
+                        imageVector = PhosphorIcons.DotsThree,
+                        contentDescription = "Post actions",
+                        tint = PirateTokens.colors.textSecondary,
                     )
                 }
             }
@@ -1867,20 +2019,14 @@ private fun ThreadRootPost(
                     canPlay = resolveSongAudioUrl(postResponse) != null,
                     isBuffering = postIsCurrent && songPlaybackState.isBuffering,
                     isPlaying = postIsCurrent && songPlaybackState.isPlaying,
+                    positionMs = songPlaybackState.positionMs.takeIf { postIsCurrent } ?: 0,
+                    durationMs = songPlaybackState.durationMs.takeIf { postIsCurrent },
                     error = songPlaybackState.error.takeIf { postIsCurrent },
                     onPlayPause = onToggleSongPlayback,
+                    onSeek = onSeekSongPlayback.takeIf { postIsCurrent },
+                    onStudy = onStudy.takeIf { postResponse.studyCapability?.status == "ready" },
                     onSing = onSing.takeIf { postResponse.canStartNativeKaraoke() },
                 )
-                // Data-gated Study CTA: the server decides availability via study_capability.
-                // Access itself is re-checked server-side when the study pack loads.
-                if (postResponse.studyCapability?.status == "ready") {
-                    PirateButton(
-                        text = "Study",
-                        onClick = onStudy,
-                        variant = ButtonVariant.Outline,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
             }
             if (isVideoPost(postResponse) && post.anchorLiveRoom == null) {
                 val postIsCurrent = videoPlaybackState.postId == post.postId
@@ -1958,6 +2104,7 @@ private fun ThreadRootPost(
                     onVote = onVote,
                 )
                 CommentCountPill(count = comments)
+                SharePostPill(onClick = onOpenShare)
             }
         }
     }
@@ -1969,8 +2116,12 @@ private fun ThreadSongSummary(
     canPlay: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long?,
     error: String?,
     onPlayPause: () -> Unit,
+    onSeek: ((Long) -> Unit)?,
+    onStudy: (() -> Unit)? = null,
     onSing: (() -> Unit)? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1979,15 +2130,34 @@ private fun ThreadSongSummary(
             canPlay = canPlay,
             isBuffering = isBuffering,
             isPlaying = isPlaying,
+            positionMs = positionMs,
+            durationMs = durationMs,
             error = error,
             onPlayPause = onPlayPause,
+            onSeek = onSeek,
         )
-        if (onSing != null) {
-            PirateButton(
-                text = "Sing",
-                onClick = onSing,
+        if (onStudy != null || onSing != null) {
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-            )
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                onStudy?.let {
+                    PirateButton(
+                        text = "Study",
+                        onClick = it,
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                onSing?.let {
+                    PirateButton(
+                        text = "Sing",
+                        onClick = it,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
         }
     }
 }
@@ -2312,17 +2482,13 @@ private fun AssetCommerceSummary(
     listing: CommunityListing,
     purchase: CommunityPurchase?,
 ) {
-    val label = when (postType) {
-        "video" -> "Video"
-        "song" -> "Song"
-        else -> "Asset"
+    val productLabel = when (postType) {
+        "video" -> "Digital video"
+        "song" -> "Digital MP3"
+        else -> "Digital asset"
     }
     val priceLabel = listing.priceCents.takeIf { it > 0 }?.let(::formatUsdCents)
-    val accessLabel = if (purchase != null) {
-        "$label unlocked"
-    } else {
-        priceLabel?.let { "$label unlock $it" } ?: "$label available to unlock"
-    }
+    val listingActive = listing.status == null || listing.status == "active"
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -2330,23 +2496,59 @@ private fun AssetCommerceSummary(
         color = PirateTokens.colors.surfaceSubtle,
         border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                imageVector = if (postType == "video") PhosphorIcons.VideoCamera else PhosphorIcons.MusicNote,
-                contentDescription = null,
-                tint = PirateTokens.colors.textSecondary,
-            )
-            Text(
-                text = accessLabel,
-                style = MaterialTheme.typography.labelLarge,
-                color = PirateTokens.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (purchase != null) {
+                        PhosphorIcons.CheckCircle
+                    } else if (postType == "video") {
+                        PhosphorIcons.VideoCamera
+                    } else {
+                        PhosphorIcons.MusicNote
+                    },
+                    contentDescription = null,
+                    tint = if (purchase != null) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                )
+                Text(
+                    text = if (purchase != null) "$productLabel owned" else productLabel,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = PirateTokens.colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (purchase == null && priceLabel != null) {
+                    Text(
+                        text = priceLabel,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = PirateTokens.colors.textPrimary,
+                    )
+                }
+            }
+            if (purchase == null) {
+                PirateButton(
+                    text = when {
+                        !listingActive -> "Unavailable"
+                        priceLabel != null -> "Buy for $priceLabel"
+                        else -> "Unlock"
+                    },
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = "Purchases aren't available in the Android app yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                )
+            }
         }
     }
 }
@@ -2563,6 +2765,38 @@ private fun CommentCountPill(
             )
             Text(
                 text = count.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SharePostPill(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .height(PostActionControlHeight)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = PirateTokens.colors.surfaceSubtle,
+        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+    ) {
+        Row(
+            modifier = Modifier
+                .height(PostActionControlHeight)
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.ShareFat,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = "Share",
                 style = MaterialTheme.typography.labelLarge,
                 color = PirateTokens.colors.textPrimary,
             )

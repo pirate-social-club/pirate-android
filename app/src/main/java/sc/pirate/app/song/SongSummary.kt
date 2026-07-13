@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -44,6 +46,9 @@ fun SongSummaryCard(
     modifier: Modifier = Modifier,
     error: String? = null,
     body: String? = null,
+    positionMs: Long = 0,
+    durationMs: Long? = null,
+    onSeek: ((Long) -> Unit)? = null,
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -66,6 +71,9 @@ fun SongSummaryCard(
                 titleStyle = MaterialTheme.typography.titleSmall,
                 durationStyle = MaterialTheme.typography.bodyMedium,
                 bodyStyle = MaterialTheme.typography.bodyMedium,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                onSeek = onSeek,
             )
             error?.let {
                 FormNote(message = it, tone = FormTone.Error)
@@ -87,10 +95,18 @@ fun SongSummaryRow(
     titleStyle: TextStyle = MaterialTheme.typography.titleMedium,
     durationStyle: TextStyle = MaterialTheme.typography.bodySmall,
     bodyStyle: TextStyle = MaterialTheme.typography.bodySmall,
+    positionMs: Long = 0,
+    durationMs: Long? = null,
+    onSeek: ((Long) -> Unit)? = null,
 ) {
     val title = songDisplayTitle(post)
     val coverArtSrc = resolvePublicMediaSrc(post.songPresentation?.coverArtRef)
-    val duration = songDurationLabel(post.songPresentation?.durationMs)
+    val resolvedDurationMs = durationMs?.takeIf { it > 0 } ?: post.songPresentation?.durationMs?.takeIf { it > 0 }
+    val resolvedPositionMs = positionMs.coerceAtLeast(0).let { position ->
+        resolvedDurationMs?.let { position.coerceAtMost(it) } ?: position
+    }
+    val sliderMax = resolvedDurationMs?.toFloat()?.coerceAtLeast(1f) ?: 1f
+    val sliderValue = resolvedPositionMs.toFloat().coerceIn(0f, sliderMax)
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -104,7 +120,7 @@ fun SongSummaryRow(
         )
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 text = title,
@@ -113,14 +129,48 @@ fun SongSummaryRow(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            duration?.let {
-                Text(
-                    text = it,
-                    style = durationStyle,
-                    color = PirateTokens.colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SongPlayButton(
+                    canPlay = canPlay,
+                    isBuffering = isBuffering,
+                    isPlaying = isPlaying,
+                    onPlayPause = onPlayPause,
                 )
+                Column(modifier = Modifier.weight(1f)) {
+                    Slider(
+                        value = sliderValue,
+                        onValueChange = { onSeek?.invoke(it.toLong()) },
+                        valueRange = 0f..sliderMax,
+                        enabled = canPlay && onSeek != null && resolvedDurationMs != null,
+                        colors = SliderDefaults.colors(
+                            thumbColor = PirateTokens.colors.accentBrand,
+                            activeTrackColor = PirateTokens.colors.accentBrand,
+                            inactiveTrackColor = PirateTokens.colors.borderSoft,
+                            disabledThumbColor = PirateTokens.colors.textSecondary,
+                            disabledActiveTrackColor = PirateTokens.colors.borderSoft,
+                            disabledInactiveTrackColor = PirateTokens.colors.borderSoft,
+                        ),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = formatSongTime(resolvedPositionMs),
+                            style = durationStyle,
+                            color = PirateTokens.colors.textSecondary,
+                        )
+                        Text(
+                            text = resolvedDurationMs?.let(::formatSongTime) ?: "--:--",
+                            style = durationStyle,
+                            color = PirateTokens.colors.textSecondary,
+                        )
+                    }
+                }
             }
             body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
                 Text(
@@ -132,31 +182,40 @@ fun SongSummaryRow(
                 )
             }
         }
-        Surface(
-            modifier = Modifier.clickable(
-                enabled = canPlay,
-                onClick = onPlayPause,
-            ),
-            shape = RoundedCornerShape(PirateTokens.radius.full),
-            color = if (canPlay) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceDisabled,
-        ) {
-            Icon(
-                imageVector = when {
-                    !canPlay -> PhosphorIcons.Lock
-                    isBuffering -> PhosphorIcons.MusicNotes
-                    isPlaying -> PhosphorIcons.Pause
-                    else -> PhosphorIcons.Play
-                },
-                contentDescription = when {
-                    !canPlay -> "Song locked"
-                    isBuffering -> "Loading song"
-                    isPlaying -> "Pause song"
-                    else -> "Play song"
-                },
-                tint = Color.White,
-                modifier = Modifier.padding(12.dp),
-            )
-        }
+    }
+}
+
+@Composable
+private fun SongPlayButton(
+    canPlay: Boolean,
+    isBuffering: Boolean,
+    isPlaying: Boolean,
+    onPlayPause: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier.clickable(
+            enabled = canPlay,
+            onClick = onPlayPause,
+        ),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = if (canPlay) PirateTokens.colors.accentBrand else PirateTokens.colors.surfaceDisabled,
+    ) {
+        Icon(
+            imageVector = when {
+                !canPlay -> PhosphorIcons.Lock
+                isBuffering -> PhosphorIcons.MusicNotes
+                isPlaying -> PhosphorIcons.Pause
+                else -> PhosphorIcons.Play
+            },
+            contentDescription = when {
+                !canPlay -> "Song locked"
+                isBuffering -> "Loading song"
+                isPlaying -> "Pause song"
+                else -> "Play song"
+            },
+            tint = Color.White,
+            modifier = Modifier.padding(10.dp),
+        )
     }
 }
 
@@ -198,7 +257,12 @@ fun songDisplayTitle(post: LocalizedPostResponse): String =
         ?: "Untitled song"
 
 fun songDurationLabel(durationMs: Long?): String? {
-    val totalSeconds = durationMs?.takeIf { it > 0 }?.div(1000) ?: return null
+    val validDurationMs = durationMs?.takeIf { it > 0 } ?: return null
+    return formatSongTime(validDurationMs)
+}
+
+fun formatSongTime(positionMs: Long): String {
+    val totalSeconds = positionMs.coerceAtLeast(0) / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "$minutes:${seconds.toString().padStart(2, '0')}"
