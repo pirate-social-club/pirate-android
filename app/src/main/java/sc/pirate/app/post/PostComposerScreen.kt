@@ -657,9 +657,10 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 mimeType = mimeType,
                 filename = name,
                 sizeBytes = bytes.size.toLong(),
+                uploadMode = "direct_multipart",
             ),
         )
-        return communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
+        return communityRepository.uploadArtifactMultipart(communityId, intent, bytes, mimeType)
     }
 
     private suspend fun uploadSongArtifact(
@@ -673,6 +674,7 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val name = uri.displayName()
         val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IllegalStateException("Could not read selected file: $name")
+        val usesMultipart = kind != "cover_art"
         val intent = communityRepository.createArtifactUpload(
             communityId,
             CreateSongArtifactUploadRequest(
@@ -680,9 +682,14 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 mimeType = mimeType,
                 filename = name,
                 sizeBytes = bytes.size.toLong(),
+                uploadMode = if (usesMultipart) "direct_multipart" else null,
             ),
         )
-        return communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
+        return if (usesMultipart) {
+            communityRepository.uploadArtifactMultipart(communityId, intent, bytes, mimeType)
+        } else {
+            communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
+        }
     }
 
     private suspend fun waitForSongPreview(communityId: String, bundleId: String): SongArtifactBundle {
