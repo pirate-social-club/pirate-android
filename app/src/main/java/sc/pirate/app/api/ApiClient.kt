@@ -1,5 +1,6 @@
 package sc.pirate.app.api
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -123,6 +124,13 @@ class ApiClient(private val sessionStore: SessionStore) {
                     body = rawResponse.body?.string().orEmpty(),
                 )
             }
+        }
+
+        if (sc.pirate.app.BuildConfig.DEBUG) {
+            Log.d(
+                "PirateApi",
+                "$method ${path.substringBefore('?')} -> ${response.status}",
+            )
         }
 
         if (!response.successful) {
