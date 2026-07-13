@@ -942,6 +942,11 @@ fun PirateNavHost(
                     onOpenCommunity = {
                         navController.navigate(PirateRoute.Community.buildRoute(it))
                     },
+                    onNavigateToSection = { section ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, section)) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
         }
@@ -967,6 +972,11 @@ fun PirateNavHost(
                     onBack = { navController.popBackStack() },
                     onOpenCommunity = {
                         navController.navigate(PirateRoute.Community.buildRoute(it))
+                    },
+                    onNavigateToSection = { nextSection ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, nextSection)) {
+                            launchSingleTop = true
+                        }
                     },
                 )
             }

@@ -548,6 +548,18 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(MembershipRequestSummary.serializer(), response)
         }
 
+        suspend fun updateRules(
+            communityId: String,
+            request: UpdateCommunityRulesRequest,
+        ): Community {
+            val body = api.json.encodeToString(UpdateCommunityRulesRequest.serializer(), request)
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/rules",
+                body,
+            )
+            return api.json.decodeFromString(Community.serializer(), response)
+        }
+
         suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
             val body = api.json.encodeToString(
                 AttachNamespaceRequest.serializer(),

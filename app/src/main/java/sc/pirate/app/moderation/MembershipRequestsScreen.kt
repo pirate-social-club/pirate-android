@@ -62,6 +62,7 @@ import sc.pirate.app.ui.StatusTone
 internal fun MembershipRequestsScreen(
     communityId: String,
     onBack: () -> Unit,
+    onOpenRules: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel: CommunityModerationViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
@@ -107,6 +108,9 @@ internal fun MembershipRequestsScreen(
                     }
                 },
                 actions = {
+                    TextButton(onClick = onOpenRules) {
+                        Text("Rules", color = PirateTokens.colors.textPrimary)
+                    }
                     TextButton(
                         onClick = { viewModel.loadMembershipRequests(communityId, refresh = true) },
                         enabled = !state.loading && !state.refreshing,

@@ -329,11 +329,31 @@ data class NotificationSummary(
 
 @Serializable
 data class CommunityRule(
-    @SerialName("rule_id") val ruleId: String,
+    @SerialName("id") private val publicRuleId: String? = null,
+    @SerialName("rule_id") private val legacyRuleId: String? = null,
+    @SerialName("object") val contractObject: String? = null,
     val title: String,
     val body: String? = null,
+    @SerialName("report_reason") val reportReason: String? = null,
     val position: Int? = null,
     val status: String? = null,
+) {
+    val ruleId: String get() = publicRuleId ?: legacyRuleId.orEmpty()
+}
+
+@Serializable
+data class UpdateCommunityRuleInput(
+    @SerialName("rule_id") val ruleId: String? = null,
+    val title: String,
+    val body: String,
+    @SerialName("report_reason") val reportReason: String,
+    val position: Int,
+    val status: String,
+)
+
+@Serializable
+data class UpdateCommunityRulesRequest(
+    val rules: List<UpdateCommunityRuleInput>,
 )
 
 @Serializable

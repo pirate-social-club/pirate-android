@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.MembershipRequestSummary
 import sc.pirate.app.api.model.NamespaceVerificationSession
@@ -86,6 +87,109 @@ class CommunityModerationViewModel(application: Application) : AndroidViewModel(
 
     private val _membershipRequestsState = MutableStateFlow(MembershipRequestsUiState())
     val membershipRequestsState: StateFlow<MembershipRequestsUiState> = _membershipRequestsState.asStateFlow()
+
+    private val _rulesState = MutableStateFlow(CommunityRulesUiState())
+    val rulesState: StateFlow<CommunityRulesUiState> = _rulesState.asStateFlow()
+
+    fun loadRules(communityId: String) {
+        val current = _rulesState.value
+        if (current.communityId == communityId && current.loading) return
+
+        viewModelScope.launch {
+            _rulesState.value = CommunityRulesUiState(communityId = communityId, loading = true)
+            try {
+                val drafts = communityRuleDrafts(communityRepository.getPreview(communityId).rules)
+                _rulesState.value = CommunityRulesUiState(
+                    communityId = communityId,
+                    loading = false,
+                    rules = drafts,
+                    savedRules = drafts,
+                )
+            } catch (e: Exception) {
+                _rulesState.value = CommunityRulesUiState(
+                    communityId = communityId,
+                    loading = false,
+                    error = e.message ?: "Could not load community rules",
+                )
+            }
+        }
+    }
+
+    fun addRule() {
+        val current = _rulesState.value
+        if (current.loading || current.saving) return
+        _rulesState.value = current.copy(
+            rules = current.rules + CommunityRuleDraft(id = "draft-${UUID.randomUUID()}"),
+            error = null,
+            message = null,
+        )
+    }
+
+    fun updateRule(ruleId: String, update: (CommunityRuleDraft) -> CommunityRuleDraft) {
+        val current = _rulesState.value
+        if (current.saving) return
+        _rulesState.value = current.copy(
+            rules = current.rules.map { if (it.id == ruleId) update(it) else it },
+            error = null,
+            message = null,
+        )
+    }
+
+    fun removeRule(ruleId: String) {
+        val current = _rulesState.value
+        if (current.saving) return
+        _rulesState.value = current.copy(
+            rules = current.rules.filterNot { it.id == ruleId },
+            error = null,
+            message = null,
+        )
+    }
+
+    fun moveRule(fromIndex: Int, toIndex: Int) {
+        val current = _rulesState.value
+        if (current.saving) return
+        _rulesState.value = current.copy(
+            rules = moveCommunityRule(current.rules, fromIndex, toIndex),
+            error = null,
+            message = null,
+        )
+    }
+
+    fun saveRules(communityId: String) {
+        val current = _rulesState.value
+        if (current.saving || current.communityId != communityId) return
+        val validationError = communityRulesValidationError(current.rules)
+        if (validationError != null) {
+            _rulesState.value = current.copy(error = validationError, message = null)
+            return
+        }
+
+        viewModelScope.launch {
+            _rulesState.value = current.copy(saving = true, error = null, message = null)
+            try {
+                communityRepository.updateRules(communityId, buildCommunityRulesUpdate(current.rules))
+                val refreshedDrafts = runCatching {
+                    communityRuleDrafts(communityRepository.getPreview(communityId).rules)
+                }.getOrNull()
+                val savedDrafts = refreshedDrafts ?: current.rules
+                _rulesState.value = _rulesState.value.copy(
+                    saving = false,
+                    rules = savedDrafts,
+                    savedRules = savedDrafts,
+                    message = "Rules saved.",
+                )
+            } catch (e: Exception) {
+                _rulesState.value = _rulesState.value.copy(
+                    saving = false,
+                    error = e.message ?: "Could not save community rules",
+                )
+            }
+        }
+    }
+
+    fun clearRulesMessage() {
+        _rulesState.value = _rulesState.value.copy(message = null)
+    }
 
     fun loadMembershipRequests(communityId: String, refresh: Boolean = false) {
         val current = _membershipRequestsState.value
@@ -297,12 +401,14 @@ fun CommunityModerationScreen(
     section: String?,
     onBack: () -> Unit,
     onOpenCommunity: (String) -> Unit,
+    onNavigateToSection: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (section == null || section == "requests") {
         MembershipRequestsScreen(
             communityId = communityId,
             onBack = onBack,
+            onOpenRules = { onNavigateToSection("rules") },
             modifier = modifier,
         )
         return
@@ -313,6 +419,16 @@ fun CommunityModerationScreen(
             communityId = communityId,
             onBack = onBack,
             onOpenCommunity = onOpenCommunity,
+            modifier = modifier,
+        )
+        return
+    }
+
+    if (section == "rules") {
+        CommunityRulesScreen(
+            communityId = communityId,
+            onBack = onBack,
+            onOpenRequests = { onNavigateToSection("requests") },
             modifier = modifier,
         )
         return

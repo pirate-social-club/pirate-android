@@ -57,6 +57,7 @@ import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.PublishLiveRoomResponse
 import sc.pirate.app.api.model.PublishLiveRoomReplayDraftRequest
 import sc.pirate.app.api.model.UpdateLiveRoomReplayDraftRequest
+import sc.pirate.app.api.model.UpdateCommunityRulesRequest
 import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.api.model.PublicCommunitySearchResponse
 import sc.pirate.app.api.model.SessionExchangeResponse
@@ -105,6 +106,7 @@ interface CommunityRepository {
         requestId: String,
         approve: Boolean,
     ): MembershipRequestSummary
+    suspend fun updateRules(communityId: String, request: UpdateCommunityRulesRequest): Community
     suspend fun listPosts(
         communityId: String,
         limit: Int? = null,
@@ -391,6 +393,10 @@ class ApiCommunityRepository(
         approve: Boolean,
     ): MembershipRequestSummary {
         return apiClient.communities.reviewMembershipRequest(communityId, requestId, approve)
+    }
+
+    override suspend fun updateRules(communityId: String, request: UpdateCommunityRulesRequest): Community {
+        return apiClient.communities.updateRules(communityId, request)
     }
 
     override suspend fun listPosts(
