@@ -7,8 +7,10 @@ adversarial review; every material correction below was re-verified against the 
 Build/verify policy: use Blacksmith CI (`android-compile.yml` / `android-ci.yml` +
 `scripts/install-blacksmith-apk.sh`), never local Gradle — see README.md. The
 push/PR `android-ci` workflow now runs unit tests, Android lint, debug assembly,
-and uploads the APK plus quality reports. `android-compile.yml` may be disabled;
-use the enabled Blacksmith workflow rather than falling back to local Gradle.
+and uploads a staging-API APK plus quality reports. `android-compile.yml` runs
+the same quality gate and now assembles/uploads a production-API debug APK for
+production-data device QA. Do not use an `android-ci` artifact to validate a
+production post/community ID.
 
 ## Implementation ledger — 2026-07-13
 
@@ -59,6 +61,19 @@ Latest verified structural-polish commit and run:
 - `d6be6aa` shared 48dp post-action height for vote and comment controls across
   home, post detail, community, and composer preview — `android-ci` run
   `29245918645`.
+- `96c74ce` exact-404 public-read fallback for public posts hidden from the
+  authenticated endpoint — `android-ci` run `29260221470`.
+- `23083e2` debug-only, token-free API method/path/status diagnostics —
+  `android-ci` run `29264430689`.
+- `7c8b380` production-API QA APK output from `android-compile` — run
+  `29264557576` passed tests, lint, assembly, and artifact upload. The artifact
+  digest was verified before Pixel 8 installation; its embedded API origin is
+  `https://api.pirate.sc` and package is `sc.pirate.mobile.blacksmith`. Signed-out
+  device QA loaded the formerly failing post, its comments, and its community
+  with HTTP 200, then rendered the production song “Arkansas Blues” with both
+  Sing and Study actions. The earlier “Post/Community not found” reproduction
+  came from installing the staging-API `android-ci` artifact with production IDs,
+  not from a remaining production read bug.
 
 Still-open release blockers remain: server-backed cross-device block and Terms
 enforcement, and legal finalization of the published Terms dispute section;
