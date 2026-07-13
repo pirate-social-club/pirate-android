@@ -119,6 +119,7 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.ReportContentSheet
+import sc.pirate.app.ui.CrosspostSourceCard
 import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
@@ -795,6 +796,7 @@ fun HomeScreen(
     hasSession: Boolean,
     onNavigateToCommunity: (String) -> Unit,
     onNavigateToPost: (String) -> Unit,
+    onNavigateToCrosspost: (sourceCommunityId: String, sourcePostId: String, sourceTitle: String?) -> Unit,
     onNavigateToCompose: () -> Unit,
     onNavigateToYourCommunities: () -> Unit,
     onNavigateToWallet: () -> Unit,
@@ -870,6 +872,7 @@ fun HomeScreen(
 
     actionItem?.let { item ->
         PostActionSheet(
+            canCrosspost = item.post.post.postType != "crosspost" && item.post.post.parentPost == null,
             isFollowing = item.community.viewerFollowing == true,
             followLoading = item.homeCommunityId() in state.followingCommunityIds,
             onDismiss = { actionItem = null },
@@ -880,6 +883,18 @@ fun HomeScreen(
             onReport = {
                 actionItem = null
                 if (hasSession) reportItem = item else authPromptAction = "Reporting posts"
+            },
+            onCrosspost = {
+                actionItem = null
+                if (hasSession) {
+                    onNavigateToCrosspost(
+                        item.homeCommunityId(),
+                        item.post.post.postId,
+                        item.post.post.title,
+                    )
+                } else {
+                    authPromptAction = "Crossposting"
+                }
             },
             onToggleFollow = {
                 actionItem = null
@@ -1377,10 +1392,12 @@ private fun MediaPreviewDialog(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PostActionSheet(
+    canCrosspost: Boolean,
     isFollowing: Boolean,
     followLoading: Boolean,
     onDismiss: () -> Unit,
     onShare: () -> Unit,
+    onCrosspost: () -> Unit,
     onReport: () -> Unit,
     onToggleFollow: () -> Unit,
 ) {
@@ -1399,6 +1416,12 @@ private fun PostActionSheet(
                 label = "Share post",
                 icon = PhosphorIcons.ShareNetwork,
                 onClick = onShare,
+            )
+            SheetActionRow(
+                label = "Crosspost",
+                icon = PhosphorIcons.ShareNetwork,
+                enabled = canCrosspost,
+                onClick = onCrosspost,
             )
             SheetActionRow(
                 label = if (isFollowing) "Unfollow" else "Follow",
@@ -1640,6 +1663,10 @@ private fun HomePostCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+
+            post.crosspostSource?.let { source ->
+                CrosspostSourceCard(source = source)
+            }
 
             post.anchorLiveRoom?.let { liveRoomId ->
                 LiveRoomSummaryCard(

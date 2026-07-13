@@ -508,6 +508,21 @@ data class PostEmbed(
 )
 
 @Serializable
+data class CrosspostSource(
+    val status: String,
+    val post: String,
+    val community: String,
+    @SerialName("captured_at") val capturedAt: String? = null,
+    @SerialName("post_type") val postType: String? = null,
+    val title: String? = null,
+    @SerialName("community_label") val communityLabel: String? = null,
+    @SerialName("community_route_slug") val communityRouteSlug: String? = null,
+    @SerialName("author_user") val authorUser: String? = null,
+    @SerialName("author_label") val authorLabel: String? = null,
+    @SerialName("thumbnail_ref") val thumbnailRef: String? = null,
+)
+
+@Serializable
 data class Post(
     @SerialName("post_id") private val contractPostId: String? = null,
     @SerialName("id") private val feedPostId: String? = null,
@@ -535,6 +550,8 @@ data class Post(
     @SerialName("asset_id") private val legacyAssetId: String? = null,
     @SerialName("asset") private val canonicalAssetId: String? = null,
     @SerialName("song_artifact_bundle") val songArtifactBundle: String? = null,
+    @SerialName("crosspost_source") val crosspostSource: CrosspostSource? = null,
+    @SerialName("parent_post") val parentPost: String? = null,
     @SerialName("anchor_live_room") val anchorLiveRoom: String? = null,
     @SerialName("anchor_live_room_status") val anchorLiveRoomStatus: String? = null,
     @SerialName("song_title") val songTitle: String? = null,
@@ -745,6 +762,8 @@ data class CreatePostRequest(
     @SerialName("agent_id") val agentId: String? = null,
     @SerialName("agent_action_proof") val agentActionProof: sc.pirate.app.security.AgentActionProof? = null,
     @SerialName("royalty_allocations") val royaltyAllocations: List<RoyaltyAllocationInput>? = null,
+    @SerialName("source_post") val sourcePost: String? = null,
+    @SerialName("source_community") val sourceCommunity: String? = null,
 )
 
 @Serializable

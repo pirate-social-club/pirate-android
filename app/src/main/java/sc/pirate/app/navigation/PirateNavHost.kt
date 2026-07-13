@@ -193,6 +193,15 @@ fun PirateNavHost(
                 onNavigateToPost = { id ->
                     navController.navigate(PirateRoute.Post.buildRoute(id))
                 },
+                onNavigateToCrosspost = { sourceCommunityId, sourcePostId, sourceTitle ->
+                    navController.navigate(
+                        PirateRoute.CrosspostSelectCommunity.buildRoute(
+                            sourceCommunityId,
+                            sourcePostId,
+                            sourceTitle,
+                        ),
+                    )
+                },
                 onNavigateToCompose = {
                     navController.navigate(PirateRoute.GlobalSubmit.route)
                 },
@@ -302,6 +311,15 @@ fun PirateNavHost(
                 hasSession = hasSession,
                 onNavigateToCompose = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
+                },
+                onNavigateToCrosspost = { sourceCommunityId, sourcePostId, sourceTitle ->
+                    navController.navigate(
+                        PirateRoute.CrosspostSelectCommunity.buildRoute(
+                            sourceCommunityId,
+                            sourcePostId,
+                            sourceTitle,
+                        ),
+                    )
                 },
                 onNavigateToCommunity = { communityId ->
                     navController.navigate(PirateRoute.Community.buildRoute(communityId))
@@ -525,6 +543,64 @@ fun PirateNavHost(
             }
         }
 
+        composable(
+            route = PirateRoute.ComposeCrosspost.route,
+            arguments = listOf(
+                navArgument(PirateRoute.ComposeCrosspost.ARG_COMMUNITY_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ComposeCrosspost.ARG_SOURCE_COMMUNITY_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ComposeCrosspost.ARG_SOURCE_POST_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ComposeCrosspost.ARG_SOURCE_TITLE) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = ""
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_COMMUNITY_ID)
+                .orEmpty()
+            val sourceCommunityId = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_SOURCE_COMMUNITY_ID)
+                .orEmpty()
+            val sourcePostId = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_SOURCE_POST_ID)
+                .orEmpty()
+            val sourceTitle = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_SOURCE_TITLE)
+                ?.takeIf { it.isNotBlank() }
+            val vm: PostComposerViewModel = viewModel()
+            LaunchedEffect(communityId, sourceCommunityId, sourcePostId, sourceTitle) {
+                vm.configureCrosspost(
+                    targetCommunityId = communityId,
+                    sourcePostId = sourcePostId,
+                    sourceCommunityId = sourceCommunityId,
+                    sourceTitle = sourceTitle,
+                )
+            }
+            PostComposerScreen(
+                viewModel = vm,
+                communityId = communityId,
+                hasSession = hasSession,
+                onSignIn = { navController.navigate(PirateRoute.Auth.route) },
+                onOpenDerivativeSourceSearch = {},
+                onPosted = { postId ->
+                    navController.navigate(PirateRoute.Post.buildRoute(postId)) {
+                        popUpTo(
+                            PirateRoute.CrosspostSelectCommunity.buildRoute(
+                                sourceCommunityId,
+                                sourcePostId,
+                                sourceTitle,
+                            ),
+                        ) { inclusive = true }
+                    }
+                },
+                onOpenCommunity = { selectedCommunityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(selectedCommunityId))
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
         fun androidx.navigation.NavGraphBuilder.notificationsDestination(route: String) {
             composable(route) {
             AuthGate(hasSession, navController) {
@@ -688,6 +764,48 @@ fun PirateNavHost(
                 },
                 onSelectCommunity = { communityId ->
                     navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
+                },
+            )
+        }
+
+        composable(
+            route = PirateRoute.CrosspostSelectCommunity.route,
+            arguments = listOf(
+                navArgument(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_POST_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_TITLE) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = ""
+                },
+            ),
+        ) { backStackEntry ->
+            val sourceCommunityId = backStackEntry.arguments
+                ?.getString(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_COMMUNITY_ID)
+                .orEmpty()
+            val sourcePostId = backStackEntry.arguments
+                ?.getString(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_POST_ID)
+                .orEmpty()
+            val sourceTitle = backStackEntry.arguments
+                ?.getString(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_TITLE)
+                ?.takeIf { it.isNotBlank() }
+            GlobalSubmitScreen(
+                hasSession = hasSession,
+                onBack = { navController.popBackStack() },
+                onSignIn = { navController.navigate(PirateRoute.Auth.route) },
+                onSelectCommunity = { communityId ->
+                    navController.navigate(
+                        PirateRoute.ComposeCrosspost.buildRoute(
+                            communityId,
+                            sourceCommunityId,
+                            sourcePostId,
+                            sourceTitle,
+                        ),
+                    )
                 },
             )
         }

@@ -110,6 +110,9 @@ data class PostComposerUiState(
     val mediaMimeType: String? = null,
     val mediaSizeBytes: Long? = null,
     val videoUpstreamAssetRefs: List<String> = emptyList(),
+    val crosspostSourcePostId: String? = null,
+    val crosspostSourceCommunityId: String? = null,
+    val crosspostSourceTitle: String? = null,
     val songPrimaryAudioUri: Uri? = null,
     val songCoverUri: Uri? = null,
     val songCanvasVideoUri: Uri? = null,
@@ -176,7 +179,9 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         }
         viewModelScope.launch {
             val restored = withContext(Dispatchers.IO) { draftStore.load() }
-            if (restored != null) _state.value = restored.restoreInto(_state.value)
+            if (restored != null && _state.value.postType != PostComposerMode.Crosspost) {
+                _state.value = restored.restoreInto(_state.value)
+            }
             state.drop(1).debounce(650L).collectLatest { composerState ->
                 withContext(Dispatchers.IO) {
                     when {
@@ -203,6 +208,40 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
             hasCommunityPostingRole = true,
             loadingEligibility = false,
             error = null,
+        )
+    }
+
+    fun configureCrosspost(
+        targetCommunityId: String,
+        sourcePostId: String,
+        sourceCommunityId: String,
+        sourceTitle: String?,
+    ) {
+        val normalizedTarget = targetCommunityId.trim()
+        val normalizedPost = sourcePostId.trim()
+        val normalizedSourceCommunity = sourceCommunityId.trim()
+        if (normalizedTarget.isBlank() || normalizedPost.isBlank() || normalizedSourceCommunity.isBlank()) return
+        val current = _state.value
+        if (
+            current.postType == PostComposerMode.Crosspost &&
+            current.selectedCommunityId == normalizedTarget &&
+            current.crosspostSourcePostId == normalizedPost &&
+            current.crosspostSourceCommunityId == normalizedSourceCommunity
+        ) return
+        val knownCommunity = app.knownCommunitiesStore.getRecent().firstOrNull {
+            it.communityId == normalizedTarget
+        }
+        val normalizedSourceTitle = sourceTitle?.trim()?.takeIf { it.isNotBlank() }
+        _state.value = PostComposerUiState(
+            postType = PostComposerMode.Crosspost,
+            selectedCommunityId = normalizedTarget,
+            selectedCommunityName = knownCommunity?.displayName,
+            selectedCommunityRouteSlug = knownCommunity?.routeSlug,
+            title = normalizePostComposerTitleInput(normalizedSourceTitle ?: "Crosspost"),
+            crosspostSourcePostId = normalizedPost,
+            crosspostSourceCommunityId = normalizedSourceCommunity,
+            crosspostSourceTitle = normalizedSourceTitle,
+            hasCommunityPostingRole = true,
         )
     }
 
@@ -322,10 +361,11 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val current = _state.value
         _state.value = when (current.postType) {
             PostComposerMode.Video -> current.copy(videoUpstreamAssetRefs = normalized, error = null)
-            else -> current.copy(
+            PostComposerMode.Song -> current.copy(
                 song = current.song.copy(upstreamAssetRefs = normalized),
                 error = null,
             )
+            else -> current
         }
     }
 
@@ -497,13 +537,27 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                     PostComposerMode.Image,
                     PostComposerMode.Video,
                     PostComposerMode.Link,
-                    PostComposerMode.Text -> {
+                    PostComposerMode.Text,
+                    PostComposerMode.Crosspost -> {
                         val mediaRefs = if (current.postType == PostComposerMode.Image || current.postType == PostComposerMode.Video) {
                             listOf(uploadPostMediaRef(communityId, current))
                         } else {
                             null
                         }
-                        val request = if (current.postType == PostComposerMode.Video && mediaRefs != null) {
+                        val request = if (current.postType == PostComposerMode.Crosspost) {
+                            buildCrosspostRequest(
+                                idempotencyKey = current.draftIdempotencyKey,
+                                title = current.title,
+                                sourcePost = current.crosspostSourcePostId.orEmpty(),
+                                sourceCommunity = current.crosspostSourceCommunityId.orEmpty(),
+                                identityMode = current.resolvedIdentityMode().apiValue,
+                                anonymousScope = if (current.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) {
+                                    current.anonymousIdentityScope
+                                } else {
+                                    null
+                                },
+                            )
+                        } else if (current.postType == PostComposerMode.Video && mediaRefs != null) {
                             buildVideoPostRequest(
                                 anonymousScope = if (current.resolvedIdentityMode() == PostComposerIdentityMode.Anonymous) {
                                     current.anonymousIdentityScope
@@ -1145,11 +1199,19 @@ private fun PostComposerWriteContent(
         viewModel.selectMedia(uri)
     }
 
-    ComposerTabs(
-        selected = state.postType,
-        onSelect = viewModel::selectPostType,
-        enabled = !state.submitting,
-    )
+    if (state.postType != PostComposerMode.Crosspost) {
+        ComposerTabs(
+            selected = state.postType,
+            onSelect = viewModel::selectPostType,
+            enabled = !state.submitting,
+        )
+    } else {
+        sc.pirate.app.ui.CrosspostSourceCard(
+            title = state.crosspostSourceTitle,
+            sourceCommunity = state.crosspostSourceCommunityId,
+            status = "available",
+        )
+    }
     Spacer(modifier = Modifier.height(12.dp))
 
     OutlinedTextField(
@@ -1184,12 +1246,19 @@ private fun PostComposerWriteContent(
             PostComposerMode.Song -> "Caption"
             PostComposerMode.Text -> "Body"
             PostComposerMode.Video -> "Caption"
+            PostComposerMode.Crosspost -> "Source post"
         },
         style = MaterialTheme.typography.labelLarge,
         color = PirateTokens.colors.textPrimary,
     )
     Spacer(modifier = Modifier.height(8.dp))
-    if (state.postType == PostComposerMode.Live) {
+    if (state.postType == PostComposerMode.Crosspost) {
+        Text(
+            text = "The source snapshot is attached automatically. Edit the title above, then review your identity and publish settings.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = PirateTokens.colors.textSecondary,
+        )
+    } else if (state.postType == PostComposerMode.Live) {
         OutlinedTextField(
             value = state.body,
             onValueChange = viewModel::updateBody,
@@ -2303,6 +2372,11 @@ private fun PostPreviewAttachment(state: PostComposerUiState) {
                 subtitle = "${state.live.roomKind.apiValue} / ${state.live.accessMode.apiValue} / ${state.live.visibility.apiValue}$schedule$paid",
             )
         }
+        PostComposerMode.Crosspost -> sc.pirate.app.ui.CrosspostSourceCard(
+            title = state.crosspostSourceTitle,
+            sourceCommunity = state.crosspostSourceCommunityId,
+            status = "available",
+        )
     }
 }
 
@@ -2464,7 +2538,8 @@ private fun PostComposerMode.anonymousEligible(): Boolean =
     this == PostComposerMode.Text ||
         this == PostComposerMode.Image ||
         this == PostComposerMode.Video ||
-        this == PostComposerMode.Link
+        this == PostComposerMode.Link ||
+        this == PostComposerMode.Crosspost
 
 private fun sc.pirate.app.api.model.Profile.displayPirateHandle(): String {
     val label = primaryPublicHandle?.label ?: globalHandle?.label.orEmpty()

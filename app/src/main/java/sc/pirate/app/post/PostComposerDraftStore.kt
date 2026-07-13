@@ -20,6 +20,9 @@ internal data class PostComposerDraftSnapshot(
     val identityMode: PostComposerIdentityMode = PostComposerIdentityMode.Public,
     val anonymousIdentityScope: String = "community_stable",
     val videoUpstreamAssetRefs: List<String> = emptyList(),
+    val crosspostSourcePostId: String? = null,
+    val crosspostSourceCommunityId: String? = null,
+    val crosspostSourceTitle: String? = null,
     val hadMediaSelection: Boolean = false,
 )
 
@@ -70,6 +73,9 @@ internal fun PostComposerUiState.toDraftSnapshot(): PostComposerDraftSnapshot = 
     identityMode = identityMode,
     anonymousIdentityScope = anonymousIdentityScope,
     videoUpstreamAssetRefs = videoUpstreamAssetRefs,
+    crosspostSourcePostId = crosspostSourcePostId,
+    crosspostSourceCommunityId = crosspostSourceCommunityId,
+    crosspostSourceTitle = crosspostSourceTitle,
     hadMediaSelection = listOf(
         mediaUri,
         liveCoverUri,
@@ -101,6 +107,9 @@ internal fun PostComposerDraftSnapshot.restoreInto(current: PostComposerUiState)
     identityMode = identityMode,
     anonymousIdentityScope = anonymousIdentityScope,
     videoUpstreamAssetRefs = videoUpstreamAssetRefs,
+    crosspostSourcePostId = crosspostSourcePostId,
+    crosspostSourceCommunityId = crosspostSourceCommunityId,
+    crosspostSourceTitle = crosspostSourceTitle,
     draftNotice = if (hadMediaSelection) {
         "Draft restored. For privacy and file-access safety, reselect its media files."
     } else {

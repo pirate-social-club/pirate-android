@@ -70,6 +70,16 @@ sealed class PirateRoute(val route: String) {
     }
     data object CreateCommunity : PirateRoute("communities/new")
     data object GlobalSubmit : PirateRoute("submit")
+    data object CrosspostSelectCommunity : PirateRoute(
+        "crosspost/{sourceCommunityId}/{sourcePostId}?sourceTitle={sourceTitle}",
+    ) {
+        const val ARG_SOURCE_COMMUNITY_ID = "sourceCommunityId"
+        const val ARG_SOURCE_POST_ID = "sourcePostId"
+        const val ARG_SOURCE_TITLE = "sourceTitle"
+        fun buildRoute(sourceCommunityId: String, sourcePostId: String, sourceTitle: String?): String =
+            "crosspost/${Uri.encode(sourceCommunityId)}/${Uri.encode(sourcePostId)}" +
+                "?sourceTitle=${Uri.encode(sourceTitle.orEmpty())}"
+    }
     data object VerifySelf : PirateRoute("verification/self/{intent}?capabilities={capabilities}") {
         const val ARG_INTENT = "intent"
         const val ARG_CAPABILITIES = "capabilities"
@@ -111,6 +121,21 @@ sealed class PirateRoute(val route: String) {
     data object ComposePost : PirateRoute("community/{communityId}/compose") {
         const val ARG_COMMUNITY_ID = "communityId"
         fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/compose"
+    }
+    data object ComposeCrosspost : PirateRoute(
+        "community/{communityId}/crosspost/{sourceCommunityId}/{sourcePostId}?sourceTitle={sourceTitle}",
+    ) {
+        const val ARG_COMMUNITY_ID = "communityId"
+        const val ARG_SOURCE_COMMUNITY_ID = "sourceCommunityId"
+        const val ARG_SOURCE_POST_ID = "sourcePostId"
+        const val ARG_SOURCE_TITLE = "sourceTitle"
+        fun buildRoute(
+            communityId: String,
+            sourceCommunityId: String,
+            sourcePostId: String,
+            sourceTitle: String?,
+        ): String = "community/${Uri.encode(communityId)}/crosspost/${Uri.encode(sourceCommunityId)}/${Uri.encode(sourcePostId)}" +
+            "?sourceTitle=${Uri.encode(sourceTitle.orEmpty())}"
     }
     data object DerivativeSourceSearch : PirateRoute("community/{communityId}/song-source-search") {
         const val ARG_COMMUNITY_ID = "communityId"

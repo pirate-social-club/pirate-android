@@ -47,6 +47,7 @@ enum class PostComposerMode(val apiValue: String) {
     Link("link"),
     Song("song"),
     Live("live"),
+    Crosspost("crosspost"),
 }
 
 @Serializable
@@ -274,9 +275,47 @@ fun validatePostComposerDraft(
             }
         }
 
+        PostComposerMode.Crosspost -> {
+            if (title.isBlank()) {
+                PostComposerDraftValidation(
+                    canSubmit = false,
+                    errorMessage = "Add a title before crossposting.",
+                )
+            } else {
+                PostComposerDraftValidation(canSubmit = true)
+            }
+        }
+
         PostComposerMode.Live -> validateLiveComposerDraft(title, live)
         PostComposerMode.Song -> validateSongComposerDraft(song)
     }
+}
+
+fun buildCrosspostRequest(
+    idempotencyKey: String,
+    title: String,
+    sourcePost: String,
+    sourceCommunity: String,
+    identityMode: String,
+    anonymousScope: String? = null,
+): CreatePostRequest {
+    val normalizedTitle = title.trim()
+    require(normalizedTitle.isNotBlank()) { "Add a title before crossposting." }
+    val normalizedSourcePost = sourcePost.trim()
+    require(normalizedSourcePost.isNotBlank()) { "The source post is unavailable." }
+    val normalizedSourceCommunity = sourceCommunity.trim()
+    require(normalizedSourceCommunity.isNotBlank()) { "The source community is unavailable." }
+    return CreatePostRequest(
+        idempotencyKey = idempotencyKey,
+        postType = PostComposerMode.Crosspost.apiValue,
+        title = normalizedTitle,
+        sourcePost = normalizedSourcePost,
+        sourceCommunity = normalizedSourceCommunity,
+        identityMode = identityMode,
+        anonymousScope = anonymousScope,
+        translationPolicy = "machine_allowed",
+        visibility = "public",
+    )
 }
 
 fun validateLiveComposerDraft(

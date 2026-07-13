@@ -110,6 +110,7 @@ import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.ReportContentSheet
+import sc.pirate.app.ui.CrosspostSourceCard
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
@@ -1127,6 +1128,7 @@ fun PostScreen(
     postId: String,
     hasSession: Boolean,
     onNavigateToCompose: ((String) -> Unit)? = null,
+    onNavigateToCrosspost: (sourceCommunityId: String, sourcePostId: String, sourceTitle: String?) -> Unit,
     onNavigateToCommunity: (String) -> Unit,
     onWatchLiveRoom: () -> Unit,
     onSing: (String) -> Unit,
@@ -1260,6 +1262,21 @@ fun PostScreen(
                 },
                 actions = {
                     state.post?.post?.let { post ->
+                        if (post.postType != "crosspost" && post.parentPost == null) {
+                            IconButton(onClick = {
+                                if (hasSession) {
+                                    onNavigateToCrosspost(post.communityId, post.postId, post.title)
+                                } else {
+                                    authPromptAction = "Crossposting"
+                                }
+                            }) {
+                                Icon(
+                                    imageVector = PhosphorIcons.ShareNetwork,
+                                    contentDescription = "Crosspost",
+                                    tint = PirateTokens.colors.textPrimary,
+                                )
+                            }
+                        }
                         IconButton(onClick = { sharePost(context, post.postId, post.title) }) {
                             Icon(
                                 imageVector = PhosphorIcons.ShareNetwork,
@@ -1699,6 +1716,9 @@ private fun ThreadRootPost(
                     style = MaterialTheme.typography.bodyMedium,
                     color = PirateTokens.colors.textPrimary,
                 )
+            }
+            post.crosspostSource?.let { source ->
+                CrosspostSourceCard(source = source)
             }
             if (postResponse.requiresAgeProof() && post.anchorLiveRoom == null) {
                 StatusCard(

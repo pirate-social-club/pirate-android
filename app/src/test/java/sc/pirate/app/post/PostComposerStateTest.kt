@@ -583,4 +583,40 @@ class PostComposerStateTest {
             ))
         }
     }
+
+    @Test
+    fun crosspostRequest_preservesStableSourceAndIdempotencyFields() {
+        val request = buildCrosspostRequest(
+            idempotencyKey = "crosspost-key",
+            title = "  Worth sharing  ",
+            sourcePost = "post_source",
+            sourceCommunity = "community_source",
+            identityMode = "public",
+        )
+
+        assertEquals("crosspost-key", request.idempotencyKey)
+        assertEquals("crosspost", request.postType)
+        assertEquals("Worth sharing", request.title)
+        assertEquals("post_source", request.sourcePost)
+        assertEquals("community_source", request.sourceCommunity)
+    }
+
+    @Test
+    fun crosspostDraft_restoresItsImmutableSource() {
+        val state = PostComposerUiState(
+            postType = PostComposerMode.Crosspost,
+            selectedCommunityId = "community_target",
+            title = "Crosspost title",
+            crosspostSourcePostId = "post_source",
+            crosspostSourceCommunityId = "community_source",
+            crosspostSourceTitle = "Original title",
+        )
+
+        val restored = state.toDraftSnapshot().restoreInto(PostComposerUiState())
+
+        assertEquals(PostComposerMode.Crosspost, restored.postType)
+        assertEquals("post_source", restored.crosspostSourcePostId)
+        assertEquals("community_source", restored.crosspostSourceCommunityId)
+        assertEquals("Original title", restored.crosspostSourceTitle)
+    }
 }
