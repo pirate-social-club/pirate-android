@@ -54,7 +54,11 @@ Latest verified release-safety commits and runs:
 Latest verified structural-polish commit and run:
 
 - `d2f1940` persisted System/Light/Dark appearance modes — `android-ci` run
-  `29243881785`.
+  `29243881785`; Pixel 8 visual QA confirmed System mode follows light/dark
+  device changes with correct page/card/divider colors and system-bar contrast.
+- `d6be6aa` shared 48dp post-action height for vote and comment controls across
+  home, post detail, community, and composer preview — `android-ci` run
+  `29245918645`.
 
 Still-open release blockers remain: server-backed cross-device block and Terms
 enforcement, and legal finalization of the published Terms dispute section;
