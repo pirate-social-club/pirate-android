@@ -18,14 +18,17 @@ usage() {
 Usage:
   scripts/install-blacksmith-apk.sh [--ref <branch-or-sha>] [--launch]
   scripts/install-blacksmith-apk.sh --run-id <github-run-id> [--launch]
+  scripts/install-blacksmith-apk.sh --production [--ref <branch-or-sha>] [--launch]
 
-Builds the Android debug APK on Blacksmith through android-ci.yml, downloads the
-debug-apk artifact, installs it on an attached Android device, and verifies the
-installed package.
+Builds the Android debug APK on Blacksmith, downloads the selected environment's
+artifact, installs it on an attached Android device, and verifies the installed
+package. The default artifact uses staging APIs; pass --production when testing
+production post/community IDs.
 
 Options:
   --ref <ref>             Git ref for Blacksmith. Defaults to current branch.
-  --run-id <id>           Install from an existing android-ci run instead of triggering one.
+  --run-id <id>           Install from an existing successful selected-workflow run.
+  --production            Use android-compile.yml and its production-API debug APK.
   --device <serial>       adb device serial. Defaults to the single attached device.
   --launch                Launch Pirate Blacksmith after install.
   --work-dir <dir>        Download/unzip directory. Defaults to /tmp/pirate-android-blacksmith-<run-id>.
@@ -34,6 +37,8 @@ Options:
   -h, --help              Show this help.
 
 Notes:
+  The default android-ci artifact targets https://api-staging.pirate.sc.
+  --production targets https://api.pirate.sc and keeps the Blacksmith package ID.
   Blacksmith debug APKs may be signed with a different CI debug key than the
   package already on the phone. By default, this script handles that by
   uninstalling only sc.pirate.mobile.blacksmith and then reinstalling. The release
@@ -287,6 +292,11 @@ while [ "$#" -gt 0 ]; do
       RUN_ID="${2:-}"
       [ -n "$RUN_ID" ] || die "--run-id requires a value."
       shift 2
+      ;;
+    --production)
+      WORKFLOW="android-compile.yml"
+      ARTIFACT_NAME="production-debug-apk"
+      shift
       ;;
     --device)
       DEVICE_SERIAL="${2:-}"
