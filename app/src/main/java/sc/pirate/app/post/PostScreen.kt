@@ -189,6 +189,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     val videoPlaybackState: StateFlow<VideoPlaybackState> = app.videoPlaybackController.state
     private var currentPostId: String? = null
     private var currentHasSession: Boolean = false
+    private var currentAuthenticatedReads: Boolean = false
     private var loadGeneration = 0
     private val postPreviewCache get() = app.postPreviewCache
     private var blockedUserIds: Set<String> = emptySet()
@@ -210,6 +211,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     fun loadPost(postId: String, hasSession: Boolean, commentSort: String = _state.value.commentSort) {
         currentPostId = postId
         currentHasSession = hasSession
+        currentAuthenticatedReads = hasSession
         val generation = ++loadGeneration
         val existingState = _state.value
 
@@ -241,12 +243,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 supervisorScope {
                     val refreshDeferred = async {
                         runCatching {
-                            val refreshed = if (hasSession) {
-                                postRepository.getPost(postId)
-                            } else {
-                                postRepository.getPublicPost(postId)
-                            }
+                            val refreshedRead = readWithPublicNotFoundFallback(
+                                hasSession = hasSession,
+                                authenticatedRead = { postRepository.getPost(postId) },
+                                publicRead = { postRepository.getPublicPost(postId) },
+                            )
                             if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                            currentAuthenticatedReads = refreshedRead.usedAuthenticatedRead
+                            val refreshed = refreshedRead.value
                             postPreviewCache.put(refreshed, cached.communitySummary)
                             _state.value = _state.value.copy(
                                 post = refreshed,
@@ -308,12 +312,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     commentSort = commentSort,
                 )
                 try {
-                    val post = if (hasSession) {
-                        postRepository.getPost(postId)
-                    } else {
-                        postRepository.getPublicPost(postId)
-                    }
+                    val postRead = readWithPublicNotFoundFallback(
+                        hasSession = hasSession,
+                        authenticatedRead = { postRepository.getPost(postId) },
+                        publicRead = { postRepository.getPublicPost(postId) },
+                    )
                     if (generation != loadGeneration || currentPostId != postId) return@launch
+                    currentAuthenticatedReads = postRead.usedAuthenticatedRead
+                    val post = postRead.value
                     postPreviewCache.put(post, null)
                     val session = app.sessionStore.get()
                     _state.value = PostUiState(
@@ -573,7 +579,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = if (app.sessionStore.get() != null) {
+                val response = if (currentAuthenticatedReads) {
                     postRepository.listComments(
                         communityId = post.post.communityId,
                         postId = post.post.postId,
@@ -619,7 +625,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = if (app.sessionStore.get() != null) {
+                val response = if (currentAuthenticatedReads) {
                     postRepository.listReplies(
                         commentId = parentCommentId,
                         limit = 10,
@@ -662,7 +668,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = if (app.sessionStore.get() != null) {
+                val response = if (currentAuthenticatedReads) {
                     postRepository.listReplies(
                         commentId = parentCommentId,
                         cursor = cursor,
@@ -987,21 +993,27 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadTopLevelComments(post: LocalizedPostResponse, hasSession: Boolean) {
         val postId = post.post.postId
         try {
-            val response = if (hasSession) {
-                postRepository.listComments(
-                    communityId = post.post.communityId,
-                    postId = postId,
-                    limit = 25,
-                    sort = _state.value.commentSort,
-                )
-            } else {
-                postRepository.listPublicComments(
-                    postId = postId,
-                    limit = 25,
-                    sort = _state.value.commentSort,
-                )
-            }
+            val commentsRead = readWithPublicNotFoundFallback(
+                hasSession = hasSession && currentAuthenticatedReads,
+                authenticatedRead = {
+                    postRepository.listComments(
+                        communityId = post.post.communityId,
+                        postId = postId,
+                        limit = 25,
+                        sort = _state.value.commentSort,
+                    )
+                },
+                publicRead = {
+                    postRepository.listPublicComments(
+                        postId = postId,
+                        limit = 25,
+                        sort = _state.value.commentSort,
+                    )
+                },
+            )
             if (currentPostId != postId) return
+            currentAuthenticatedReads = commentsRead.usedAuthenticatedRead
+            val response = commentsRead.value
             _state.value = _state.value.copy(
                 comments = response.items.withoutBlockedCommentAuthors(blockedUserIds),
                 authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
