@@ -114,75 +114,80 @@ fun SongSummaryRow(
         resolvedDurationMs?.let { position.coerceAtMost(it) } ?: position
     }
 
-    Row(
+    Column(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        SongArtwork(
-            label = title,
-            artworkSrc = coverArtSrc,
-            size = artworkSize,
-        )
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = title,
-                style = titleStyle,
-                color = PirateTokens.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            SongArtwork(
+                label = title,
+                artworkSrc = coverArtSrc,
+                size = artworkSize,
             )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                SongPlayButton(
-                    canPlay = canPlay,
-                    isBuffering = isBuffering,
-                    isPlaying = isPlaying,
-                    onPlayPause = onPlayPause,
-                )
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(1.dp),
-                ) {
-                    SongSeekBar(
-                        positionMs = resolvedPositionMs,
-                        durationMs = resolvedDurationMs,
-                        enabled = canPlay && onSeek != null,
-                        onSeek = { position -> onSeek?.invoke(position) },
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = formatSongTime(resolvedPositionMs),
-                            style = durationStyle,
-                            color = PirateTokens.colors.textSecondary,
-                        )
-                        resolvedDurationMs?.let { duration ->
-                            Text(
-                                text = formatSongTime(duration),
-                                style = durationStyle,
-                                color = PirateTokens.colors.textSecondary,
-                            )
-                        }
-                    }
-                }
-            }
-            body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
                 Text(
-                    text = bodyText,
-                    style = bodyStyle,
-                    color = PirateTokens.colors.textSecondary,
+                    text = title,
+                    style = titleStyle,
+                    color = PirateTokens.colors.textPrimary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+                body?.takeIf { it.isNotBlank() && it != title }?.let { bodyText ->
+                    Text(
+                        text = bodyText,
+                        style = bodyStyle,
+                        color = PirateTokens.colors.textSecondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SongPlayButton(
+                canPlay = canPlay,
+                isBuffering = isBuffering,
+                isPlaying = isPlaying,
+                onPlayPause = onPlayPause,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                SongSeekBar(
+                    positionMs = resolvedPositionMs,
+                    durationMs = resolvedDurationMs,
+                    enabled = canPlay && onSeek != null,
+                    onSeek = { position -> onSeek?.invoke(position) },
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = formatSongTime(resolvedPositionMs),
+                        style = durationStyle,
+                        color = PirateTokens.colors.textSecondary,
+                    )
+                    resolvedDurationMs?.let { duration ->
+                        Text(
+                            text = formatSongTime(duration),
+                            style = durationStyle,
+                            color = PirateTokens.colors.textSecondary,
+                        )
+                    }
+                }
             }
         }
     }
@@ -206,7 +211,7 @@ private fun SongSeekBar(
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(32.dp)
             .semantics {
                 progressBarRangeInfo = ProgressBarRangeInfo(
                     current = positionMs.toFloat().coerceIn(0f, semanticsMax),
@@ -222,7 +227,7 @@ private fun SongSeekBar(
             .pointerInput(seekEnabled, duration) {
                 if (seekEnabled) {
                     detectTapGestures { offset ->
-                        onSeek(songSeekPosition(offset.x, size.width.toFloat(), duration!!, 5.dp.toPx()))
+                        onSeek(songSeekPosition(offset.x, size.width.toFloat(), duration!!, 6.dp.toPx()))
                     }
                 }
             }
@@ -230,17 +235,17 @@ private fun SongSeekBar(
                 if (seekEnabled) {
                     detectDragGestures { change, _ ->
                         change.consume()
-                        onSeek(songSeekPosition(change.position.x, size.width.toFloat(), duration!!, 5.dp.toPx()))
+                        onSeek(songSeekPosition(change.position.x, size.width.toFloat(), duration!!, 6.dp.toPx()))
                     }
                 }
             },
     ) {
-        val thumbRadius = 5.dp.toPx()
+        val thumbRadius = 6.dp.toPx()
         val trackStart = thumbRadius
         val trackEnd = (size.width - thumbRadius).coerceAtLeast(trackStart)
         val progressX = trackStart + (trackEnd - trackStart) * progress
         val centerY = size.height / 2f
-        val strokeWidth = 2.dp.toPx()
+        val strokeWidth = 3.dp.toPx()
 
         drawLine(
             color = inactiveColor,

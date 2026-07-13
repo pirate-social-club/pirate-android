@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -52,6 +53,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -1252,6 +1255,48 @@ private fun ThreadShareSheet(
                 icon = PhosphorIcons.ShareNetwork,
                 onClick = onNativeShare,
             )
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ThreadCommentActionSheet(
+    canBlock: Boolean,
+    onDismiss: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Comment actions",
+                style = MaterialTheme.typography.titleLarge,
+                color = PirateTokens.colors.textPrimary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            ThreadSheetActionRow(
+                label = "Report comment",
+                icon = PhosphorIcons.Flag,
+                onClick = onReport,
+            )
+            if (canBlock) {
+                ThreadSheetActionRow(
+                    label = "Block author",
+                    icon = PhosphorIcons.HandPalm,
+                    onClick = onBlock,
+                )
+            }
             Spacer(modifier = Modifier.size(16.dp))
         }
     }
@@ -2619,6 +2664,7 @@ private fun CommentRow(
     modifier: Modifier = Modifier,
 ) {
     val model = comment.comment
+    var actionSheetOpen by rememberSaveable(model.commentId) { mutableStateOf(false) }
     val authorLabel = resolveAuthorLabel(
         identityMode = model.identityMode,
         anonymousLabel = model.anonymousLabel,
@@ -2631,6 +2677,20 @@ private fun CommentRow(
         authorUserId = model.authorUserId,
         authorProfile = authorProfile,
     )
+    if (actionSheetOpen) {
+        ThreadCommentActionSheet(
+            canBlock = canBlock,
+            onDismiss = { actionSheetOpen = false },
+            onReport = {
+                actionSheetOpen = false
+                onReport()
+            },
+            onBlock = {
+                actionSheetOpen = false
+                onBlock()
+            },
+        )
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = PirateTokens.colors.bgPage,
@@ -2672,36 +2732,87 @@ private fun CommentRow(
                     color = PirateTokens.colors.textPrimary,
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    VoteControl(
+                    CommentVoteControl(
                         score = model.score,
                         viewerVote = comment.viewerVote,
                         enabled = !isVoting,
                         onVote = onVote,
                     )
-                    if (showReplyAction) ReplyPill(onClick = onReply)
-                    IconButton(onClick = onReport, modifier = Modifier.size(36.dp)) {
+                    if (showReplyAction) {
+                        ReplyPill(
+                            onClick = onReply,
+                        )
+                    }
+                    IconButton(onClick = { actionSheetOpen = true }, modifier = Modifier.size(36.dp)) {
                         Icon(
-                            imageVector = PhosphorIcons.Flag,
-                            contentDescription = "Report comment",
+                            imageVector = PhosphorIcons.DotsThree,
+                            contentDescription = "Comment actions",
                             tint = PirateTokens.colors.textSecondary,
                             modifier = Modifier.size(18.dp),
                         )
                     }
-                    if (canBlock) {
-                        IconButton(onClick = onBlock, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                imageVector = PhosphorIcons.HandPalm,
-                                contentDescription = "Block comment author",
-                                tint = PirateTokens.colors.textSecondary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
                 }
             }
+        }
+    }
+}
+
+private val CommentActionWidth = 92.dp
+
+@Composable
+private fun CommentVoteControl(
+    score: Int,
+    viewerVote: Int?,
+    enabled: Boolean,
+    onVote: (Int) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier
+            .width(CommentActionWidth)
+            .height(36.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onVote(1)
+            },
+            enabled = enabled,
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.CaretUp,
+                contentDescription = "Upvote comment",
+                tint = if (viewerVote == 1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+            Text(
+                text = score.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+        IconButton(
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onVote(-1)
+            },
+            enabled = enabled,
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.CaretDown,
+                contentDescription = "Downvote comment",
+                tint = if (viewerVote == -1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
         }
     }
 }
@@ -2810,24 +2921,27 @@ private fun ReplyPill(
 ) {
     Surface(
         modifier = Modifier
-            .height(38.dp)
+            .width(CommentActionWidth)
+            .height(36.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(PirateTokens.radius.full),
-        color = PirateTokens.colors.surfaceSubtle,
-        border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
+        color = Color.Transparent,
     ) {
         Row(
             modifier = Modifier
-                .height(38.dp)
+                .fillMaxWidth()
+                .height(36.dp)
                 .padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = PhosphorIcons.ChatCircle,
                 contentDescription = null,
                 tint = PirateTokens.colors.textSecondary,
-                modifier = Modifier.size(17.dp),
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(17.dp),
             )
             Text(
                 text = "Reply",
@@ -2838,7 +2952,7 @@ private fun ReplyPill(
     }
 }
 
-private fun resolveAuthorLabel(
+internal fun resolveAuthorLabel(
     identityMode: String?,
     anonymousLabel: String?,
     authorUserId: String?,
@@ -2848,8 +2962,8 @@ private fun resolveAuthorLabel(
         return anonymousLabel ?: "anon"
     }
 
-    return authorProfile?.globalHandle?.label?.let(::formatPirateHandle)
-        ?: authorUserId?.take(8)
+    return authorProfile?.displayHandle()?.takeIf { it.isNotBlank() }
+        ?: authorProfile?.displayName?.takeIf { it.isNotBlank() }
         ?: "Pirate user"
 }
 
