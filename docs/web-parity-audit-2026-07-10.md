@@ -42,6 +42,11 @@ Latest verified moderation commits and runs:
 - `be2fb3c` community rules — `android-ci` run `29237278305`.
 - `efe4f9f` active moderation queue — `android-ci` run `29238926469`.
 
+Latest verified release-safety commits and runs:
+
+- `2a57ddc` account-scoped user blocking — `android-ci` run `29240802645`.
+- `ff285b0` versioned first-UGC Terms gate — `android-ci` run `29243366968`.
+
 Still-open release blockers remain: server-backed cross-device block and Terms
 enforcement, and legal finalization of the published Terms dispute section;
 the Play Billing/alternative-billing/geo-gating decision for digital goods; the
