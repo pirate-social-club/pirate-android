@@ -71,6 +71,7 @@ fun PirateProfilePage(
     modifier: Modifier = Modifier,
     onEditProfile: (() -> Unit)? = null,
     onMessage: ((String) -> Unit)? = null,
+    onBook: (() -> Unit)? = null,
 ) {
     val hasWalletTab = !data.walletAddress.isNullOrBlank()
     val tabs = buildList {
@@ -90,6 +91,7 @@ fun PirateProfilePage(
                 data = data,
                 onEditProfile = onEditProfile,
                 onMessage = onMessage,
+                onBook = onBook,
             )
         }
         item {
@@ -115,6 +117,7 @@ private fun ProfileIdentityHero(
     data: ProfilePageData,
     onEditProfile: (() -> Unit)?,
     onMessage: ((String) -> Unit)?,
+    onBook: (() -> Unit)?,
 ) {
     val profile = data.profile
     val displayHandle = profile.displayHandle()
@@ -220,17 +223,22 @@ private fun ProfileIdentityHero(
                         onClick = onEditProfile,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                } else if (
-                    data.viewerContext == ViewerContext.Public &&
-                    onMessage != null &&
-                    !data.messageTarget().isNullOrBlank()
-                ) {
-                    PirateButton(
-                        text = "Message",
-                        onClick = { data.messageTarget()?.let(onMessage) },
-                        modifier = Modifier.fillMaxWidth(),
-                        leadingIcon = PhosphorIcons.ChatCircle,
-                    )
+                } else if (data.viewerContext == ViewerContext.Public) {
+                    if (data.profile.isBookable && onBook != null) {
+                        PirateButton(
+                            text = "View availability",
+                            onClick = onBook,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (onMessage != null && !data.messageTarget().isNullOrBlank()) {
+                        PirateButton(
+                            text = "Message",
+                            onClick = { data.messageTarget()?.let(onMessage) },
+                            modifier = Modifier.fillMaxWidth(),
+                            leadingIcon = PhosphorIcons.ChatCircle,
+                        )
+                    }
                 }
             }
         }

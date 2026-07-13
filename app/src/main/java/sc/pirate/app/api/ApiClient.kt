@@ -322,8 +322,29 @@ class ApiClient(private val sessionStore: SessionStore) {
     val comments = CommentsEndpoints(this)
     val publicComments = PublicCommentsEndpoints(this)
     val profiles = ProfilesEndpoints(this)
+    val bookings = BookingsEndpoints(this)
     val notifications = NotificationsEndpoints(this)
     val agents = AgentsEndpoints(this)
+
+    class BookingsEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun listHostSlots(
+            hostUserId: String,
+            from: String,
+            to: String,
+            timezone: String,
+        ): BookingSlotsResponse {
+            val path = api.buildQueryPath(
+                "/bookings/hosts/${api.encodePathSegment(hostUserId)}/slots",
+                listOf(
+                    "from" to from,
+                    "to" to to,
+                    "tz" to timezone,
+                ),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(BookingSlotsResponse.serializer(), response)
+        }
+    }
 
     class AuthEndpoints internal constructor(private val api: ApiClient) {
         suspend fun sessionExchange(proof: SessionExchangeProof): SessionExchangeResponse {

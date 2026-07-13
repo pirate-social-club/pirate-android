@@ -107,6 +107,7 @@ fun PublicProfileScreen(
     handleLabel: String,
     onNavigateToCommunity: (String) -> Unit,
     onBack: () -> Unit,
+    onViewAvailability: (String) -> Unit,
     onMessage: ((String) -> Unit)? = null,
     walletAddress: String? = null,
     modifier: Modifier = Modifier,
@@ -185,6 +186,7 @@ fun PublicProfileScreen(
                             walletAddress = profile.primaryWalletAddress,
                         ),
                         onMessage = onMessage,
+                        onBook = { onViewAvailability(profile.userId) },
                         modifier = Modifier.fillMaxSize(),
                     )
                 }

@@ -32,6 +32,7 @@ import sc.pirate.app.PirateApp
 import sc.pirate.app.auth.AuthViewModel
 import sc.pirate.app.auth.AuthUiState
 import sc.pirate.app.auth.SignInDrawer
+import sc.pirate.app.booking.BookingAvailabilityScreen
 import sc.pirate.app.chat.ChatScreen
 import sc.pirate.app.communities.YourCommunitiesScreen
 import sc.pirate.app.community.CommunityScreen
@@ -980,6 +981,9 @@ fun PirateNavHost(
             val handleLabel = backStackEntry.arguments?.getString(PirateRoute.PublicProfile.ARG_HANDLE_LABEL).orEmpty()
             PublicProfileScreen(
                 handleLabel = handleLabel,
+                onViewAvailability = { hostUserId ->
+                    navController.navigate(PirateRoute.BookingAvailability.buildRoute(hostUserId))
+                },
                 onNavigateToCommunity = {
                     navController.navigate(PirateRoute.Community.buildRoute(it))
                 },
@@ -1010,6 +1014,9 @@ fun PirateNavHost(
             PublicProfileScreen(
                 handleLabel = walletAddress,
                 walletAddress = walletAddress,
+                onViewAvailability = { hostUserId ->
+                    navController.navigate(PirateRoute.BookingAvailability.buildRoute(hostUserId))
+                },
                 onNavigateToCommunity = {
                     navController.navigate(PirateRoute.Community.buildRoute(it))
                 },
@@ -1026,6 +1033,21 @@ fun PirateNavHost(
                         }
                     }
                 },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
+            route = PirateRoute.BookingAvailability.route,
+            arguments = listOf(navArgument(PirateRoute.BookingAvailability.ARG_HOST_USER_ID) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val hostUserId = backStackEntry.arguments
+                ?.getString(PirateRoute.BookingAvailability.ARG_HOST_USER_ID)
+                .orEmpty()
+            BookingAvailabilityScreen(
+                hostUserId = hostUserId,
                 onBack = { navController.popBackStack() },
             )
         }

@@ -63,6 +63,10 @@ sealed class PirateRoute(val route: String) {
     data object Onboarding : PirateRoute("onboarding")
     data object Home : PirateRoute("home")
     data object Chat : PirateRoute("chat")
+    data object BookingAvailability : PirateRoute("book/{hostUserId}") {
+        const val ARG_HOST_USER_ID = "hostUserId"
+        fun buildRoute(hostUserId: String): String = "book/${Uri.encode(hostUserId)}"
+    }
     data object YourCommunities : PirateRoute("your_communities")
     data object Community : PirateRoute("community/{communityId}") {
         const val ARG_COMMUNITY_ID = "communityId"

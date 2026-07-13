@@ -109,6 +109,7 @@ data class Profile(
     @SerialName("follower_count") val followerCount: Int? = null,
     @SerialName("following_count") val followingCount: Int? = null,
     @SerialName("preferred_locale") val preferredLocale: String? = null,
+    @SerialName("is_bookable") val isBookable: Boolean = false,
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
 ) {
@@ -136,6 +137,21 @@ data class PublicProfileResolution(
     @SerialName("resolved_handle_label") val resolvedHandleLabel: String,
     @SerialName("is_canonical") val isCanonical: Boolean,
     @SerialName("created_communities") val createdCommunities: List<PublicProfileCommunitySummary> = emptyList(),
+)
+
+@Serializable
+data class ResolvedBookingSlot(
+    val startUtc: String,
+    val endUtc: String,
+    val priceCents: Int,
+    val available: Boolean,
+)
+
+@Serializable
+data class BookingSlotsResponse(
+    @SerialName("host_timezone") val hostTimezone: String,
+    @SerialName("viewer_timezone") val viewerTimezone: String,
+    val slots: List<ResolvedBookingSlot> = emptyList(),
 )
 
 @Serializable
