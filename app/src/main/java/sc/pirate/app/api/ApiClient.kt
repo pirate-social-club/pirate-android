@@ -1274,7 +1274,12 @@ class ApiClient(private val sessionStore: SessionStore) {
         }
 
         suspend fun getByUserId(userId: String): Profile {
-            val response = api.getString("/profiles/$userId")
+            // This is a public projection. Keeping it token-free matches web and
+            // prevents an expired session from hiding authors on public threads.
+            val response = api.getString(
+                "/profiles/${api.encodePathSegment(userId)}",
+                requireAuth = false,
+            )
             return api.json.decodeFromString(Profile.serializer(), response)
         }
 

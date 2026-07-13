@@ -94,6 +94,7 @@ data class LinkedHandle(
 
 @Serializable
 data class Profile(
+    @SerialName("user") private val publicUserId: String? = null,
     @SerialName("user_id") private val contractUserId: String? = null,
     @SerialName("id") private val feedUserId: String? = null,
     @SerialName("display_name") val displayName: String? = null,
@@ -113,7 +114,7 @@ data class Profile(
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
 ) {
-    val userId: String get() = contractUserId ?: feedUserId.orEmpty()
+    val userId: String get() = publicUserId ?: contractUserId ?: feedUserId.orEmpty()
     val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
 }
 
