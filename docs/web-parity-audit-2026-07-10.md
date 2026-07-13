@@ -5,9 +5,43 @@ origin/main `fa63ed20` (detached read-only checkout). Rev 2 incorporates a secon
 adversarial review; every material correction below was re-verified against the code.
 
 Build/verify policy: use Blacksmith CI (`android-compile.yml` / `android-ci.yml` +
-`scripts/install-blacksmith-apk.sh`), never local Gradle — see README.md. NOTE:
-"green CI" today means assemble/compile only — tests are NOT executed
-(`.github/workflows/android-ci.yml`).
+`scripts/install-blacksmith-apk.sh`), never local Gradle — see README.md. The
+push/PR `android-ci` workflow now runs unit tests, Android lint, debug assembly,
+and uploads the APK plus quality reports. `android-compile.yml` may be disabled;
+use the enabled Blacksmith workflow rather than falling back to local Gradle.
+
+## Implementation ledger — 2026-07-13
+
+The audit below remains the historical baseline. On branch
+`codex/android-p0-release-integrity`, the following work is implemented and
+Blacksmith-verified; do not rebuild it:
+
+- **Release integrity:** post/comment reporting, account-deletion entry point,
+  encrypted session migration, streaming/cancellable uploads with stable draft
+  idempotency, privacy-safe Sentry crash/ANR reporting, verified App Links and
+  native sharing, honest Play metadata/wallet presentation, and a test+lint CI
+  gate.
+- **Reddit-tier interaction pass:** automatic pagination and visible home sorting,
+  skeleton/Snackbar states, motion and haptics, expandable comment threads,
+  RTL/font-scaling/semantics fixes, and encrypted composer draft recovery.
+- **Parity rocks:** native Song Study audio transcription; native karaoke capture,
+  playback, timed lyrics, reconnect and protocol handling; wallet receive,
+  connected-chain balance and guarded native send; owned-agent settings and
+  encrypted signing; validated song royalty splits; native crosspost and safe
+  replay publishing; public booking availability browsing; and the mobile
+  moderation subset (active queue, membership requests, rules).
+
+Latest verified moderation commits and runs:
+
+- `98134b9` membership requests — `android-ci` run `29235618226`.
+- `be2fb3c` community rules — `android-ci` run `29237278305`.
+- `efe4f9f` active moderation queue — `android-ci` run `29238926469`.
+
+Still-open release blockers remain: user blocking and first-UGC terms acceptance;
+the Play Billing/alternative-billing/geo-gating decision for digital goods; the
+API-event and XMTP push systems; and interactive device QA for study/karaoke.
+Paid booking settlement and paid/included replay publishing remain deliberately
+gated until their payment/production-readiness decisions are resolved.
 
 ---
 
