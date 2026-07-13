@@ -17,10 +17,12 @@ import org.xmtp.android.library.Conversation
 import org.xmtp.android.library.XMTPEnvironment
 import org.xmtp.android.library.libxmtp.GroupPermissionPreconfiguration
 import sc.pirate.app.safety.UserBlockStore
+import sc.pirate.app.legal.TermsAcceptanceManager
 
 class XmtpChatService(
     private val appContext: Context,
     private val userBlockStore: UserBlockStore,
+    private val termsAcceptanceManager: TermsAcceptanceManager,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val peerResolver = XmtpPeerResolver(appContext)
@@ -132,6 +134,7 @@ class XmtpChatService(
     }
 
     suspend fun sendMessage(text: String) {
+        check(termsAcceptanceManager.requireForUgc()) { "Agree to the Terms before sending messages." }
         val conversation = activeConversation ?: throw IllegalStateException("No active conversation")
         conversation.send(text)
         conversation.sync()
@@ -202,6 +205,7 @@ class XmtpChatService(
         memberTargets: List<String>,
         name: String?,
     ): String {
+        check(termsAcceptanceManager.requireForUgc()) { "Agree to the Terms before creating a group." }
         val safeClient = client ?: throw IllegalStateException("XMTP is not connected")
         val memberInboxIds = memberTargets
             .map { it.trim() }

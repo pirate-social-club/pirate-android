@@ -530,6 +530,10 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
                 uploadBytesWritten = 0L,
                 uploadTotalBytes = 0L,
             )
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(submitting = false)
+                return@launch
+            }
             try {
                 val createdPostId = when (current.postType) {
                     PostComposerMode.Live -> submitLiveRoom(communityId, current)

@@ -64,7 +64,8 @@ data class ReplayDraftUiState(
 )
 
 class ReplayDraftViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository get() = getApplication<PirateApp>().repositories.communityRepository
+    private val app get() = getApplication<PirateApp>()
+    private val repository get() = app.repositories.communityRepository
     private val _state = MutableStateFlow(ReplayDraftUiState())
     val state: StateFlow<ReplayDraftUiState> = _state.asStateFlow()
     private var communityId: String? = null
@@ -127,6 +128,10 @@ class ReplayDraftViewModel(application: Application) : AndroidViewModel(applicat
                 error = null,
                 message = null,
             )
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(saving = false, publishing = false)
+                return@launch
+            }
             try {
                 val saved = repository.updateLiveRoomReplayDraft(
                     community,

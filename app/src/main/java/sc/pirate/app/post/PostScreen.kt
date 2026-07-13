@@ -406,6 +406,10 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 commentSubmitting = true,
                 commentSubmitError = null,
             )
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(commentSubmitting = false)
+                return@launch
+            }
             try {
                 createCommentWithProofOfWork(post, body)
                 _state.value = _state.value.copy(
@@ -711,6 +715,12 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         viewModelScope.launch {
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(
+                    submittingReplyParentIds = _state.value.submittingReplyParentIds - parentCommentId,
+                )
+                return@launch
+            }
             try {
                 createReplyWithProofOfWork(parentCommentId, body)
                 _state.value = _state.value.copy(

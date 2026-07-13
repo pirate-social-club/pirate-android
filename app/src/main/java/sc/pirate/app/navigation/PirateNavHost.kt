@@ -44,6 +44,7 @@ import sc.pirate.app.karaoke.KaraokeScreen
 import sc.pirate.app.live.LiveRoomBroadcasterScreen
 import sc.pirate.app.live.LiveRoomWebViewScreen
 import sc.pirate.app.live.ReplayDraftScreen
+import sc.pirate.app.legal.TermsAcceptanceDialog
 import sc.pirate.app.moderation.CommunityModerationScreen
 import sc.pirate.app.onboarding.OnboardingScreen
 import sc.pirate.app.onboarding.OnboardingViewModel
@@ -84,6 +85,7 @@ fun PirateNavHost(
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
     }
     val session by app.sessionStore.observe().collectAsState(initial = null)
+    val termsPrompt by app.termsAcceptanceManager.prompt.collectAsState()
     val hasSession = session != null
     val activeAddress = session?.walletAttachments
         ?.firstOrNull { it.isPrimary }
@@ -1063,6 +1065,14 @@ fun PirateNavHost(
         }
 
         appKitGraph(navController)
+    }
+
+    termsPrompt?.let { prompt ->
+        TermsAcceptanceDialog(
+            state = prompt,
+            onAccept = { scope.launch { app.termsAcceptanceManager.accept() } },
+            onDismiss = { scope.launch { app.termsAcceptanceManager.dismiss() } },
+        )
     }
 }
 

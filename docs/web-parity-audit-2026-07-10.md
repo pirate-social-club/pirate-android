@@ -23,6 +23,9 @@ Blacksmith-verified; do not rebuild it:
   and account-scoped encrypted user blocking with feed/comment suppression,
   settings-based unblock management, and XMTP consent enforcement. Cross-device
   blocking still needs the sibling API contract in `docs/user-blocking-api-contract.md`.
+  Android also has a versioned, encrypted first-UGC Terms gate across native
+  publishing/messaging/profile surfaces with legal-document links and settings
+  status; server enforcement is specified in `docs/terms-acceptance-api-contract.md`.
 - **Reddit-tier interaction pass:** automatic pagination and visible home sorting,
   skeleton/Snackbar states, motion and haptics, expandable comment threads,
   RTL/font-scaling/semantics fixes, and encrypted composer draft recovery.
@@ -39,8 +42,8 @@ Latest verified moderation commits and runs:
 - `be2fb3c` community rules — `android-ci` run `29237278305`.
 - `efe4f9f` active moderation queue — `android-ci` run `29238926469`.
 
-Still-open release blockers remain: server-backed cross-device block enforcement
-and first-UGC terms acceptance;
+Still-open release blockers remain: server-backed cross-device block and Terms
+enforcement, and legal finalization of the published Terms dispute section;
 the Play Billing/alternative-billing/geo-gating decision for digital goods; the
 API-event and XMTP push systems; and interactive device QA for study/karaoke.
 Paid booking settlement and paid/included replay publishing remain deliberately
@@ -135,7 +138,9 @@ shell.
    endpoints; design+implement user blocking (backend sibling task or persisted
    local block, spec first); terms-of-service acceptance before first UGC upload.
    **Android local enforcement is implemented; the documented server sibling task
-   remains open for cross-device and query-layer enforcement.**
+   remains open for cross-device and query-layer enforcement. Android's versioned
+   local Terms gate is also implemented; the API sibling task and the published
+   Terms' explicit counsel-finalization note remain release blockers.**
 2. **Account deletion:** in-app entry point (settings) linking the flow; reuse web's
    `/delete-account` resource; meet Play's in-app + web requirement.
 3. **Payments decision (owner decision, blocks Play production):** Play Billing vs

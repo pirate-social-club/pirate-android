@@ -166,6 +166,10 @@ class CommunityModerationViewModel(application: Application) : AndroidViewModel(
 
         viewModelScope.launch {
             _rulesState.value = current.copy(saving = true, error = null, message = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _rulesState.value = _rulesState.value.copy(saving = false)
+                return@launch
+            }
             try {
                 communityRepository.updateRules(communityId, buildCommunityRulesUpdate(current.rules))
                 val refreshedDrafts = runCatching {

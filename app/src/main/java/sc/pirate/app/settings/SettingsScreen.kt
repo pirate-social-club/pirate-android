@@ -58,6 +58,8 @@ import kotlinx.coroutines.launch
 import sc.pirate.app.api.ProfileUpdateInput
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.profile.displayHandle
+import sc.pirate.app.legal.CURRENT_TERMS_VERSION
+import sc.pirate.app.legal.TermsAcceptance
 import sc.pirate.app.safety.BlockedUser
 import sc.pirate.app.shared.buildDefaultProfileCoverSrc
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
@@ -96,6 +98,7 @@ data class SettingsUiState(
     val displayNameError: String? = null,
     val blockedUsers: List<BlockedUser> = emptyList(),
     val unblockingUserIds: Set<String> = emptySet(),
+    val termsAcceptance: TermsAcceptance? = null,
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -121,6 +124,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             _state.value = _state.value.copy(loading = true, error = null, message = null)
             try {
                 val profile = profileRepository.getMe()
+                val termsAcceptance = app.termsAcceptanceStore.currentAcceptance()
                 _state.value = SettingsUiState(
                     loading = false,
                     profile = profile,
@@ -129,6 +133,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     blockedUsers = observedBlockedUsers,
                     handleLabel = profile.globalHandle?.label.orEmpty(),
                     preferredLocale = profile.preferredLocale.orEmpty(),
+                    termsAcceptance = termsAcceptance,
                 )
             } catch (e: Exception) {
                 _state.value = SettingsUiState(
@@ -241,6 +246,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
 
             _state.value = current.copy(savingProfile = true, error = null, message = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(savingProfile = false)
+                return@launch
+            }
             try {
                 val avatarRef = current.pendingAvatarUri?.uploadProfileMedia("avatar")
                 val coverRef = current.pendingCoverUri?.uploadProfileMedia("cover")
@@ -316,6 +325,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch {
             _state.value = _state.value.copy(renamingHandle = true, error = null, message = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(renamingHandle = false)
+                return@launch
+            }
             try {
                 val result = profileRepository.renameHandle(desiredLabel)
                 val profile = profileRepository.getMe()
@@ -385,6 +398,7 @@ fun SettingsScreen(
         "domains" -> "Domains"
         "agents" -> "Agents"
         "blocked" -> "Blocked users"
+        "legal" -> "Terms & privacy"
         else -> "Settings"
     }
 
@@ -496,6 +510,7 @@ fun SettingsScreen(
                         "domains" -> item { DomainsSettings() }
                         "agents" -> item { AgentsSettings() }
                         "blocked" -> item { BlockedUsersSettings(state, viewModel) }
+                        "legal" -> item { LegalSettings(state.termsAcceptance) }
                         else -> item { ProfileSettings(state, viewModel) }
                     }
                     item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -521,6 +536,7 @@ private fun SettingsIndex(
         item { SettingsIndexRow("Preferences", onClick = { onNavigateToSection("preferences") }) }
         item { SettingsIndexRow("Agents", onClick = { onNavigateToSection("agents") }) }
         item { SettingsIndexRow("Blocked users", onClick = { onNavigateToSection("blocked") }) }
+        item { SettingsIndexRow("Terms & privacy", onClick = { onNavigateToSection("legal") }) }
         item { Spacer(modifier = Modifier.height(24.dp)) }
         item { SettingsIndexRow("Delete account", onClick = onOpenAccountDeletion) }
     }
@@ -566,6 +582,35 @@ private fun BlockedUsersSettings(state: SettingsUiState, viewModel: SettingsView
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LegalSettings(acceptance: TermsAcceptance?) {
+    val uriHandler = LocalUriHandler.current
+    val webBaseUrl = sc.pirate.app.BuildConfig.WEB_BASE_URL.trimEnd('/')
+    SettingsSection(title = "Terms & privacy") {
+        StatusCard(
+            title = if (acceptance?.version == CURRENT_TERMS_VERSION) "Terms accepted" else "Acceptance required before posting",
+            description = if (acceptance?.version == CURRENT_TERMS_VERSION) {
+                "Accepted version ${acceptance.version}. You will be asked again when a new version requires consent."
+            } else {
+                "Pirate will ask you to agree before your first post, comment, message, profile edit, or community upload."
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        PirateButton(
+            text = "Read Terms of Service",
+            onClick = { uriHandler.openUri("$webBaseUrl/terms") },
+            variant = ButtonVariant.Outline,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        PirateButton(
+            text = "Read Privacy Policy",
+            onClick = { uriHandler.openUri("$webBaseUrl/privacy") },
+            variant = ButtonVariant.Outline,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
