@@ -22,6 +22,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.theme.PirateTokens
 
+internal val PostActionControlHeight = 48.dp
+
 @Composable
 fun VoteControl(
     score: Int,
@@ -33,7 +35,7 @@ fun VoteControl(
     val haptics = LocalHapticFeedback.current
     Surface(
         modifier = modifier
-            .height(48.dp)
+            .height(PostActionControlHeight)
             .semantics {
                 stateDescription = when (viewerVote) {
                     1 -> "Upvoted, score $score"

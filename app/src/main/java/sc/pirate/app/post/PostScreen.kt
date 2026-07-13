@@ -113,6 +113,7 @@ import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.PostActionControlHeight
 import sc.pirate.app.ui.ReportContentSheet
 import sc.pirate.app.ui.CrosspostSourceCard
 import sc.pirate.app.ui.StatusCard
@@ -2530,14 +2531,14 @@ private fun CommentCountPill(
     count: Int,
 ) {
     Surface(
-        modifier = Modifier.height(38.dp),
+        modifier = Modifier.height(PostActionControlHeight),
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = PirateTokens.colors.surfaceSubtle,
         border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
     ) {
         Row(
             modifier = Modifier
-                .height(38.dp)
+                .height(PostActionControlHeight)
                 .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,

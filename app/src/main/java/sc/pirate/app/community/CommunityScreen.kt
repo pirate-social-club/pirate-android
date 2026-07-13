@@ -94,6 +94,7 @@ import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
+import sc.pirate.app.ui.PostActionControlHeight
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
@@ -1347,12 +1348,15 @@ private fun PostEngagementRow(
             onVote = onVote,
         )
         Surface(
+            modifier = Modifier.height(PostActionControlHeight),
             shape = RoundedCornerShape(PirateTokens.radius.full),
             color = PirateTokens.colors.surfaceSubtle,
             border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier
+                    .height(PostActionControlHeight)
+                    .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

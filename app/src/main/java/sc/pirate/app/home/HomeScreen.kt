@@ -121,6 +121,7 @@ import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.PostActionControlHeight
 import sc.pirate.app.ui.ReportContentSheet
 import sc.pirate.app.ui.CrosspostSourceCard
 import sc.pirate.app.ui.VoteControl
@@ -2000,7 +2001,7 @@ private fun CommentPill(
 ) {
     Surface(
         modifier = Modifier
-            .height(38.dp)
+            .height(PostActionControlHeight)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = PirateTokens.colors.surfaceSubtle,
@@ -2008,7 +2009,7 @@ private fun CommentPill(
     ) {
         Row(
             modifier = Modifier
-                .height(38.dp)
+                .height(PostActionControlHeight)
                 .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,

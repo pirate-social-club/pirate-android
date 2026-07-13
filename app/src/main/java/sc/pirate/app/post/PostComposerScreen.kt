@@ -86,6 +86,7 @@ import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.PostActionControlHeight
 import sc.pirate.app.ui.VoteControl
 import java.util.UUID
 import kotlinx.serialization.encodeToString
@@ -2462,12 +2463,15 @@ private fun PreviewAttachmentCard(
 @Composable
 private fun PreviewCommentPill(count: Int) {
     Surface(
+        modifier = Modifier.height(PostActionControlHeight),
         color = PirateTokens.colors.surfaceSubtle,
         shape = RoundedCornerShape(PirateTokens.radius.full),
         border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier
+                .height(PostActionControlHeight)
+                .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
