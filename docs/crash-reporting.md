@@ -1,8 +1,10 @@
 # Crash and ANR reporting
 
-Sentry initializes only when `SENTRY_DSN` is supplied. Default PII, screenshots,
-view hierarchy capture, interaction breadcrumbs, and performance tracing are
-disabled. Java/Kotlin crash and ANR collection remain enabled.
+Sentry's manifest auto-initializer is disabled. `PirateApp` initializes Sentry
+only when `SENTRY_DSN` is supplied, so development and Blacksmith verification
+builds without a DSN still start normally. Default PII, screenshots, view
+hierarchy capture, interaction breadcrumbs, and performance tracing are
+disabled. Java/Kotlin crash and ANR collection remain enabled when configured.
 
 Release mapping upload is enabled only when `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`,
 and `SENTRY_PROJECT` are present in the signed release workflow environment.
