@@ -89,6 +89,26 @@ class LiveRoomPresentationTest {
     }
 
     @Test
+    fun endedPublishedReplayCanWatchReplay() {
+        val presentation = buildPresentation(
+            room = LiveRoom(status = "ended", accessMode = "free", replayStatus = "published"),
+            access = LiveRoomAccess(allowed = true, decisionReason = "ended"),
+        )
+
+        assertEquals(LiveRoomUiState.CanWatchReplay(), presentation.uiState)
+    }
+
+    @Test
+    fun reviewPendingReplayShowsProcessingToViewers() {
+        val presentation = buildPresentation(
+            room = LiveRoom(status = "ended", accessMode = "free", replayStatus = "review_pending"),
+            access = LiveRoomAccess(allowed = true, decisionReason = "ended"),
+        )
+
+        assertEquals(LiveRoomUiState.ReplayProcessing, presentation.uiState)
+    }
+
+    @Test
     fun purchaseRequiredWithoutListingIsTicketsUnavailable() {
         val presentation = buildPresentation(
             room = LiveRoom(status = "live", accessMode = "paid"),

@@ -1523,6 +1523,28 @@ private fun LiveComposerFields(
             )
         }
 
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            androidx.compose.material3.Checkbox(
+                checked = live.recordingEnabled,
+                onCheckedChange = { checked ->
+                    onLiveChange(live.copy(recordingEnabled = checked))
+                },
+                enabled = enabled,
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Record this livestream",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = PirateTokens.colors.textPrimary,
+                )
+                Text(
+                    text = "After the stream, producers can review and publish the replay.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                )
+            }
+        }
+
         OutlinedTextField(
             value = live.storeUrl,
             onValueChange = { onLiveChange(live.copy(storeUrl = it)) },

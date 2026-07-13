@@ -42,6 +42,7 @@ import sc.pirate.app.inbox.InboxScreen
 import sc.pirate.app.karaoke.KaraokeScreen
 import sc.pirate.app.live.LiveRoomBroadcasterScreen
 import sc.pirate.app.live.LiveRoomWebViewScreen
+import sc.pirate.app.live.ReplayDraftScreen
 import sc.pirate.app.moderation.CommunityModerationScreen
 import sc.pirate.app.onboarding.OnboardingScreen
 import sc.pirate.app.onboarding.OnboardingViewModel
@@ -339,6 +340,9 @@ fun PirateNavHost(
                         launchSingleTop = true
                     }
                 },
+                onManageReplay = { communityId, liveRoomId ->
+                    navController.navigate(PirateRoute.ReplayDraft.buildRoute(communityId, liveRoomId))
+                },
                 onVerifyAge = {
                     navController.navigate(
                         PirateRoute.VerifySelf.buildRoute(
@@ -436,6 +440,31 @@ fun PirateNavHost(
                     communityId = communityId,
                     liveRoomId = liveRoomId,
                     role = role,
+                    onEnded = {
+                        navController.navigate(PirateRoute.ReplayDraft.buildRoute(communityId, liveRoomId)) {
+                            popUpTo(PirateRoute.LiveRoomBroadcast.buildRoute(communityId, liveRoomId, role)) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+
+        composable(
+            route = PirateRoute.ReplayDraft.route,
+            arguments = listOf(
+                navArgument(PirateRoute.ReplayDraft.ARG_COMMUNITY_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ReplayDraft.ARG_LIVE_ROOM_ID) { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.ReplayDraft.ARG_COMMUNITY_ID).orEmpty()
+            val liveRoomId = backStackEntry.arguments?.getString(PirateRoute.ReplayDraft.ARG_LIVE_ROOM_ID).orEmpty()
+            AuthGate(hasSession, navController) {
+                ReplayDraftScreen(
+                    communityId = communityId,
+                    liveRoomId = liveRoomId,
                     onBack = { navController.popBackStack() },
                 )
             }

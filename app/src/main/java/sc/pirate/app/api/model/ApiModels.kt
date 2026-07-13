@@ -1108,6 +1108,7 @@ data class CreateLiveRoomRequest(
     @SerialName("guest_user") val guestUser: String? = null,
     @SerialName("event_start_at") val eventStartAt: Long? = null,
     @SerialName("cover_ref") val coverRef: String? = null,
+    @SerialName("recording_enabled") val recordingEnabled: Boolean = false,
     @SerialName("store_url") val storeUrl: String? = null,
     @SerialName("store_label") val storeLabel: String? = null,
     @SerialName("performer_allocations") val performerAllocations: List<LiveRoomPerformerAllocationInput> = emptyList(),
@@ -1175,9 +1176,74 @@ data class LiveRoom(
     @SerialName("canceled_at") val canceledAt: Long? = null,
     @SerialName("broadcast_ref") val broadcastRef: String? = null,
     @SerialName("replay_status") val replayStatus: String? = null,
+    @SerialName("recording_enabled") val recordingEnabled: Boolean = false,
     @SerialName("performer_allocations") val performerAllocations: List<LiveRoomPerformerAllocation> = emptyList(),
     val setlist: LiveRoomSetlist? = null,
     val created: Long? = null,
+)
+
+@Serializable
+data class LiveRoomReplayAllocation(
+    val id: String = "",
+    @SerialName("participant_user") val participantUser: String? = null,
+    @SerialName("external_party_ref") val externalPartyRef: String? = null,
+    val role: String = "rightsholder",
+    @SerialName("share_bps") val shareBps: Int = 0,
+    @SerialName("rights_basis") val rightsBasis: String? = null,
+    @SerialName("approval_status") val approvalStatus: String? = null,
+)
+
+@Serializable
+data class LiveRoomReplayAsset(
+    val id: String = "",
+    @SerialName("publication_status") val publicationStatus: String = "draft",
+    val title: String = "",
+    val caption: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("preview_ref") val previewRef: String? = null,
+    @SerialName("access_mode") val accessMode: String = "free",
+    @SerialName("locked_delivery_status") val lockedDeliveryStatus: String? = null,
+    @SerialName("published_at") val publishedAt: String? = null,
+    val allocations: List<LiveRoomReplayAllocation> = emptyList(),
+)
+
+@Serializable
+data class LiveRoomRecordingRawArtifact(
+    val provider: String = "",
+    @SerialName("ipfs_cid") val ipfsCid: String? = null,
+    @SerialName("mime_type") val mimeType: String = "",
+    @SerialName("size_bytes") val sizeBytes: Long = 0L,
+)
+
+@Serializable
+data class LiveRoomRecording(
+    val id: String = "",
+    val provider: String = "agora",
+    val status: String = "",
+    @SerialName("failure_reason") val failureReason: String? = null,
+    @SerialName("raw_artifact") val rawArtifact: LiveRoomRecordingRawArtifact? = null,
+)
+
+@Serializable
+data class LiveRoomReplayDraft(
+    @SerialName("live_room") val liveRoom: String = "",
+    @SerialName("recording_enabled") val recordingEnabled: Boolean = false,
+    @SerialName("replay_status") val replayStatus: String = "none",
+    val status: String = "not_recorded",
+    @SerialName("replay_asset") val replayAsset: LiveRoomReplayAsset? = null,
+    val recording: LiveRoomRecording? = null,
+)
+
+@Serializable
+data class UpdateLiveRoomReplayDraftRequest(
+    val title: String,
+    val caption: String?,
+    @SerialName("access_mode") val accessMode: String,
+)
+
+@Serializable
+data class PublishLiveRoomReplayDraftRequest(
+    @SerialName("access_mode") val accessMode: String,
 )
 
 @Serializable

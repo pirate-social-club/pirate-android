@@ -743,6 +743,34 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(LiveRoom.serializer(), response)
         }
 
+        suspend fun getLiveRoomReplayDraft(communityId: String, liveRoomId: String): LiveRoomReplayDraft {
+            val room = api.encodePathSegment(liveRoomId)
+            val response = api.getString("/communities/$communityId/live-rooms/$room/replay-draft")
+            return api.json.decodeFromString(LiveRoomReplayDraft.serializer(), response)
+        }
+
+        suspend fun updateLiveRoomReplayDraft(
+            communityId: String,
+            liveRoomId: String,
+            request: UpdateLiveRoomReplayDraftRequest,
+        ): LiveRoomReplayDraft {
+            val room = api.encodePathSegment(liveRoomId)
+            val body = api.json.encodeToString(UpdateLiveRoomReplayDraftRequest.serializer(), request)
+            val response = api.patchString("/communities/$communityId/live-rooms/$room/replay-draft", body)
+            return api.json.decodeFromString(LiveRoomReplayDraft.serializer(), response)
+        }
+
+        suspend fun publishLiveRoomReplayDraft(
+            communityId: String,
+            liveRoomId: String,
+            request: PublishLiveRoomReplayDraftRequest,
+        ): LiveRoomReplayDraft {
+            val room = api.encodePathSegment(liveRoomId)
+            val body = api.json.encodeToString(PublishLiveRoomReplayDraftRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/live-rooms/$room/replay-draft/publish", body)
+            return api.json.decodeFromString(LiveRoomReplayDraft.serializer(), response)
+        }
+
         suspend fun getAsset(communityId: String, assetId: String): Asset {
             val response = api.getString("/communities/$communityId/assets/${api.encodePathSegment(assetId)}")
             return api.json.decodeFromString(Asset.serializer(), response)

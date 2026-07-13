@@ -99,7 +99,12 @@ fun buildLiveRoomPresentation(input: LiveRoomPresentationInput): LiveRoomPresent
         sameLiveRoomUserId(input.viewerUserId, room?.guestUser) -> LiveRoomProducerRole.Guest
         else -> null
     }
-    val replayStatus = room?.replayStatus?.takeIf { it in setOf("none", "processing", "ready", "failed") } ?: "none"
+    val replayStatus = when (room?.replayStatus) {
+        "published", "ready" -> "ready"
+        "review_pending", "processing" -> "processing"
+        "failed" -> "failed"
+        else -> "none"
+    }
     val uiState = deriveLiveRoomUi(
         status = status,
         accessMode = accessMode,

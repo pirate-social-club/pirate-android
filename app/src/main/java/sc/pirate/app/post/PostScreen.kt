@@ -1133,6 +1133,7 @@ fun PostScreen(
     onWatchLiveRoom: () -> Unit,
     onSing: (String) -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
+    onManageReplay: (String, String) -> Unit,
     onVerifyAge: () -> Unit,
     onStudy: (String) -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
@@ -1378,6 +1379,13 @@ fun PostScreen(
                                     onBroadcastLiveRoom(communityId, liveRoomId, role)
                                 } else {
                                     authPromptAction = "Broadcasting"
+                                }
+                            },
+                            onManageReplay = { communityId, liveRoomId ->
+                                if (hasSession) {
+                                    onManageReplay(communityId, liveRoomId)
+                                } else {
+                                    authPromptAction = "Reviewing recordings"
                                 }
                             },
                             onVerifyAge = {
@@ -1647,6 +1655,7 @@ private fun ThreadRootPost(
     onWatchLiveRoom: () -> Unit,
     onSing: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
+    onManageReplay: (String, String) -> Unit,
     onVerifyAge: () -> Unit,
     onStudy: () -> Unit,
     onToggleSongPlayback: () -> Unit,
@@ -1799,6 +1808,18 @@ private fun ThreadRootPost(
                     onVerifyAge = onVerifyAge,
                     onRenewViewer = onRenewLiveRoomViewer,
                 )
+                if (
+                    livePresentation.producerRole != null &&
+                    livePresentation.status == "ended" &&
+                    liveRoomAccess?.room?.recordingEnabled == true
+                ) {
+                    PirateButton(
+                        text = "Review recording",
+                        onClick = { onManageReplay(post.communityId, liveRoomId) },
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
             if (post.anchorLiveRoom == null && post.assetId != null && assetListing != null) {
                 AssetCommerceSummary(

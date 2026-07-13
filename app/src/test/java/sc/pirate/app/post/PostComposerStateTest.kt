@@ -462,6 +462,7 @@ class PostComposerStateTest {
                 visibility = LiveVisibility.Unlisted,
                 scheduleForLater = true,
                 scheduleAt = "2026-06-01T20:00:00Z",
+                recordingEnabled = true,
                 guestUserId = "@guest",
                 storeUrl = "https://store.example/show",
                 storeLabel = "Merch",
@@ -493,6 +494,7 @@ class PostComposerStateTest {
         assertEquals("unlisted", request.visibility)
         assertEquals("usr_guest", request.guestUser)
         assertEquals("media/live-cover", request.coverRef)
+        assertTrue(request.recordingEnabled)
         assertEquals("https://store.example/show", request.storeUrl)
         assertEquals("Merch", request.storeLabel)
         assertEquals(2, request.performerAllocations.size)

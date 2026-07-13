@@ -39,6 +39,7 @@ import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.LiveRoomAttachRequest
 import sc.pirate.app.api.model.LiveRoomGuestAttachResponse
 import sc.pirate.app.api.model.LiveRoomHostAttachResponse
+import sc.pirate.app.api.model.LiveRoomReplayDraft
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
 import sc.pirate.app.api.model.LocalizedPostResponse
@@ -52,6 +53,8 @@ import sc.pirate.app.api.model.PostableCommunitiesResponse
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.PublishLiveRoomResponse
+import sc.pirate.app.api.model.PublishLiveRoomReplayDraftRequest
+import sc.pirate.app.api.model.UpdateLiveRoomReplayDraftRequest
 import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.api.model.PublicCommunitySearchResponse
 import sc.pirate.app.api.model.SessionExchangeResponse
@@ -155,6 +158,17 @@ interface CommunityRepository {
     suspend fun guestRevokeLiveRoom(communityId: String, liveRoomId: String): LiveRoom
     suspend fun cancelLiveRoom(communityId: String, liveRoomId: String): LiveRoom
     suspend fun endLiveRoom(communityId: String, liveRoomId: String): LiveRoom
+    suspend fun getLiveRoomReplayDraft(communityId: String, liveRoomId: String): LiveRoomReplayDraft
+    suspend fun updateLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: UpdateLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft
+    suspend fun publishLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: PublishLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft
     suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun getPublicLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun viewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse
@@ -494,6 +508,21 @@ class ApiCommunityRepository(
     override suspend fun endLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
         return apiClient.communities.endLiveRoom(communityId, liveRoomId)
     }
+
+    override suspend fun getLiveRoomReplayDraft(communityId: String, liveRoomId: String): LiveRoomReplayDraft =
+        apiClient.communities.getLiveRoomReplayDraft(communityId, liveRoomId)
+
+    override suspend fun updateLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: UpdateLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft = apiClient.communities.updateLiveRoomReplayDraft(communityId, liveRoomId, request)
+
+    override suspend fun publishLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: PublishLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft = apiClient.communities.publishLiveRoomReplayDraft(communityId, liveRoomId, request)
 
     override suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse {
         return apiClient.communities.getLiveRoomAccess(communityId, liveRoomId)
