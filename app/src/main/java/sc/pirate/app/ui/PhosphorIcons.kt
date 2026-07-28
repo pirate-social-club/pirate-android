@@ -43,6 +43,12 @@ object PhosphorIcons {
     val Pause: ImageVector = AdamPhosphorIcons.Fill.Pause
     val Play: ImageVector = AdamPhosphorIcons.Fill.Play
     val VideoCameraFill: ImageVector = AdamPhosphorIcons.Fill.VideoCamera
+    // Video feed rail. Filled throughout: the rail sits over moving video, where outlined
+    // glyphs lose their edges against a bright frame.
+    val HeartFill: ImageVector = AdamPhosphorIcons.Fill.Heart
+    val ShareFatFill: ImageVector = AdamPhosphorIcons.Fill.ShareFat
+    val SpeakerHighFill: ImageVector = AdamPhosphorIcons.Fill.SpeakerHigh
+    val SpeakerSlashFill: ImageVector = AdamPhosphorIcons.Fill.SpeakerSlash
     val MusicNote: ImageVector = AdamPhosphorIcons.Regular.MusicNote
     val MusicNotes: ImageVector = AdamPhosphorIcons.Regular.MusicNotes
     val Microphone: ImageVector = AdamPhosphorIcons.Regular.Microphone

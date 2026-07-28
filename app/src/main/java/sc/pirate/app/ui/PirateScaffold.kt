@@ -79,6 +79,9 @@ fun PirateScaffold(
     val showBottomBar =
         currentRoute in listOf(
             PirateRoute.Home.route,
+            // The video feed is full-bleed behind the bar, not inset by it: the bar overlays the
+            // video the way it does on web, so the surface stays fullscreen and still navigable.
+            PirateRoute.VideoFeed.route,
             PirateRoute.Chat.route,
             PirateRoute.Community.route,
             PirateRoute.Wallet.route,

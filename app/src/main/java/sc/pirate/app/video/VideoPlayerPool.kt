@@ -94,6 +94,16 @@ class VideoPlayerPool(
         playersByKey.values.forEach { it.pause() }
     }
 
+    /**
+     * Applies the viewer's sound choice to every held player, including warmed ones — a page that
+     * was prepared while muted must not start audible when the viewer swipes onto it.
+     */
+    @MainThread
+    fun setMuted(muted: Boolean) {
+        if (released) return
+        playersByKey.values.forEach { it.volume = if (muted) 0f else 1f }
+    }
+
     @MainThread
     fun releaseAll() {
         if (released) return
