@@ -54,6 +54,7 @@ import sc.pirate.app.profile.UserProfileViewModel
 import sc.pirate.app.settings.SettingsScreen
 import sc.pirate.app.submit.GlobalSubmitScreen
 import sc.pirate.app.verification.SelfVerificationScreen
+import sc.pirate.app.video.VideoPagerScreen
 import sc.pirate.app.wallet.WalletScreen
 import sc.pirate.app.wallet.WalletViewModel
 import kotlinx.coroutines.launch
@@ -166,6 +167,10 @@ fun PirateNavHost(
                     }
                 },
             )
+        }
+
+        composable(PirateRoute.VideoFeed.route) {
+            VideoPagerScreen()
         }
 
         composable(PirateRoute.Home.route) {
