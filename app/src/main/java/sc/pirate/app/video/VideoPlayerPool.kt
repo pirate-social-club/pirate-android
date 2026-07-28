@@ -1,14 +1,10 @@
 package sc.pirate.app.video
 
-import android.content.Context
 import androidx.annotation.MainThread
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
 
@@ -25,11 +21,14 @@ import androidx.media3.exoplayer.source.MediaSource
  * entirely from composition callbacks. Lease ordering lives in [VideoLeaseTable].
  */
 class VideoPlayerPool(
-    context: Context,
-    private val mediaSourceFactory: MediaSource.Factory,
+    private val createPlayer: () -> ExoPlayer,
+    /**
+     * Preloaded source for a url, or null to prepare it cold. Kept as a lambda so the pool never
+     * depends on the preload manager: a null answer is an ordinary, working path.
+     */
+    private val preloadedSourceFor: (String) -> MediaSource? = { null },
     capacity: Int = DEFAULT_CAPACITY,
 ) {
-    private val appContext = context.applicationContext
     private val leases = VideoLeaseTable(capacity)
     private val playersByKey = mutableMapOf<String, ExoPlayer>()
     private var released = false
@@ -62,7 +61,10 @@ class VideoPlayerPool(
             VideoLeaseTable.Admission.Create -> createPlayer()
         }
 
-        player.setMediaItem(MediaItem.fromUri(url))
+        // A preloaded source carries work the manager already did; falling back to the raw URL is
+        // an ordinary cold start, never an error.
+        val preloaded = preloadedSourceFor(url)
+        if (preloaded != null) player.setMediaSource(preloaded) else player.setMediaItem(MediaItem.fromUri(url))
         player.prepare()
         playersByKey[key] = player
         publishHeldKeys()
@@ -105,22 +107,6 @@ class VideoPlayerPool(
     private fun publishHeldKeys() {
         heldKeys = playersByKey.keys.toSet()
     }
-
-    private fun createPlayer(): ExoPlayer =
-        ExoPlayer.Builder(appContext)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .build()
-            .also { player ->
-                player.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                        .setUsage(C.USAGE_MEDIA)
-                        .build(),
-                    true,
-                )
-                player.repeatMode = Player.REPEAT_MODE_ONE
-                player.playWhenReady = false
-            }
 
     companion object {
         /**

@@ -188,12 +188,22 @@ fun VideoPagerScreen(
 
     LaunchedEffect(Unit) { viewModel.load() }
 
-    val pool = remember {
+    val preload = remember {
         val app = context.applicationContext as PirateApp
-        VideoPlayerPool(app, app.videoMediaCache.mediaSourceFactory)
+        VideoPreloadCoordinator(app, app.videoMediaCache.mediaSourceFactory)
     }
-    DisposableEffect(pool) {
-        onDispose { pool.releaseAll() }
+    val pool = remember(preload) {
+        VideoPlayerPool(
+            createPlayer = preload::createPlayer,
+            preloadedSourceFor = preload::mediaSourceFor,
+        )
+    }
+    DisposableEffect(pool, preload) {
+        onDispose {
+            // Players first: they hold periods the manager owns.
+            pool.releaseAll()
+            preload.release()
+        }
     }
 
     // Leaving the app must stop audio; returning resumes the page the viewer was on.
@@ -227,12 +237,18 @@ fun VideoPagerScreen(
 
     val pagerState = rememberPagerState(pageCount = { state.items.size })
 
+    // Keep the preload window aware of the whole known feed, including pages appended since.
+    LaunchedEffect(preload, state.items) {
+        preload.setItems(state.items.map { it.url })
+    }
+
     VideoPagerPlaybackEffect(
         haptics = { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) },
         items = state.items,
         onNearEnd = viewModel::loadMore,
         pagerState = pagerState,
         pool = pool,
+        preload = preload,
     )
 
     VerticalPager(
@@ -262,12 +278,16 @@ private fun VideoPagerPlaybackEffect(
     onNearEnd: () -> Unit,
     pagerState: PagerState,
     pool: VideoPlayerPool,
+    preload: VideoPreloadCoordinator,
 ) {
     LaunchedEffect(pagerState, items) {
         snapshotFlow { pagerState.settledPage }
             .distinctUntilChanged()
             .collect { settled ->
                 val current = items.getOrNull(settled) ?: return@collect
+                // Move the preload window before binding players, so the next page is already
+                // being prepared while the current one starts.
+                preload.setCurrentIndex(settled)
                 pool.obtain(current.postId, current.url)
                 pool.playOnly(current.postId)
                 haptics()
