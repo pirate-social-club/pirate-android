@@ -129,6 +129,12 @@ private fun PirateAppShell(
             activeRoutes = setOf(PirateRoute.Home.route, PirateRoute.Community.route),
         ),
         BottomNavItem(
+            route = PirateRoute.VideoFeed.route,
+            label = "Videos",
+            icon = PhosphorIcons.VideoCamera,
+            activeIcon = PhosphorIcons.VideoCameraFill,
+        ),
+        BottomNavItem(
             PirateRoute.Wallet.route,
             "Wallet",
             PhosphorIcons.Wallet,

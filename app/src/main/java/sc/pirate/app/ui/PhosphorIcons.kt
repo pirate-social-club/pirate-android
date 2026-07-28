@@ -42,6 +42,7 @@ object PhosphorIcons {
     val Link: ImageVector = AdamPhosphorIcons.Regular.Link
     val Pause: ImageVector = AdamPhosphorIcons.Fill.Pause
     val Play: ImageVector = AdamPhosphorIcons.Fill.Play
+    val VideoCameraFill: ImageVector = AdamPhosphorIcons.Fill.VideoCamera
     val MusicNote: ImageVector = AdamPhosphorIcons.Regular.MusicNote
     val MusicNotes: ImageVector = AdamPhosphorIcons.Regular.MusicNotes
     val Microphone: ImageVector = AdamPhosphorIcons.Regular.Microphone
