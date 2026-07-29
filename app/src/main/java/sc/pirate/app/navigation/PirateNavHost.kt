@@ -188,7 +188,7 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.VideoFeed.route) {
-            VideoPagerScreen()
+            VideoPagerScreen(onOpenNavigation = onOpenNavigation)
         }
 
         composable(PirateRoute.Home.route) {
