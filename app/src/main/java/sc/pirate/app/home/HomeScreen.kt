@@ -22,16 +22,23 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -39,18 +46,22 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +70,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -72,6 +84,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
@@ -84,6 +97,7 @@ import java.nio.charset.StandardCharsets
 import sc.pirate.app.PirateApp
 import sc.pirate.app.R
 import sc.pirate.app.api.model.CommunityListing
+import sc.pirate.app.api.model.CreateUserReportRequest
 import sc.pirate.app.api.model.CommunityPurchase
 import sc.pirate.app.api.model.HomeFeedItem
 import sc.pirate.app.api.model.HomeFeedResponse
@@ -94,15 +108,22 @@ import sc.pirate.app.live.LiveRoomPresentation
 import sc.pirate.app.live.LiveRoomPresentationInput
 import sc.pirate.app.live.LiveRoomUiState
 import sc.pirate.app.live.buildLiveRoomPresentation
+import sc.pirate.app.profile.displayHandle
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.sharePost
+import sc.pirate.app.safety.withoutBlockedAuthors
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PhosphorIcons
+import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.PostActionControlHeight
+import sc.pirate.app.ui.ReportContentSheet
+import sc.pirate.app.ui.CrosspostSourceCard
 import sc.pirate.app.ui.VoteControl
 import sc.pirate.app.ui.adjustedVoteCount
 
@@ -118,6 +139,8 @@ data class HomeUiState(
     val refreshError: String? = null,
     val followError: String? = null,
     val voteError: String? = null,
+    val reportingPostIds: Set<String> = emptySet(),
+    val reportMessage: String? = null,
     val votingPostIds: Set<String> = emptySet(),
     val followingCommunityIds: Set<String> = emptySet(),
     val viewerUserId: String? = null,
@@ -146,6 +169,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val feedRepository get() = app.repositories.feedRepository
     private val postRepository get() = app.repositories.postRepository
     private val communityRepository get() = app.repositories.communityRepository
+    private val profileRepository get() = app.repositories.profileRepository
     private val homeFeedCache get() = app.homeFeedCache
     private val postPreviewCache get() = app.postPreviewCache
 
@@ -153,8 +177,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<HomeUiState> = _state.asStateFlow()
     val playbackState: StateFlow<SongPlaybackState> = app.songPlaybackController.state
     private val enrichmentJobs = mutableSetOf<Job>()
+    private var blockedUserIds: Set<String> = emptySet()
 
     init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                blockedUserIds = blockState.userIds
+                _state.value = _state.value.copy(
+                    feed = _state.value.feed?.withoutBlockedAuthors(blockedUserIds),
+                )
+            }
+        }
         load()
     }
 
@@ -180,7 +213,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _state.value = _state.value.withFeed(
                     refreshing = false,
                     loading = false,
-                    feed = feed,
+                    feed = feed.withoutBlockedAuthors(blockedUserIds),
                     activeSort = sort,
                     topTimeRange = timeRange,
                     voteError = null,
@@ -259,6 +292,62 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun reportPost(communityId: String, postId: String, reasonCode: String) {
+        if (postId in _state.value.reportingPostIds) return
+        _state.value = _state.value.copy(
+            reportingPostIds = _state.value.reportingPostIds + postId,
+            reportMessage = null,
+        )
+        viewModelScope.launch {
+            try {
+                postRepository.reportPost(communityId, postId, CreateUserReportRequest(reasonCode))
+                _state.value = _state.value.copy(
+                    reportingPostIds = _state.value.reportingPostIds - postId,
+                    reportMessage = "Report submitted. Thank you for helping keep Pirate safe.",
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportingPostIds = _state.value.reportingPostIds - postId,
+                    reportMessage = e.message ?: "Could not submit report.",
+                )
+            }
+        }
+    }
+
+    fun clearReportMessage() {
+        _state.value = _state.value.copy(reportMessage = null)
+    }
+
+    fun blockAuthor(authorUserId: String, identityMode: String?) {
+        val targetUserId = authorUserId.trim()
+        if (targetUserId.isBlank() || targetUserId.equals(_state.value.viewerUserId, ignoreCase = true)) return
+        viewModelScope.launch {
+            try {
+                val anonymous = identityMode.equals("anonymous", ignoreCase = true)
+                val profile = if (anonymous) {
+                    null
+                } else {
+                    runCatching { profileRepository.getByUserId(targetUserId) }.getOrNull()
+                }
+                app.userBlockStore.block(
+                    userId = targetUserId,
+                    handleLabel = if (anonymous) "Anonymous user" else profile?.displayHandle(),
+                    xmtpInbox = profile?.xmtpInbox,
+                )
+                app.chatService.blockPeer(profile?.xmtpInbox)
+                _state.value = _state.value.copy(
+                    reportMessage = "User blocked. Their posts, comments, and direct messages are hidden.",
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportMessage = e.message ?: "Could not block this user.",
+                )
+            }
+        }
+    }
+
     private fun load(sort: String, timeRange: String) {
         viewModelScope.launch {
             val key = cacheKey(sort, timeRange)
@@ -267,7 +356,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 cacheFeedItems(cached.feed.items)
                 _state.value = _state.value.withFeed(
                     loading = false,
-                    feed = cached.feed,
+                    feed = cached.feed.withoutBlockedAuthors(blockedUserIds),
                     activeSort = sort,
                     topTimeRange = timeRange,
                     viewerUserId = app.sessionStore.get()?.user?.userId,
@@ -293,7 +382,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 cacheFeedItems(feed.items)
                 _state.value = _state.value.withFeed(
                     loading = false,
-                    feed = feed,
+                    feed = feed.withoutBlockedAuthors(blockedUserIds),
                     activeSort = sort,
                     topTimeRange = timeRange,
                     viewerUserId = app.sessionStore.get()?.user?.userId,
@@ -337,7 +426,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     sort = currentState.activeSort,
                     timeRange = if (currentState.activeSort == "top") currentState.topTimeRange else null,
                 )
-                val nextFeed = _state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage)
+                val nextFeed = (_state.value.feed?.appendPage(nextPage) ?: currentFeed.appendPage(nextPage))
+                    .withoutBlockedAuthors(blockedUserIds)
                 homeFeedCache.put(
                     cacheKey(currentState.activeSort, currentState.topTimeRange),
                     nextFeed,
@@ -749,6 +839,7 @@ fun HomeScreen(
     hasSession: Boolean,
     onNavigateToCommunity: (String) -> Unit,
     onNavigateToPost: (String) -> Unit,
+    onNavigateToCrosspost: (sourceCommunityId: String, sourcePostId: String, sourceTitle: String?) -> Unit,
     onNavigateToCompose: () -> Unit,
     onNavigateToYourCommunities: () -> Unit,
     onNavigateToWallet: () -> Unit,
@@ -761,12 +852,36 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val viewModel: HomeViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val haptics = LocalHapticFeedback.current
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val feed = state.feed
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var mediaPreview by remember { mutableStateOf<ActiveMediaPreview?>(null) }
     var actionItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+    var reportItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+    var blockItem by remember { mutableStateOf<HomeFeedItem?>(null) }
+
+    LaunchedEffect(feed?.nextCursor, state.loadingMore) {
+        if (feed?.nextCursor == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd -> if (nearEnd) viewModel.loadMore() }
+    }
+
+    LaunchedEffect(state.reportMessage) {
+        state.reportMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearReportMessage()
+        }
+    }
 
     authPromptAction?.let {
         signInDrawer { authPromptAction = null }
@@ -801,9 +916,36 @@ fun HomeScreen(
 
     actionItem?.let { item ->
         PostActionSheet(
+            canCrosspost = item.post.post.postType != "crosspost" && item.post.post.parentPost == null,
             isFollowing = item.community.viewerFollowing == true,
             followLoading = item.homeCommunityId() in state.followingCommunityIds,
+            canBlock = !item.post.post.authorUserId.isNullOrBlank() &&
+                !item.post.post.authorUserId.equals(state.viewerUserId, ignoreCase = true),
             onDismiss = { actionItem = null },
+            onShare = {
+                actionItem = null
+                sharePost(context, item.post.post.postId, item.post.post.title)
+            },
+            onReport = {
+                actionItem = null
+                if (hasSession) reportItem = item else authPromptAction = "Reporting posts"
+            },
+            onBlock = {
+                actionItem = null
+                if (hasSession) blockItem = item else authPromptAction = "Blocking users"
+            },
+            onCrosspost = {
+                actionItem = null
+                if (hasSession) {
+                    onNavigateToCrosspost(
+                        item.homeCommunityId(),
+                        item.post.post.postId,
+                        item.post.post.title,
+                    )
+                } else {
+                    authPromptAction = "Crossposting"
+                }
+            },
             onToggleFollow = {
                 actionItem = null
                 if (hasSession) {
@@ -815,7 +957,42 @@ fun HomeScreen(
         )
     }
 
+    blockItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { blockItem = null },
+            title = { Text("Block this user?") },
+            text = { Text("Their posts and comments will be hidden, and their direct messages will be denied when an XMTP inbox is available.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        blockItem = null
+                        item.post.post.authorUserId?.let { authorUserId ->
+                            viewModel.blockAuthor(authorUserId, item.post.post.identityMode)
+                        }
+                    },
+                ) { Text("Block") }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockItem = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    reportItem?.let { item ->
+        val postId = item.post.post.postId
+        ReportContentSheet(
+            targetLabel = "post",
+            submitting = postId in state.reportingPostIds,
+            onDismiss = { if (postId !in state.reportingPostIds) reportItem = null },
+            onReasonSelected = { reason ->
+                viewModel.reportPost(item.homeCommunityId(), postId, reason)
+                reportItem = null
+            },
+        )
+    }
+
     Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             topBar = {
                 TopAppBar(
                     navigationIcon = {
@@ -834,6 +1011,10 @@ fun HomeScreen(
                         )
                     },
                     actions = {
+                        HomeSortMenu(state.activeSort, viewModel::setSort)
+                        if (state.activeSort == "top") {
+                            HomeTimeRangeMenu(state.topTimeRange, viewModel::setTopTimeRange)
+                        }
                         IconButton(onClick = {
                             if (hasSession) onNavigateToCompose() else authPromptAction = "Creating a post"
                         }) {
@@ -853,12 +1034,16 @@ fun HomeScreen(
         ) { innerPadding ->
             PullToRefreshBox(
                 isRefreshing = state.refreshing,
-                onRefresh = viewModel::refresh,
+                onRefresh = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    viewModel.refresh()
+                },
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding),
             ) {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .background(PirateTokens.colors.bgPage),
@@ -867,15 +1052,7 @@ fun HomeScreen(
                     when {
                         state.loading -> {
                             item {
-                                Box(
-                                    modifier = Modifier.fillParentMaxSize(),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    CircularProgressIndicator(
-                                        color = PirateTokens.colors.accentBrand,
-                                        modifier = Modifier.size(28.dp),
-                                    )
-                                }
+                                FeedSkeletons(count = 4, modifier = Modifier.fillMaxWidth())
                             }
                         }
 
@@ -966,13 +1143,11 @@ fun HomeScreen(
                             )
                         }
 
-                        if (feed.nextCursor != null) {
+                        if (state.loadingMore) {
                             item {
-                                PirateButton(
-                                    text = if (state.loadingMore) "Loading" else "Load more",
-                                    onClick = viewModel::loadMore,
-                                    loading = state.loadingMore,
-                                    modifier = Modifier.fillMaxWidth(),
+                                CircularProgressIndicator(
+                                    color = PirateTokens.colors.accentBrand,
+                                    modifier = Modifier.padding(20.dp).size(24.dp),
                                 )
                             }
                         }
@@ -981,6 +1156,69 @@ fun HomeScreen(
                 }
             }
         }
+}
+
+private val homeSortOptions = listOf(
+    "best" to "Best",
+    "new" to "New",
+    "top" to "Top",
+)
+
+@Composable
+private fun HomeSortMenu(selectedValue: String, onSelected: (String) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(PhosphorIcons.SlidersHorizontal, contentDescription = "Sort feed")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            homeSortOptions.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelected(value)
+                    },
+                    trailingIcon = if (value == selectedValue) {
+                        { Text("Selected", style = MaterialTheme.typography.labelSmall) }
+                    } else null,
+                )
+            }
+        }
+    }
+}
+
+private val homeTimeRangeOptions = listOf(
+    "hour" to "This hour",
+    "day" to "Today",
+    "week" to "This week",
+    "month" to "This month",
+    "year" to "This year",
+    "all" to "All time",
+)
+
+@Composable
+private fun HomeTimeRangeMenu(selectedValue: String, onSelected: (String) -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(homeTimeRangeOptions.firstOrNull { it.first == selectedValue }?.second ?: "Today")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            homeTimeRangeOptions.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        onSelected(value)
+                    },
+                    trailingIcon = if (value == selectedValue) {
+                        { Text("Selected", style = MaterialTheme.typography.labelSmall) }
+                    } else null,
+                )
+            }
+        }
+    }
 }
 
 private fun HomeFeedItem.homeCommunityId(): String =
@@ -1225,9 +1463,15 @@ private fun MediaPreviewDialog(
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun PostActionSheet(
+    canCrosspost: Boolean,
+    canBlock: Boolean,
     isFollowing: Boolean,
     followLoading: Boolean,
     onDismiss: () -> Unit,
+    onShare: () -> Unit,
+    onCrosspost: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
     onToggleFollow: () -> Unit,
 ) {
     ModalBottomSheet(
@@ -1241,6 +1485,17 @@ private fun PostActionSheet(
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
+            SheetActionRow(
+                label = "Share post",
+                icon = PhosphorIcons.ShareNetwork,
+                onClick = onShare,
+            )
+            SheetActionRow(
+                label = "Crosspost",
+                icon = PhosphorIcons.ShareNetwork,
+                enabled = canCrosspost,
+                onClick = onCrosspost,
+            )
             SheetActionRow(
                 label = if (isFollowing) "Unfollow" else "Follow",
                 icon = PhosphorIcons.Users,
@@ -1256,8 +1511,13 @@ private fun PostActionSheet(
             SheetActionRow(
                 label = "Report post",
                 icon = PhosphorIcons.Flag,
-                enabled = false,
-                onClick = {},
+                onClick = onReport,
+            )
+            SheetActionRow(
+                label = "Block author",
+                icon = PhosphorIcons.HandPalm,
+                enabled = canBlock,
+                onClick = onBlock,
             )
             Spacer(modifier = Modifier.size(16.dp))
         }
@@ -1482,6 +1742,10 @@ private fun HomePostCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+
+            post.crosspostSource?.let { source ->
+                CrosspostSourceCard(source = source)
+            }
 
             post.anchorLiveRoom?.let { liveRoomId ->
                 LiveRoomSummaryCard(
@@ -1737,7 +2001,7 @@ private fun CommentPill(
 ) {
     Surface(
         modifier = Modifier
-            .height(38.dp)
+            .height(PostActionControlHeight)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = PirateTokens.colors.surfaceSubtle,
@@ -1745,7 +2009,7 @@ private fun CommentPill(
     ) {
         Row(
             modifier = Modifier
-                .height(38.dp)
+                .height(PostActionControlHeight)
                 .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1823,6 +2087,7 @@ private fun FeedMediaPreview(
     }
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 private fun VideoPlayer(
     url: String,

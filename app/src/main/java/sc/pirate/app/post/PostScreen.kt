@@ -15,10 +15,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -26,8 +30,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,14 +41,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -55,6 +67,7 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -71,6 +84,7 @@ import sc.pirate.app.api.model.CommunityPreview
 import sc.pirate.app.api.model.CommunityPurchase
 import sc.pirate.app.api.model.CommunityPurchaseSettlementFailureRequest
 import sc.pirate.app.api.model.CommunityPurchaseSettlementRequest
+import sc.pirate.app.api.model.CreateUserReportRequest
 import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
@@ -85,10 +99,14 @@ import sc.pirate.app.live.LiveRoomProducerRole
 import sc.pirate.app.live.LiveRoomUiState
 import sc.pirate.app.live.LiveRoomViewerWebView
 import sc.pirate.app.live.buildLiveRoomPresentation
+import sc.pirate.app.profile.displayHandle
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
+import sc.pirate.app.shared.copyPostLink
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.requiresAgeProof
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.shared.sharePost
+import sc.pirate.app.safety.withoutBlockedCommentAuthors
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryCard
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -96,8 +114,13 @@ import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.ChipOption
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
+import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PhosphorIcons
+import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.PostActionControlHeight
+import sc.pirate.app.ui.ReportContentSheet
+import sc.pirate.app.ui.CrosspostSourceCard
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
@@ -147,6 +170,8 @@ data class PostUiState(
     val repliesErrorByParentId: Map<String, String> = emptyMap(),
     val replySubmitErrorByParentId: Map<String, String> = emptyMap(),
     val commentVoteError: String? = null,
+    val reportingIds: Set<String> = emptySet(),
+    val reportMessage: String? = null,
 )
 
 private data class PostCommerceEnrichment(
@@ -169,12 +194,29 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     val videoPlaybackState: StateFlow<VideoPlaybackState> = app.videoPlaybackController.state
     private var currentPostId: String? = null
     private var currentHasSession: Boolean = false
+    private var currentAuthenticatedReads: Boolean = false
     private var loadGeneration = 0
     private val postPreviewCache get() = app.postPreviewCache
+    private var blockedUserIds: Set<String> = emptySet()
+
+    init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                blockedUserIds = blockState.userIds
+                _state.value = _state.value.copy(
+                    comments = _state.value.comments.withoutBlockedCommentAuthors(blockedUserIds),
+                    repliesByParentId = _state.value.repliesByParentId.mapValues { (_, replies) ->
+                        replies.withoutBlockedCommentAuthors(blockedUserIds)
+                    },
+                )
+            }
+        }
+    }
 
     fun loadPost(postId: String, hasSession: Boolean, commentSort: String = _state.value.commentSort) {
         currentPostId = postId
         currentHasSession = hasSession
+        currentAuthenticatedReads = hasSession
         val generation = ++loadGeneration
         val existingState = _state.value
 
@@ -206,12 +248,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 supervisorScope {
                     val refreshDeferred = async {
                         runCatching {
-                            val refreshed = if (hasSession) {
-                                postRepository.getPost(postId)
-                            } else {
-                                postRepository.getPublicPost(postId)
-                            }
+                            val refreshedRead = readWithPublicNotFoundFallback(
+                                hasSession = hasSession,
+                                authenticatedRead = { postRepository.getPost(postId) },
+                                publicRead = { postRepository.getPublicPost(postId) },
+                            )
                             if (generation != loadGeneration || currentPostId != postId) return@runCatching
+                            currentAuthenticatedReads = refreshedRead.usedAuthenticatedRead
+                            val refreshed = refreshedRead.value
                             postPreviewCache.put(refreshed, cached.communitySummary)
                             _state.value = _state.value.copy(
                                 post = refreshed,
@@ -273,12 +317,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     commentSort = commentSort,
                 )
                 try {
-                    val post = if (hasSession) {
-                        postRepository.getPost(postId)
-                    } else {
-                        postRepository.getPublicPost(postId)
-                    }
+                    val postRead = readWithPublicNotFoundFallback(
+                        hasSession = hasSession,
+                        authenticatedRead = { postRepository.getPost(postId) },
+                        publicRead = { postRepository.getPublicPost(postId) },
+                    )
                     if (generation != loadGeneration || currentPostId != postId) return@launch
+                    currentAuthenticatedReads = postRead.usedAuthenticatedRead
+                    val post = postRead.value
                     postPreviewCache.put(post, null)
                     val session = app.sessionStore.get()
                     _state.value = PostUiState(
@@ -372,6 +418,10 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 commentSubmitting = true,
                 commentSubmitError = null,
             )
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(commentSubmitting = false)
+                return@launch
+            }
             try {
                 createCommentWithProofOfWork(post, body)
                 _state.value = _state.value.copy(
@@ -428,8 +478,87 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun reportPost(reasonCode: String) {
+        val post = _state.value.post?.post ?: return
+        report(
+            targetId = post.postId,
+            submit = { postRepository.reportPost(post.communityId, post.postId, CreateUserReportRequest(reasonCode)) },
+        )
+    }
+
+    fun reportComment(commentId: String, reasonCode: String) {
+        val state = _state.value
+        val comment = state.comments.firstOrNull { it.comment.commentId == commentId }?.comment
+            ?: state.repliesByParentId.values.flatten().firstOrNull { it.comment.commentId == commentId }?.comment
+            ?: return
+        report(
+            targetId = commentId,
+            submit = { postRepository.reportComment(comment.communityId, commentId, CreateUserReportRequest(reasonCode)) },
+        )
+    }
+
+    private fun report(targetId: String, submit: suspend () -> Unit) {
+        if (targetId in _state.value.reportingIds) return
+        _state.value = _state.value.copy(
+            reportingIds = _state.value.reportingIds + targetId,
+            reportMessage = null,
+        )
+        viewModelScope.launch {
+            try {
+                submit()
+                _state.value = _state.value.copy(
+                    reportingIds = _state.value.reportingIds - targetId,
+                    reportMessage = "Report submitted. Thank you for helping keep Pirate safe.",
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportingIds = _state.value.reportingIds - targetId,
+                    reportMessage = e.message ?: "Could not submit report.",
+                )
+            }
+        }
+    }
+
+    fun clearReportMessage() {
+        _state.value = _state.value.copy(reportMessage = null)
+    }
+
+    fun blockAuthor(authorUserId: String, identityMode: String?) {
+        val targetUserId = authorUserId.trim()
+        if (targetUserId.isBlank() || targetUserId.equals(_state.value.viewerUserId, ignoreCase = true)) return
+        viewModelScope.launch {
+            try {
+                val anonymous = identityMode.equals("anonymous", ignoreCase = true)
+                val profile = if (anonymous) {
+                    null
+                } else {
+                    runCatching { profileRepository.getByUserId(targetUserId) }.getOrNull()
+                }
+                app.userBlockStore.block(
+                    userId = targetUserId,
+                    handleLabel = if (anonymous) "Anonymous user" else profile?.displayHandle(),
+                    xmtpInbox = profile?.xmtpInbox,
+                )
+                app.chatService.blockPeer(profile?.xmtpInbox)
+                _state.value = _state.value.copy(
+                    reportMessage = "User blocked. Their posts, comments, and direct messages are hidden.",
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    reportMessage = e.message ?: "Could not block this user.",
+                )
+            }
+        }
+    }
+
     fun toggleSongPlayback(post: LocalizedPostResponse) {
         app.songPlaybackController.toggle(post)
+    }
+
+    fun seekSongPlayback(postId: String, positionMs: Long) {
+        app.songPlaybackController.seek(postId, positionMs)
     }
 
     fun pauseSongPlayback() {
@@ -459,7 +588,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = if (app.sessionStore.get() != null) {
+                val response = if (currentAuthenticatedReads) {
                     postRepository.listComments(
                         communityId = post.post.communityId,
                         postId = post.post.postId,
@@ -476,7 +605,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 _state.value = _state.value.copy(
-                    comments = (_state.value.comments + response.items).distinctBy { it.comment.commentId },
+                    comments = (_state.value.comments + response.items)
+                        .distinctBy { it.comment.commentId }
+                        .withoutBlockedCommentAuthors(blockedUserIds),
                     authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
                         response.items.mapNotNull { it.comment.authorUserId },
                     ),
@@ -503,7 +634,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = if (app.sessionStore.get() != null) {
+                val response = if (currentAuthenticatedReads) {
                     postRepository.listReplies(
                         commentId = parentCommentId,
                         limit = 10,
@@ -517,7 +648,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 _state.value = _state.value.copy(
-                    repliesByParentId = _state.value.repliesByParentId + (parentCommentId to response.items),
+                    repliesByParentId = _state.value.repliesByParentId + (
+                        parentCommentId to response.items.withoutBlockedCommentAuthors(blockedUserIds)
+                    ),
                     nextRepliesCursorByParentId = _state.value.nextRepliesCursorByParentId +
                         (parentCommentId to response.nextCursor),
                     loadingRepliesParentIds = _state.value.loadingRepliesParentIds - parentCommentId,
@@ -544,7 +677,7 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             try {
-                val response = if (app.sessionStore.get() != null) {
+                val response = if (currentAuthenticatedReads) {
                     postRepository.listReplies(
                         commentId = parentCommentId,
                         cursor = cursor,
@@ -562,7 +695,9 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 val currentReplies = _state.value.repliesByParentId[parentCommentId].orEmpty()
                 _state.value = _state.value.copy(
                     repliesByParentId = _state.value.repliesByParentId + (
-                        parentCommentId to (currentReplies + response.items).distinctBy { it.comment.commentId }
+                        parentCommentId to (currentReplies + response.items)
+                            .distinctBy { it.comment.commentId }
+                            .withoutBlockedCommentAuthors(blockedUserIds)
                     ),
                     nextRepliesCursorByParentId = _state.value.nextRepliesCursorByParentId +
                         (parentCommentId to response.nextCursor),
@@ -596,6 +731,12 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         )
 
         viewModelScope.launch {
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(
+                    submittingReplyParentIds = _state.value.submittingReplyParentIds - parentCommentId,
+                )
+                return@launch
+            }
             try {
                 createReplyWithProofOfWork(parentCommentId, body)
                 _state.value = _state.value.copy(
@@ -651,11 +792,14 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
         val current = _state.value
         if (commentId in current.votingCommentIds) return
 
-        val previousComment = current.comments.firstOrNull { it.comment.commentId == commentId } ?: return
+        val previousComment = current.comments.firstOrNull { it.comment.commentId == commentId }
+            ?: current.repliesByParentId.values.flatten().firstOrNull { it.comment.commentId == commentId }
+            ?: return
         if (previousComment.viewerVote == value) return
 
         _state.value = current.copy(
             comments = current.comments.withCommentVote(commentId, value),
+            repliesByParentId = current.repliesByParentId.withCommentVote(commentId, value),
             votingCommentIds = current.votingCommentIds + commentId,
             commentVoteError = null,
         )
@@ -665,11 +809,13 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
                 val response = postRepository.voteComment(commentId, value)
                 _state.value = _state.value.copy(
                     comments = _state.value.comments.replaceComment(previousComment.withVote(response.value)),
+                    repliesByParentId = _state.value.repliesByParentId.replaceComment(previousComment.withVote(response.value)),
                     votingCommentIds = _state.value.votingCommentIds - commentId,
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     comments = _state.value.comments.replaceComment(previousComment),
+                    repliesByParentId = _state.value.repliesByParentId.replaceComment(previousComment),
                     votingCommentIds = _state.value.votingCommentIds - commentId,
                     commentVoteError = e.message ?: "Failed to vote on comment",
                 )
@@ -856,23 +1002,29 @@ class PostViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun loadTopLevelComments(post: LocalizedPostResponse, hasSession: Boolean) {
         val postId = post.post.postId
         try {
-            val response = if (hasSession) {
-                postRepository.listComments(
-                    communityId = post.post.communityId,
-                    postId = postId,
-                    limit = 25,
-                    sort = _state.value.commentSort,
-                )
-            } else {
-                postRepository.listPublicComments(
-                    postId = postId,
-                    limit = 25,
-                    sort = _state.value.commentSort,
-                )
-            }
+            val commentsRead = readWithPublicNotFoundFallback(
+                hasSession = hasSession && currentAuthenticatedReads,
+                authenticatedRead = {
+                    postRepository.listComments(
+                        communityId = post.post.communityId,
+                        postId = postId,
+                        limit = 25,
+                        sort = _state.value.commentSort,
+                    )
+                },
+                publicRead = {
+                    postRepository.listPublicComments(
+                        postId = postId,
+                        limit = 25,
+                        sort = _state.value.commentSort,
+                    )
+                },
+            )
             if (currentPostId != postId) return
+            currentAuthenticatedReads = commentsRead.usedAuthenticatedRead
+            val response = commentsRead.value
             _state.value = _state.value.copy(
-                comments = response.items,
+                comments = response.items.withoutBlockedCommentAuthors(blockedUserIds),
                 authorProfiles = _state.value.authorProfiles + loadAuthorProfiles(
                     response.items.mapNotNull { it.comment.authorUserId },
                 ),
@@ -1019,6 +1171,165 @@ private fun SortSheetRow(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ThreadPostActionSheet(
+    canBlock: Boolean,
+    onDismiss: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Actions",
+                style = MaterialTheme.typography.titleLarge,
+                color = PirateTokens.colors.textPrimary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            ThreadSheetActionRow(
+                label = "Report post",
+                icon = PhosphorIcons.Flag,
+                onClick = onReport,
+            )
+            if (canBlock) {
+                ThreadSheetActionRow(
+                    label = "Block author",
+                    icon = PhosphorIcons.HandPalm,
+                    onClick = onBlock,
+                )
+            }
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ThreadShareSheet(
+    canCrosspost: Boolean,
+    onDismiss: () -> Unit,
+    onCrosspost: () -> Unit,
+    onCopyLink: () -> Unit,
+    onNativeShare: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Share",
+                style = MaterialTheme.typography.titleLarge,
+                color = PirateTokens.colors.textPrimary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            if (canCrosspost) {
+                ThreadSheetActionRow(
+                    label = "Crosspost",
+                    icon = PhosphorIcons.ArrowsClockwise,
+                    onClick = onCrosspost,
+                )
+            }
+            ThreadSheetActionRow(
+                label = "Copy link",
+                icon = PhosphorIcons.Copy,
+                onClick = onCopyLink,
+            )
+            ThreadSheetActionRow(
+                label = "Share…",
+                icon = PhosphorIcons.ShareNetwork,
+                onClick = onNativeShare,
+            )
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun ThreadCommentActionSheet(
+    canBlock: Boolean,
+    onDismiss: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = PirateTokens.colors.bgPage,
+        contentColor = PirateTokens.colors.textPrimary,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = "Comment actions",
+                style = MaterialTheme.typography.titleLarge,
+                color = PirateTokens.colors.textPrimary,
+                modifier = Modifier.padding(bottom = 8.dp),
+            )
+            ThreadSheetActionRow(
+                label = "Report comment",
+                icon = PhosphorIcons.Flag,
+                onClick = onReport,
+            )
+            if (canBlock) {
+                ThreadSheetActionRow(
+                    label = "Block author",
+                    icon = PhosphorIcons.HandPalm,
+                    onClick = onBlock,
+                )
+            }
+            Spacer(modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ThreadSheetActionRow(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = PirateTokens.colors.textSecondary,
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.titleMedium,
+            color = PirateTokens.colors.textPrimary,
+        )
+    }
+}
+
+@Composable
 private fun CommentSortPill(
     selectedSort: String,
     onClick: () -> Unit,
@@ -1060,21 +1371,32 @@ private fun CommentSortPill(
 fun PostScreen(
     postId: String,
     hasSession: Boolean,
-    onNavigateToCompose: ((String) -> Unit)? = null,
+    onNavigateToCrosspost: (sourceCommunityId: String, sourcePostId: String, sourceTitle: String?) -> Unit,
     onNavigateToCommunity: (String) -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onSing: (String) -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
+    onManageReplay: (String, String) -> Unit,
     onVerifyAge: () -> Unit,
+    onStudy: (String) -> Unit,
     signInDrawer: @Composable (onDismiss: () -> Unit) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     val viewModel: PostViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val playbackState by viewModel.playbackState.collectAsState()
     val videoPlaybackState by viewModel.videoPlaybackState.collectAsState()
     var authPromptAction by rememberSaveable { mutableStateOf<String?>(null) }
     var commentSortSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var postActionSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var shareSheetOpen by rememberSaveable { mutableStateOf(false) }
+    var reportTarget by remember { mutableStateOf<ReportTarget?>(null) }
+    var blockAuthorTarget by remember { mutableStateOf<BlockAuthorTarget?>(null) }
     var observedFirstResume by rememberSaveable(postId, hasSession) { mutableStateOf(false) }
     val lifecycleOwner = LocalView.current.findViewTreeLifecycleOwner()
 
@@ -1123,6 +1445,58 @@ fun PostScreen(
         signInDrawer { authPromptAction = null }
     }
 
+    LaunchedEffect(state.reportMessage) {
+        state.reportMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.clearReportMessage()
+        }
+    }
+
+    LaunchedEffect(state.nextCommentsCursor, state.commentsLoadingMore) {
+        if (state.nextCommentsCursor == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd -> if (nearEnd) viewModel.loadMoreComments() }
+    }
+
+    reportTarget?.let { target ->
+        ReportContentSheet(
+            targetLabel = target.label,
+            submitting = target.id in state.reportingIds,
+            onDismiss = { if (target.id !in state.reportingIds) reportTarget = null },
+            onReasonSelected = { reason ->
+                when (target) {
+                    is ReportTarget.Post -> viewModel.reportPost(reason)
+                    is ReportTarget.Comment -> viewModel.reportComment(target.id, reason)
+                }
+                reportTarget = null
+            },
+        )
+    }
+
+    blockAuthorTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { blockAuthorTarget = null },
+            title = { Text("Block this user?") },
+            text = { Text("Their posts and comments will be hidden, and their direct messages will be denied when an XMTP inbox is available.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        blockAuthorTarget = null
+                        viewModel.blockAuthor(target.userId, target.identityMode)
+                    },
+                ) { Text("Block") }
+            },
+            dismissButton = {
+                TextButton(onClick = { blockAuthorTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     if (commentSortSheetOpen) {
         CommentSortSheet(
             selectedSort = state.commentSort,
@@ -1134,9 +1508,62 @@ fun PostScreen(
         )
     }
 
+    if (postActionSheetOpen) {
+        val post = state.post?.post
+        ThreadPostActionSheet(
+            canBlock = post?.let {
+                !it.authorUserId.isNullOrBlank() &&
+                    !it.authorUserId.equals(state.viewerUserId, ignoreCase = true)
+            } == true,
+            onDismiss = { postActionSheetOpen = false },
+            onReport = {
+                postActionSheetOpen = false
+                if (hasSession && post != null) reportTarget = ReportTarget.Post(post.postId)
+                else authPromptAction = "Reporting posts"
+            },
+            onBlock = {
+                postActionSheetOpen = false
+                val authorUserId = post?.authorUserId
+                if (hasSession && post != null && !authorUserId.isNullOrBlank()) {
+                    blockAuthorTarget = BlockAuthorTarget(authorUserId, post.identityMode)
+                } else {
+                    authPromptAction = "Blocking users"
+                }
+            },
+        )
+    }
+
+    if (shareSheetOpen) {
+        val post = state.post?.post
+        ThreadShareSheet(
+            canCrosspost = post != null && post.postType != "crosspost" && post.parentPost == null,
+            onDismiss = { shareSheetOpen = false },
+            onCrosspost = {
+                shareSheetOpen = false
+                if (hasSession && post != null) {
+                    onNavigateToCrosspost(post.communityId, post.postId, post.title)
+                } else {
+                    authPromptAction = "Crossposting"
+                }
+            },
+            onCopyLink = {
+                shareSheetOpen = false
+                post?.let {
+                    copyPostLink(context, it.postId)
+                    coroutineScope.launch { snackbarHostState.showSnackbar("Post link copied.") }
+                }
+            },
+            onNativeShare = {
+                shareSheetOpen = false
+                post?.let { sharePost(context, it.postId, it.title) }
+            },
+        )
+    }
+
     androidx.compose.material3.Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
+            CenterAlignedTopAppBar(
                 title = {
                     Text(
                         text = "Post",
@@ -1153,16 +1580,13 @@ fun PostScreen(
                     }
                 },
                 actions = {
-                    if (onNavigateToCompose != null) {
-                        val communityId = state.post?.post?.communityId
-                        if (!communityId.isNullOrBlank()) {
-                            IconButton(onClick = { onNavigateToCompose(communityId) }) {
-                                Icon(
-                                    imageVector = PhosphorIcons.Plus,
-                                    contentDescription = "Create post",
-                                    tint = PirateTokens.colors.textPrimary,
-                                )
-                            }
+                    if (state.post != null) {
+                        IconButton(onClick = { commentSortSheetOpen = true }) {
+                            Icon(
+                                imageVector = PhosphorIcons.SlidersHorizontal,
+                                contentDescription = "Sort comments",
+                                tint = PirateTokens.colors.textPrimary,
+                            )
                         }
                     }
                 },
@@ -1179,9 +1603,7 @@ fun PostScreen(
                 .fillMaxSize(),
         ) {
             if (state.loading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
-                }
+                FeedSkeletons(count = 2, modifier = Modifier.fillMaxSize())
             } else if (state.error != null) {
                 FormNote(
                     message = state.error!!,
@@ -1192,6 +1614,7 @@ fun PostScreen(
                 val postResponse = state.post!!
                 val post = postResponse.post
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxSize()
                         .background(PirateTokens.colors.bgPage),
@@ -1220,6 +1643,8 @@ fun PostScreen(
                             purchaseError = state.purchaseError,
                             purchaseMessage = state.purchaseMessage,
                             onOpenCommunity = onNavigateToCommunity,
+                            onOpenPostActions = { postActionSheetOpen = true },
+                            onOpenShare = { shareSheetOpen = true },
                             onVote = { value ->
                                 if (hasSession) viewModel.votePost(value) else authPromptAction = "Voting"
                             },
@@ -1229,6 +1654,9 @@ fun PostScreen(
                             onWatchLiveRoom = {
                                 onWatchLiveRoom()
                             },
+                            onSing = {
+                                if (hasSession) onSing(postResponse.post.communityId) else authPromptAction = "Karaoke"
+                            },
                             onBroadcastLiveRoom = { communityId, liveRoomId, role ->
                                 if (hasSession) {
                                     onBroadcastLiveRoom(communityId, liveRoomId, role)
@@ -1236,11 +1664,24 @@ fun PostScreen(
                                     authPromptAction = "Broadcasting"
                                 }
                             },
+                            onManageReplay = { communityId, liveRoomId ->
+                                if (hasSession) {
+                                    onManageReplay(communityId, liveRoomId)
+                                } else {
+                                    authPromptAction = "Reviewing recordings"
+                                }
+                            },
                             onVerifyAge = {
                                 if (hasSession) onVerifyAge() else authPromptAction = "Age verification"
                             },
+                            onStudy = {
+                                if (hasSession) onStudy(postResponse.post.communityId) else authPromptAction = "Studying"
+                            },
                             onToggleSongPlayback = {
                                 viewModel.toggleSongPlayback(postResponse)
+                            },
+                            onSeekSongPlayback = { positionMs ->
+                                viewModel.seekSongPlayback(post.postId, positionMs)
                             },
                             onPlayVideoDetail = {
                                 viewModel.playVideoDetail(postResponse)
@@ -1270,15 +1711,6 @@ fun PostScreen(
                             onSubmit = {
                                 if (hasSession) viewModel.submitComment() else authPromptAction = "Commenting"
                             },
-                        )
-                    }
-
-                    item {
-                        CommentSortPill(
-                            selectedSort = state.commentSort,
-                            onClick = { commentSortSheetOpen = true },
-                            modifier = Modifier
-                                .padding(horizontal = 16.dp, vertical = 14.dp),
                         )
                     }
 
@@ -1338,30 +1770,108 @@ fun PostScreen(
                         else -> {
                             items(state.comments, key = { it.comment.commentId }) { comment ->
                                 val commentId = comment.comment.commentId
-                                CommentRow(
-                                    comment = comment,
-                                    authorProfile = comment.comment.authorUserId?.let { state.authorProfiles[it] },
-                                    isVoting = commentId in state.votingCommentIds,
-                                    onVote = { value ->
-                                        if (hasSession) viewModel.voteComment(commentId, value) else authPromptAction = "Voting"
-                                    },
-                                    onReply = {
-                                        if (hasSession) viewModel.loadReplies(commentId) else authPromptAction = "Replying"
-                                    },
-                                )
+                                var expanded by rememberSaveable(commentId) { mutableStateOf(false) }
+                                Column {
+                                    CommentRow(
+                                        comment = comment,
+                                        authorProfile = comment.comment.authorUserId?.let { state.authorProfiles[it] },
+                                        isVoting = commentId in state.votingCommentIds,
+                                        onVote = { value ->
+                                            if (hasSession) viewModel.voteComment(commentId, value) else authPromptAction = "Voting"
+                                        },
+                                        onReply = {
+                                            if (!hasSession) {
+                                                authPromptAction = "Replying"
+                                            } else {
+                                                expanded = !expanded
+                                                if (expanded && commentId !in state.repliesByParentId) {
+                                                    viewModel.loadReplies(commentId)
+                                                }
+                                            }
+                                        },
+                                        onReport = {
+                                            if (hasSession) reportTarget = ReportTarget.Comment(commentId)
+                                            else authPromptAction = "Reporting comments"
+                                        },
+                                        onBlock = {
+                                            if (hasSession) {
+                                                comment.comment.authorUserId?.let { authorUserId ->
+                                                    blockAuthorTarget = BlockAuthorTarget(
+                                                        userId = authorUserId,
+                                                        identityMode = comment.comment.identityMode,
+                                                    )
+                                                }
+                                            }
+                                            else authPromptAction = "Blocking users"
+                                        },
+                                        canBlock = !comment.comment.authorUserId.isNullOrBlank() &&
+                                            !comment.comment.authorUserId.equals(state.viewerUserId, ignoreCase = true),
+                                    )
+                                    if (expanded) {
+                                        InlineReplyComposer(
+                                            draft = state.replyDraftsByParentId[commentId].orEmpty(),
+                                            error = state.replySubmitErrorByParentId[commentId],
+                                            submitting = commentId in state.submittingReplyParentIds,
+                                            onDraftChange = { viewModel.updateReplyDraft(commentId, it) },
+                                            onSubmit = { viewModel.submitReply(commentId) },
+                                            modifier = Modifier.padding(start = 40.dp, end = 16.dp),
+                                        )
+                                        if (commentId in state.loadingRepliesParentIds && state.repliesByParentId[commentId] == null) {
+                                            CircularProgressIndicator(
+                                                color = PirateTokens.colors.accentBrand,
+                                                modifier = Modifier.padding(start = 56.dp, top = 12.dp).size(22.dp),
+                                            )
+                                        }
+                                        state.repliesByParentId[commentId].orEmpty().forEach { reply ->
+                                            val replyId = reply.comment.commentId
+                                            CommentRow(
+                                                comment = reply,
+                                                authorProfile = reply.comment.authorUserId?.let { state.authorProfiles[it] },
+                                                isVoting = replyId in state.votingCommentIds,
+                                                onVote = { value -> viewModel.voteComment(replyId, value) },
+                                                onReply = {},
+                                                onReport = { reportTarget = ReportTarget.Comment(replyId) },
+                                                onBlock = {
+                                                    reply.comment.authorUserId?.let { authorUserId ->
+                                                        blockAuthorTarget = BlockAuthorTarget(
+                                                            userId = authorUserId,
+                                                            identityMode = reply.comment.identityMode,
+                                                        )
+                                                    }
+                                                },
+                                                canBlock = !reply.comment.authorUserId.isNullOrBlank() &&
+                                                    !reply.comment.authorUserId.equals(state.viewerUserId, ignoreCase = true),
+                                                showReplyAction = false,
+                                                modifier = Modifier.padding(start = 32.dp),
+                                            )
+                                        }
+                                        state.repliesErrorByParentId[commentId]?.let { error ->
+                                            FormNote(
+                                                message = error,
+                                                tone = FormTone.Error,
+                                                modifier = Modifier.padding(horizontal = 56.dp, vertical = 8.dp),
+                                            )
+                                        }
+                                        if (state.nextRepliesCursorByParentId[commentId] != null) {
+                                            PirateButton(
+                                                text = "More replies",
+                                                onClick = { viewModel.loadMoreReplies(commentId) },
+                                                loading = commentId in state.loadingRepliesParentIds,
+                                                variant = sc.pirate.app.ui.ButtonVariant.Outline,
+                                                modifier = Modifier.padding(start = 48.dp, end = 16.dp, bottom = 12.dp),
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
 
-                    if (state.nextCommentsCursor != null) {
+                    if (state.commentsLoadingMore) {
                         item {
-                            PirateButton(
-                                text = if (state.commentsLoadingMore) "Loading" else "Load more",
-                                onClick = viewModel::loadMoreComments,
-                                loading = state.commentsLoadingMore,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                            CircularProgressIndicator(
+                                color = PirateTokens.colors.accentBrand,
+                                modifier = Modifier.padding(20.dp).size(24.dp),
                             )
                         }
                     }
@@ -1408,6 +1918,15 @@ private fun List<CommentListItem>.replaceComment(previousComment: CommentListIte
         if (item.comment.commentId == previousComment.comment.commentId) previousComment else item
     }
 
+private fun Map<String, List<CommentListItem>>.withCommentVote(
+    commentId: String,
+    value: Int,
+): Map<String, List<CommentListItem>> = mapValues { (_, replies) -> replies.withCommentVote(commentId, value) }
+
+private fun Map<String, List<CommentListItem>>.replaceComment(
+    comment: CommentListItem,
+): Map<String, List<CommentListItem>> = mapValues { (_, replies) -> replies.replaceComment(comment) }
+
 private fun voteScoreDelta(previousValue: Int?, nextValue: Int): Int =
     nextValue - (previousValue ?: 0)
 
@@ -1431,12 +1950,18 @@ private fun ThreadRootPost(
     purchaseError: String?,
     purchaseMessage: String?,
     onOpenCommunity: (String) -> Unit,
+    onOpenPostActions: () -> Unit,
+    onOpenShare: () -> Unit,
     onVote: (Int) -> Unit,
     onBuyLiveRoomTicket: () -> Unit,
     onWatchLiveRoom: () -> Unit,
+    onSing: () -> Unit,
     onBroadcastLiveRoom: (String, String, String) -> Unit,
+    onManageReplay: (String, String) -> Unit,
     onVerifyAge: () -> Unit,
+    onStudy: () -> Unit,
     onToggleSongPlayback: () -> Unit,
+    onSeekSongPlayback: (Long) -> Unit,
     onPlayVideoDetail: () -> Unit,
     onRenewLiveRoomViewer: suspend (Long) -> LiveRoomViewerAttachResponse?,
 ) {
@@ -1467,28 +1992,41 @@ private fun ThreadRootPost(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(PirateTokens.radius.sm))
-                    .clickable { onOpenCommunity(post.communityId) }
-                    .padding(vertical = 2.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                CommunityAvatar(label = communityPreview?.displayName ?: routeLabel)
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = routeLabel,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = PirateTokens.colors.textPrimary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = "$authorLabel · ${relativeTimeLabel(post.createdAt)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = PirateTokens.colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(PirateTokens.radius.sm))
+                        .clickable { onOpenCommunity(post.communityId) }
+                        .padding(vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CommunityAvatar(label = communityPreview?.displayName ?: routeLabel)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = routeLabel,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = PirateTokens.colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = "$authorLabel · ${relativeTimeLabel(post.createdAt)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = PirateTokens.colors.textSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(onClick = onOpenPostActions) {
+                    Icon(
+                        imageVector = PhosphorIcons.DotsThree,
+                        contentDescription = "Post actions",
+                        tint = PirateTokens.colors.textSecondary,
                     )
                 }
             }
@@ -1503,6 +2041,9 @@ private fun ThreadRootPost(
                     style = MaterialTheme.typography.bodyMedium,
                     color = PirateTokens.colors.textPrimary,
                 )
+            }
+            post.crosspostSource?.let { source ->
+                CrosspostSourceCard(source = source)
             }
             if (postResponse.requiresAgeProof() && post.anchorLiveRoom == null) {
                 StatusCard(
@@ -1523,8 +2064,13 @@ private fun ThreadRootPost(
                     canPlay = resolveSongAudioUrl(postResponse) != null,
                     isBuffering = postIsCurrent && songPlaybackState.isBuffering,
                     isPlaying = postIsCurrent && songPlaybackState.isPlaying,
+                    positionMs = songPlaybackState.positionMs.takeIf { postIsCurrent } ?: 0,
+                    durationMs = songPlaybackState.durationMs.takeIf { postIsCurrent },
                     error = songPlaybackState.error.takeIf { postIsCurrent },
                     onPlayPause = onToggleSongPlayback,
+                    onSeek = onSeekSongPlayback.takeIf { postIsCurrent },
+                    onStudy = onStudy.takeIf { postResponse.studyCapability?.status == "ready" },
+                    onSing = onSing.takeIf { postResponse.canStartNativeKaraoke() },
                 )
             }
             if (isVideoPost(postResponse) && post.anchorLiveRoom == null) {
@@ -1572,6 +2118,18 @@ private fun ThreadRootPost(
                     onVerifyAge = onVerifyAge,
                     onRenewViewer = onRenewLiveRoomViewer,
                 )
+                if (
+                    livePresentation.producerRole != null &&
+                    livePresentation.status == "ended" &&
+                    liveRoomAccess?.room?.recordingEnabled == true
+                ) {
+                    PirateButton(
+                        text = "Review recording",
+                        onClick = { onManageReplay(post.communityId, liveRoomId) },
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
             if (post.anchorLiveRoom == null && post.assetId != null && assetListing != null) {
                 AssetCommerceSummary(
@@ -1591,6 +2149,7 @@ private fun ThreadRootPost(
                     onVote = onVote,
                 )
                 CommentCountPill(count = comments)
+                SharePostPill(onClick = onOpenShare)
             }
         }
     }
@@ -1602,18 +2161,55 @@ private fun ThreadSongSummary(
     canPlay: Boolean,
     isBuffering: Boolean,
     isPlaying: Boolean,
+    positionMs: Long,
+    durationMs: Long?,
     error: String?,
     onPlayPause: () -> Unit,
+    onSeek: ((Long) -> Unit)?,
+    onStudy: (() -> Unit)? = null,
+    onSing: (() -> Unit)? = null,
 ) {
-    SongSummaryCard(
-        post = postResponse,
-        canPlay = canPlay,
-        isBuffering = isBuffering,
-        isPlaying = isPlaying,
-        error = error,
-        onPlayPause = onPlayPause,
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SongSummaryCard(
+            post = postResponse,
+            canPlay = canPlay,
+            isBuffering = isBuffering,
+            isPlaying = isPlaying,
+            positionMs = positionMs,
+            durationMs = durationMs,
+            error = error,
+            onPlayPause = onPlayPause,
+            onSeek = onSeek,
+        )
+        if (onStudy != null || onSing != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                onStudy?.let {
+                    PirateButton(
+                        text = "Study",
+                        onClick = it,
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                onSing?.let {
+                    PirateButton(
+                        text = "Sing",
+                        onClick = it,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
 }
+
+private fun LocalizedPostResponse.canStartNativeKaraoke(): Boolean =
+    songPresentation?.alignmentStatus == "completed" &&
+        songPresentation.hasTimedLyrics == true
 
 private fun songTitle(post: LocalizedPostResponse): String =
     post.songPresentation?.title
@@ -1931,17 +2527,13 @@ private fun AssetCommerceSummary(
     listing: CommunityListing,
     purchase: CommunityPurchase?,
 ) {
-    val label = when (postType) {
-        "video" -> "Video"
-        "song" -> "Song"
-        else -> "Asset"
+    val productLabel = when (postType) {
+        "video" -> "Digital video"
+        "song" -> "Digital MP3"
+        else -> "Digital asset"
     }
     val priceLabel = listing.priceCents.takeIf { it > 0 }?.let(::formatUsdCents)
-    val accessLabel = if (purchase != null) {
-        "$label unlocked"
-    } else {
-        priceLabel?.let { "$label unlock $it" } ?: "$label available to unlock"
-    }
+    val listingActive = listing.status == null || listing.status == "active"
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1949,23 +2541,59 @@ private fun AssetCommerceSummary(
         color = PirateTokens.colors.surfaceSubtle,
         border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(
-                imageVector = if (postType == "video") PhosphorIcons.VideoCamera else PhosphorIcons.MusicNote,
-                contentDescription = null,
-                tint = PirateTokens.colors.textSecondary,
-            )
-            Text(
-                text = accessLabel,
-                style = MaterialTheme.typography.labelLarge,
-                color = PirateTokens.colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (purchase != null) {
+                        PhosphorIcons.CheckCircle
+                    } else if (postType == "video") {
+                        PhosphorIcons.VideoCamera
+                    } else {
+                        PhosphorIcons.MusicNote
+                    },
+                    contentDescription = null,
+                    tint = if (purchase != null) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                )
+                Text(
+                    text = if (purchase != null) "$productLabel owned" else productLabel,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = PirateTokens.colors.textPrimary,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (purchase == null && priceLabel != null) {
+                    Text(
+                        text = priceLabel,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = PirateTokens.colors.textPrimary,
+                    )
+                }
+            }
+            if (purchase == null) {
+                PirateButton(
+                    text = when {
+                        !listingActive -> "Unavailable"
+                        priceLabel != null -> "Buy for $priceLabel"
+                        else -> "Unlock"
+                    },
+                    onClick = {},
+                    enabled = false,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    text = "Purchases aren't available in the Android app yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PirateTokens.colors.textSecondary,
+                )
+            }
         }
     }
 }
@@ -1979,9 +2607,10 @@ private fun InlineReplyComposer(
     submitting: Boolean,
     onDraftChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -2028,8 +2657,14 @@ private fun CommentRow(
     isVoting: Boolean,
     onVote: (Int) -> Unit,
     onReply: () -> Unit,
+    onReport: () -> Unit,
+    onBlock: () -> Unit,
+    canBlock: Boolean,
+    showReplyAction: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
     val model = comment.comment
+    var actionSheetOpen by rememberSaveable(model.commentId) { mutableStateOf(false) }
     val authorLabel = resolveAuthorLabel(
         identityMode = model.identityMode,
         anonymousLabel = model.anonymousLabel,
@@ -2042,8 +2677,22 @@ private fun CommentRow(
         authorUserId = model.authorUserId,
         authorProfile = authorProfile,
     )
+    if (actionSheetOpen) {
+        ThreadCommentActionSheet(
+            canBlock = canBlock,
+            onDismiss = { actionSheetOpen = false },
+            onReport = {
+                actionSheetOpen = false
+                onReport()
+            },
+            onBlock = {
+                actionSheetOpen = false
+                onBlock()
+            },
+        )
+    }
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         color = PirateTokens.colors.bgPage,
         shape = RoundedCornerShape(0.dp),
     ) {
@@ -2083,21 +2732,103 @@ private fun CommentRow(
                     color = PirateTokens.colors.textPrimary,
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    VoteControl(
+                    CommentVoteControl(
                         score = model.score,
                         viewerVote = comment.viewerVote,
                         enabled = !isVoting,
                         onVote = onVote,
                     )
-                    ReplyPill(onClick = onReply)
+                    if (showReplyAction) {
+                        ReplyPill(
+                            onClick = onReply,
+                        )
+                    }
+                    IconButton(onClick = { actionSheetOpen = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            imageVector = PhosphorIcons.DotsThree,
+                            contentDescription = "Comment actions",
+                            tint = PirateTokens.colors.textSecondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+private val CommentActionWidth = 92.dp
+
+@Composable
+private fun CommentVoteControl(
+    score: Int,
+    viewerVote: Int?,
+    enabled: Boolean,
+    onVote: (Int) -> Unit,
+) {
+    val haptics = LocalHapticFeedback.current
+    Row(
+        modifier = Modifier
+            .width(CommentActionWidth)
+            .height(36.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onVote(1)
+            },
+            enabled = enabled,
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.CaretUp,
+                contentDescription = "Upvote comment",
+                tint = if (viewerVote == 1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Box(modifier = Modifier.width(28.dp), contentAlignment = Alignment.Center) {
+            Text(
+                text = score.toString(),
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+        IconButton(
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                onVote(-1)
+            },
+            enabled = enabled,
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.CaretDown,
+                contentDescription = "Downvote comment",
+                tint = if (viewerVote == -1) PirateTokens.colors.accentBrand else PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+    }
+}
+
+private sealed interface ReportTarget {
+    val id: String
+    val label: String
+
+    data class Post(override val id: String) : ReportTarget { override val label = "post" }
+    data class Comment(override val id: String) : ReportTarget { override val label = "comment" }
+}
+
+private data class BlockAuthorTarget(
+    val userId: String,
+    val identityMode: String?,
+)
 
 @Composable
 private fun CommentAvatar(
@@ -2125,14 +2856,14 @@ private fun CommentCountPill(
     count: Int,
 ) {
     Surface(
-        modifier = Modifier.height(38.dp),
+        modifier = Modifier.height(PostActionControlHeight),
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = PirateTokens.colors.surfaceSubtle,
         border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
     ) {
         Row(
             modifier = Modifier
-                .height(38.dp)
+                .height(PostActionControlHeight)
                 .padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -2153,12 +2884,10 @@ private fun CommentCountPill(
 }
 
 @Composable
-private fun ReplyPill(
-    onClick: () -> Unit,
-) {
+private fun SharePostPill(onClick: () -> Unit) {
     Surface(
         modifier = Modifier
-            .height(38.dp)
+            .height(PostActionControlHeight)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = PirateTokens.colors.surfaceSubtle,
@@ -2166,16 +2895,53 @@ private fun ReplyPill(
     ) {
         Row(
             modifier = Modifier
-                .height(38.dp)
+                .height(PostActionControlHeight)
+                .padding(horizontal = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = PhosphorIcons.ShareFat,
+                contentDescription = null,
+                tint = PirateTokens.colors.textSecondary,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = "Share",
+                style = MaterialTheme.typography.labelLarge,
+                color = PirateTokens.colors.textPrimary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReplyPill(
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .width(CommentActionWidth)
+            .height(36.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(PirateTokens.radius.full),
+        color = Color.Transparent,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(36.dp)
                 .padding(horizontal = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = PhosphorIcons.ChatCircle,
                 contentDescription = null,
                 tint = PirateTokens.colors.textSecondary,
-                modifier = Modifier.size(17.dp),
+                modifier = Modifier
+                    .padding(end = 6.dp)
+                    .size(17.dp),
             )
             Text(
                 text = "Reply",
@@ -2186,7 +2952,7 @@ private fun ReplyPill(
     }
 }
 
-private fun resolveAuthorLabel(
+internal fun resolveAuthorLabel(
     identityMode: String?,
     anonymousLabel: String?,
     authorUserId: String?,
@@ -2196,8 +2962,8 @@ private fun resolveAuthorLabel(
         return anonymousLabel ?: "anon"
     }
 
-    return authorProfile?.globalHandle?.label?.let(::formatPirateHandle)
-        ?: authorUserId?.take(8)
+    return authorProfile?.displayHandle()?.takeIf { it.isNotBlank() }
+        ?: authorProfile?.displayName?.takeIf { it.isNotBlank() }
         ?: "Pirate user"
 }
 

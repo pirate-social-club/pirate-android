@@ -1,13 +1,7 @@
-Pirate is a social music app built around publishing, discovery, chat, and learning.
+Pirate is a social music app for publishing, discovery, communities, live rooms, and chat.
 
-You can browse a feed, manage a profile, message over XMTP, listen to music, and work through language-learning flows powered by songs and short-form content.
+Browse public and community feeds, vote and comment on posts, follow communities, manage your profile, listen to songs, and message people over XMTP.
 
-The Android app also includes:
+Creators can publish text, image, video, link, song, and live-room posts. Song publishing supports original and remix attribution, while live rooms support scheduled solo or duet broadcasts.
 
-- embedded wallet authentication via Privy
-- music playback and playlist flows
-- artist and profile pages
-- chat with the Pirate assistant
-- study and streak features
-
-Authentication uses Privy-backed embedded wallets and the app's normal wallet approval flow.
+Authentication is powered by Privy. You can also connect and link an external wallet to your Pirate account.

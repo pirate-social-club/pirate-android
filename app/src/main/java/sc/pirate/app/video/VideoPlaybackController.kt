@@ -13,6 +13,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -152,6 +153,7 @@ class VideoPlaybackController(
     fun currentPlayer(): ExoPlayer? = player
 }
 
+@androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerView(
     player: Player?,

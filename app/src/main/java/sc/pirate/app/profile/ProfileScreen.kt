@@ -27,6 +27,7 @@ import sc.pirate.app.api.model.Profile
 import sc.pirate.app.api.model.SessionExchangeResponse
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.PirateButton
+import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 
@@ -149,10 +150,7 @@ private fun ProfileContent(
 ) {
     Box(modifier = modifier.fillMaxSize()) {
         if (state.loading) {
-            CircularProgressIndicator(
-                color = PirateTokens.colors.accentBrand,
-                modifier = Modifier.align(Alignment.Center),
-            )
+            FeedSkeletons(count = 2, modifier = Modifier.fillMaxSize())
         } else if (state.requiresAuth && onSignIn != null) {
             Column(modifier = Modifier.padding(16.dp)) {
                 StatusCard(

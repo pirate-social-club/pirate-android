@@ -74,6 +74,7 @@ fun LiveRoomBroadcasterScreen(
     communityId: String,
     liveRoomId: String,
     role: String,
+    onEnded: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -474,7 +475,7 @@ fun LiveRoomBroadcasterScreen(
                                     engine?.stopPreview()
                                     engine?.leaveChannel()
                                     joined = false
-                                    onBack()
+                                    if (attach?.room?.recordingEnabled == true) onEnded() else onBack()
                                 }.onFailure {
                                     error = it.message ?: "Could not end live room."
                                 }

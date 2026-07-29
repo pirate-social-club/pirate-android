@@ -94,6 +94,7 @@ data class LinkedHandle(
 
 @Serializable
 data class Profile(
+    @SerialName("user") private val publicUserId: String? = null,
     @SerialName("user_id") private val contractUserId: String? = null,
     @SerialName("id") private val feedUserId: String? = null,
     @SerialName("display_name") val displayName: String? = null,
@@ -109,10 +110,11 @@ data class Profile(
     @SerialName("follower_count") val followerCount: Int? = null,
     @SerialName("following_count") val followingCount: Int? = null,
     @SerialName("preferred_locale") val preferredLocale: String? = null,
+    @SerialName("is_bookable") val isBookable: Boolean = false,
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
 ) {
-    val userId: String get() = contractUserId ?: feedUserId.orEmpty()
+    val userId: String get() = publicUserId ?: contractUserId ?: feedUserId.orEmpty()
     val createdAt: String get() = contractCreatedAt ?: feedCreatedAt?.let { Instant.ofEpochSecond(it).toString() }.orEmpty()
 }
 
@@ -136,6 +138,21 @@ data class PublicProfileResolution(
     @SerialName("resolved_handle_label") val resolvedHandleLabel: String,
     @SerialName("is_canonical") val isCanonical: Boolean,
     @SerialName("created_communities") val createdCommunities: List<PublicProfileCommunitySummary> = emptyList(),
+)
+
+@Serializable
+data class ResolvedBookingSlot(
+    val startUtc: String,
+    val endUtc: String,
+    val priceCents: Int,
+    val available: Boolean,
+)
+
+@Serializable
+data class BookingSlotsResponse(
+    @SerialName("host_timezone") val hostTimezone: String,
+    @SerialName("viewer_timezone") val viewerTimezone: String,
+    val slots: List<ResolvedBookingSlot> = emptyList(),
 )
 
 @Serializable
@@ -235,6 +252,7 @@ data class CreateCommunityRequest(
     @SerialName("default_age_gate_policy") val defaultAgeGatePolicy: String = "none",
     @SerialName("allow_anonymous_identity") val allowAnonymousIdentity: Boolean = false,
     @SerialName("anonymous_identity_scope") val anonymousIdentityScope: String? = null,
+    @SerialName("accepted_agent_ownership_providers") val acceptedAgentOwnershipProviders: List<String> = emptyList(),
     @SerialName("gate_policy") val gatePolicy: GatePolicy? = null,
     @SerialName("handle_policy") val handlePolicy: HandlePolicyInput = HandlePolicyInput(),
     @SerialName("community_bootstrap") val communityBootstrap: CreateCommunityBootstrapInput? = null,
@@ -312,11 +330,117 @@ data class NotificationSummary(
 
 @Serializable
 data class CommunityRule(
-    @SerialName("rule_id") val ruleId: String,
+    @SerialName("id") private val publicRuleId: String? = null,
+    @SerialName("rule_id") private val legacyRuleId: String? = null,
+    @SerialName("object") val contractObject: String? = null,
     val title: String,
     val body: String? = null,
+    @SerialName("report_reason") val reportReason: String? = null,
     val position: Int? = null,
     val status: String? = null,
+) {
+    val ruleId: String get() = publicRuleId ?: legacyRuleId.orEmpty()
+}
+
+@Serializable
+data class UpdateCommunityRuleInput(
+    @SerialName("rule_id") val ruleId: String? = null,
+    val title: String,
+    val body: String,
+    @SerialName("report_reason") val reportReason: String,
+    val position: Int,
+    val status: String,
+)
+
+@Serializable
+data class UpdateCommunityRulesRequest(
+    val rules: List<UpdateCommunityRuleInput>,
+)
+
+@Serializable
+data class MembershipRequestSummary(
+    val id: String,
+    @SerialName("object") val contractObject: String? = null,
+    val community: String,
+    @SerialName("applicant_user") val applicantUser: String,
+    @SerialName("applicant_handle") val applicantHandle: String? = null,
+    @SerialName("applicant_avatar_ref") val applicantAvatarRef: String? = null,
+    val status: String,
+    val note: String? = null,
+    val created: Long,
+)
+
+@Serializable
+data class MembershipRequestListResponse(
+    val items: List<MembershipRequestSummary> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class ModerationCasePostPreview(
+    @SerialName("post_id") val postId: String,
+    @SerialName("post_type") val postType: String,
+    val status: String,
+    val title: String? = null,
+    val body: String? = null,
+    val caption: String? = null,
+    @SerialName("media_refs_json") val mediaRefsJson: String? = null,
+    @SerialName("author_handle") val authorHandle: String? = null,
+)
+
+@Serializable
+data class ModerationCaseSummary(
+    @SerialName("moderation_case_id") val moderationCaseId: String,
+    @SerialName("community_id") val communityId: String,
+    @SerialName("post_id") val postId: String? = null,
+    @SerialName("comment_id") val commentId: String? = null,
+    val status: String,
+    @SerialName("queue_scope") val queueScope: String,
+    val priority: String,
+    @SerialName("opened_by") val openedBy: String,
+    @SerialName("created_at") val createdAt: String,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("resolved_at") val resolvedAt: String? = null,
+    val post: ModerationCasePostPreview? = null,
+)
+
+@Serializable
+data class ModerationCaseListResponse(
+    val items: List<ModerationCaseSummary> = emptyList(),
+    @SerialName("next_cursor") val nextCursor: String? = null,
+)
+
+@Serializable
+data class ModerationSignalSummary(
+    @SerialName("moderation_signal_id") val moderationSignalId: String,
+    @SerialName("signal_type") val signalType: String,
+    val severity: String,
+    @SerialName("provider_label") val providerLabel: String,
+    @SerialName("evidence_ref") val evidenceRef: String? = null,
+)
+
+@Serializable
+data class ModerationReportSummary(
+    @SerialName("user_report_id") val userReportId: String,
+    @SerialName("reason_code") val reasonCode: String,
+    val note: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+)
+
+@Serializable
+data class ModerationCaseDetail(
+    val case: ModerationCaseSummary,
+    val post: JsonObject? = null,
+    val comment: JsonObject? = null,
+    val signals: List<ModerationSignalSummary> = emptyList(),
+    val reports: List<ModerationReportSummary> = emptyList(),
+    val actions: List<JsonObject> = emptyList(),
+)
+
+@Serializable
+data class CreateModerationActionRequest(
+    @SerialName("action_type") val actionType: String,
+    val note: String? = null,
 )
 
 @Serializable
@@ -378,6 +502,7 @@ data class CommunityPreview(
     @SerialName("viewer_following") val viewerFollowing: Boolean? = null,
     @SerialName("allow_anonymous_identity") val allowAnonymousIdentity: Boolean = false,
     @SerialName("anonymous_identity_scope") val anonymousIdentityScope: String? = null,
+    @SerialName("accepted_agent_ownership_providers") val acceptedAgentOwnershipProviders: List<String> = emptyList(),
     @SerialName("created_at") private val contractCreatedAt: String? = null,
     @SerialName("created") private val feedCreatedAt: Long? = null,
 ) {
@@ -506,6 +631,21 @@ data class PostEmbed(
 )
 
 @Serializable
+data class CrosspostSource(
+    val status: String,
+    val post: String,
+    val community: String,
+    @SerialName("captured_at") val capturedAt: String? = null,
+    @SerialName("post_type") val postType: String? = null,
+    val title: String? = null,
+    @SerialName("community_label") val communityLabel: String? = null,
+    @SerialName("community_route_slug") val communityRouteSlug: String? = null,
+    @SerialName("author_user") val authorUser: String? = null,
+    @SerialName("author_label") val authorLabel: String? = null,
+    @SerialName("thumbnail_ref") val thumbnailRef: String? = null,
+)
+
+@Serializable
 data class Post(
     @SerialName("post_id") private val contractPostId: String? = null,
     @SerialName("id") private val feedPostId: String? = null,
@@ -533,6 +673,8 @@ data class Post(
     @SerialName("asset_id") private val legacyAssetId: String? = null,
     @SerialName("asset") private val canonicalAssetId: String? = null,
     @SerialName("song_artifact_bundle") val songArtifactBundle: String? = null,
+    @SerialName("crosspost_source") val crosspostSource: CrosspostSource? = null,
+    @SerialName("parent_post") val parentPost: String? = null,
     @SerialName("anchor_live_room") val anchorLiveRoom: String? = null,
     @SerialName("anchor_live_room_status") val anchorLiveRoomStatus: String? = null,
     @SerialName("song_title") val songTitle: String? = null,
@@ -558,12 +700,17 @@ data class SongPresentation(
     val title: String? = null,
     @SerialName("cover_art_ref") val coverArtRef: String? = null,
     @SerialName("duration_ms") val durationMs: Long? = null,
+    // Karaoke readiness (projected by the API on song post reads; origin/main).
+    // pending | processing | completed | failed
+    @SerialName("alignment_status") val alignmentStatus: String? = null,
+    @SerialName("has_timed_lyrics") val hasTimedLyrics: Boolean? = null,
 )
 
 @Serializable
 data class LocalizedPostResponse(
     val post: Post,
     @SerialName("song_presentation") val songPresentation: SongPresentation? = null,
+    @SerialName("study_capability") val studyCapability: SongStudyCapability? = null,
     @SerialName("age_gate_viewer_state") val ageGateViewerState: String? = null,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
     @SerialName("comment_count") val commentCount: Int? = null,
@@ -650,6 +797,12 @@ data class CommentVoteResponse(
 }
 
 @Serializable
+data class CreateUserReportRequest(
+    @SerialName("reason_code") val reasonCode: String,
+    val note: String? = null,
+)
+
+@Serializable
 data class Comment(
     @SerialName("comment_id") private val contractCommentId: String? = null,
     @SerialName("id") private val feedCommentId: String? = null,
@@ -728,6 +881,19 @@ data class CreatePostRequest(
     @SerialName("license_preset") val licensePreset: String? = null,
     @SerialName("commercial_rev_share_pct") val commercialRevSharePct: Int? = null,
     @SerialName("upstream_asset_refs") val upstreamAssetRefs: List<String>? = null,
+    @SerialName("authorship_mode") val authorshipMode: String? = null,
+    @SerialName("agent_id") val agentId: String? = null,
+    @SerialName("agent_action_proof") val agentActionProof: sc.pirate.app.security.AgentActionProof? = null,
+    @SerialName("royalty_allocations") val royaltyAllocations: List<RoyaltyAllocationInput>? = null,
+    @SerialName("source_post") val sourcePost: String? = null,
+    @SerialName("source_community") val sourceCommunity: String? = null,
+)
+
+@Serializable
+data class RoyaltyAllocationInput(
+    @SerialName("recipient_kind") val recipientKind: String,
+    @SerialName("wallet_address") val walletAddress: String,
+    @SerialName("share_bps") val shareBps: Int,
 )
 
 @Serializable
@@ -1091,6 +1257,7 @@ data class CreateLiveRoomRequest(
     @SerialName("guest_user") val guestUser: String? = null,
     @SerialName("event_start_at") val eventStartAt: Long? = null,
     @SerialName("cover_ref") val coverRef: String? = null,
+    @SerialName("recording_enabled") val recordingEnabled: Boolean = false,
     @SerialName("store_url") val storeUrl: String? = null,
     @SerialName("store_label") val storeLabel: String? = null,
     @SerialName("performer_allocations") val performerAllocations: List<LiveRoomPerformerAllocationInput> = emptyList(),
@@ -1158,9 +1325,74 @@ data class LiveRoom(
     @SerialName("canceled_at") val canceledAt: Long? = null,
     @SerialName("broadcast_ref") val broadcastRef: String? = null,
     @SerialName("replay_status") val replayStatus: String? = null,
+    @SerialName("recording_enabled") val recordingEnabled: Boolean = false,
     @SerialName("performer_allocations") val performerAllocations: List<LiveRoomPerformerAllocation> = emptyList(),
     val setlist: LiveRoomSetlist? = null,
     val created: Long? = null,
+)
+
+@Serializable
+data class LiveRoomReplayAllocation(
+    val id: String = "",
+    @SerialName("participant_user") val participantUser: String? = null,
+    @SerialName("external_party_ref") val externalPartyRef: String? = null,
+    val role: String = "rightsholder",
+    @SerialName("share_bps") val shareBps: Int = 0,
+    @SerialName("rights_basis") val rightsBasis: String? = null,
+    @SerialName("approval_status") val approvalStatus: String? = null,
+)
+
+@Serializable
+data class LiveRoomReplayAsset(
+    val id: String = "",
+    @SerialName("publication_status") val publicationStatus: String = "draft",
+    val title: String = "",
+    val caption: String? = null,
+    @SerialName("duration_ms") val durationMs: Long? = null,
+    @SerialName("preview_ref") val previewRef: String? = null,
+    @SerialName("access_mode") val accessMode: String = "free",
+    @SerialName("locked_delivery_status") val lockedDeliveryStatus: String? = null,
+    @SerialName("published_at") val publishedAt: String? = null,
+    val allocations: List<LiveRoomReplayAllocation> = emptyList(),
+)
+
+@Serializable
+data class LiveRoomRecordingRawArtifact(
+    val provider: String = "",
+    @SerialName("ipfs_cid") val ipfsCid: String? = null,
+    @SerialName("mime_type") val mimeType: String = "",
+    @SerialName("size_bytes") val sizeBytes: Long = 0L,
+)
+
+@Serializable
+data class LiveRoomRecording(
+    val id: String = "",
+    val provider: String = "agora",
+    val status: String = "",
+    @SerialName("failure_reason") val failureReason: String? = null,
+    @SerialName("raw_artifact") val rawArtifact: LiveRoomRecordingRawArtifact? = null,
+)
+
+@Serializable
+data class LiveRoomReplayDraft(
+    @SerialName("live_room") val liveRoom: String = "",
+    @SerialName("recording_enabled") val recordingEnabled: Boolean = false,
+    @SerialName("replay_status") val replayStatus: String = "none",
+    val status: String = "not_recorded",
+    @SerialName("replay_asset") val replayAsset: LiveRoomReplayAsset? = null,
+    val recording: LiveRoomRecording? = null,
+)
+
+@Serializable
+data class UpdateLiveRoomReplayDraftRequest(
+    val title: String,
+    val caption: String?,
+    @SerialName("access_mode") val accessMode: String,
+)
+
+@Serializable
+data class PublishLiveRoomReplayDraftRequest(
+    @SerialName("access_mode") val accessMode: String,
 )
 
 @Serializable

@@ -2,8 +2,10 @@ package sc.pirate.app.post
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -11,6 +13,72 @@ import sc.pirate.app.api.model.PostMediaRef
 import sc.pirate.app.api.model.SongArtifactBundle
 
 class PostComposerStateTest {
+    @Test
+    fun `draft snapshot restores text identity and stable idempotency key`() {
+        val state = PostComposerUiState(
+            draftIdempotencyKey = "draft-key",
+            postType = PostComposerMode.Link,
+            selectedCommunityId = "com_test",
+            title = "Saved title",
+            body = "Saved body",
+            linkUrl = "https://pirate.sc",
+            identityMode = PostComposerIdentityMode.Anonymous,
+        )
+
+        val restored = state.toDraftSnapshot().restoreInto(PostComposerUiState())
+
+        assertEquals("draft-key", restored.draftIdempotencyKey)
+        assertEquals(PostComposerMode.Link, restored.postType)
+        assertEquals("com_test", restored.selectedCommunityId)
+        assertEquals("Saved title", restored.title)
+        assertEquals(PostComposerIdentityMode.Anonymous, restored.identityMode)
+    }
+
+    @Test
+    fun `media draft restoration requires safe reselection`() {
+        val snapshot = PostComposerDraftSnapshot(
+            draftIdempotencyKey = "draft-key",
+            postType = PostComposerMode.Video,
+            hadMediaSelection = true,
+        )
+
+        val restored = snapshot.restoreInto(PostComposerUiState())
+
+        assertNull(restored.mediaUri)
+        assertTrue(restored.draftNotice.orEmpty().contains("reselect"))
+    }
+
+    @Test
+    fun `upload limits mirror server media policies`() {
+        assertNull(validateUploadSize("post_image", 20L * 1024L * 1024L))
+        assertNull(validateUploadSize("cover_art", 12L * 1024L * 1024L))
+        assertNull(validateUploadSize("primary_audio", 64L * 1024L * 1024L))
+        assertEquals(
+            "The selected file exceeds the 64MB limit.",
+            validateUploadSize("primary_video", 64L * 1024L * 1024L + 1L),
+        )
+        assertEquals("The selected file is empty.", validateUploadSize("post_image", 0L))
+    }
+
+    @Test
+    fun `draft idempotency key survives state updates and retry snapshots`() {
+        val initial = PostComposerUiState()
+
+        val edited = initial.copy(title = "A title", body = "A body")
+        val retry = edited.copy(submitting = false, error = "Timed out")
+
+        assertEquals(initial.draftIdempotencyKey, edited.draftIdempotencyKey)
+        assertEquals(initial.draftIdempotencyKey, retry.draftIdempotencyKey)
+    }
+
+    @Test
+    fun `new composer draft receives a new idempotency key`() {
+        val first = PostComposerUiState()
+        val second = PostComposerUiState()
+
+        assertNotEquals(first.draftIdempotencyKey, second.draftIdempotencyKey)
+    }
+
     @Test
     fun defaultPostComposerState_doesNotWaitForEligibilityWithoutCommunity() {
         val state = PostComposerUiState()
@@ -394,6 +462,7 @@ class PostComposerStateTest {
                 visibility = LiveVisibility.Unlisted,
                 scheduleForLater = true,
                 scheduleAt = "2026-06-01T20:00:00Z",
+                recordingEnabled = true,
                 guestUserId = "@guest",
                 storeUrl = "https://store.example/show",
                 storeLabel = "Merch",
@@ -425,6 +494,7 @@ class PostComposerStateTest {
         assertEquals("unlisted", request.visibility)
         assertEquals("usr_guest", request.guestUser)
         assertEquals("media/live-cover", request.coverRef)
+        assertTrue(request.recordingEnabled)
         assertEquals("https://store.example/show", request.storeUrl)
         assertEquals("Merch", request.storeLabel)
         assertEquals(2, request.performerAllocations.size)
@@ -477,5 +547,78 @@ class PostComposerStateTest {
     fun normalizeLiveRoomGuestHandle_acceptsHandleForms() {
         assertEquals("guest.pirate", normalizeLiveRoomGuestHandle("@guest.pirate"))
         assertEquals("guest.pirate", normalizeLiveRoomGuestHandle("/u/guest.pirate"))
+    }
+
+    @Test
+    fun royaltyAllocations_validateAndConvertToBasisPoints() {
+        val song = SongComposerState(
+            licensePreset = AssetLicensePreset.CommercialUse,
+            royaltyAllocations = listOf(
+                RoyaltyAllocationState("creator", "creator", "0x0000000000000000000000000000000000000001", "62.5"),
+                RoyaltyAllocationState("collab", "collaborator", "0x0000000000000000000000000000000000000002", "37.5"),
+            ),
+        )
+        val result = buildRoyaltyAllocationInputs(song).orEmpty()
+        assertEquals(listOf(6250, 3750), result.map { it.shareBps })
+        assertEquals(listOf("creator", "collaborator"), result.map { it.recipientKind })
+    }
+
+    @Test
+    fun royaltyAllocations_rejectInvalidTotalsDuplicatesAndNonCommercialCollaborators() {
+        val base = listOf(
+            RoyaltyAllocationState("creator", "creator", "0x0000000000000000000000000000000000000001", "60"),
+            RoyaltyAllocationState("collab", "collaborator", "0x0000000000000000000000000000000000000002", "30"),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            buildRoyaltyAllocationInputs(SongComposerState(licensePreset = AssetLicensePreset.CommercialUse, royaltyAllocations = base))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            buildRoyaltyAllocationInputs(SongComposerState(
+                licensePreset = AssetLicensePreset.CommercialUse,
+                royaltyAllocations = base.mapIndexed { index, it -> if (index == 1) it.copy(walletAddress = base[0].walletAddress, sharePercent = "40") else it },
+            ))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            buildRoyaltyAllocationInputs(SongComposerState(
+                licensePreset = AssetLicensePreset.NonCommercial,
+                royaltyAllocations = base.mapIndexed { index, it -> if (index == 1) it.copy(sharePercent = "40") else it },
+            ))
+        }
+    }
+
+    @Test
+    fun crosspostRequest_preservesStableSourceAndIdempotencyFields() {
+        val request = buildCrosspostRequest(
+            idempotencyKey = "crosspost-key",
+            title = "  Worth sharing  ",
+            sourcePost = "post_source",
+            sourceCommunity = "community_source",
+            identityMode = "public",
+        )
+
+        assertEquals("crosspost-key", request.idempotencyKey)
+        assertEquals("crosspost", request.postType)
+        assertEquals("Worth sharing", request.title)
+        assertEquals("post_source", request.sourcePost)
+        assertEquals("community_source", request.sourceCommunity)
+    }
+
+    @Test
+    fun crosspostDraft_restoresItsImmutableSource() {
+        val state = PostComposerUiState(
+            postType = PostComposerMode.Crosspost,
+            selectedCommunityId = "community_target",
+            title = "Crosspost title",
+            crosspostSourcePostId = "post_source",
+            crosspostSourceCommunityId = "community_source",
+            crosspostSourceTitle = "Original title",
+        )
+
+        val restored = state.toDraftSnapshot().restoreInto(PostComposerUiState())
+
+        assertEquals(PostComposerMode.Crosspost, restored.postType)
+        assertEquals("post_source", restored.crosspostSourcePostId)
+        assertEquals("community_source", restored.crosspostSourceCommunityId)
+        assertEquals("Original title", restored.crosspostSourceTitle)
     }
 }

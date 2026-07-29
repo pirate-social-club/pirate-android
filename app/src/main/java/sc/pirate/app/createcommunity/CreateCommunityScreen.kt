@@ -317,6 +317,10 @@ class CreateCommunityViewModel(application: Application) : AndroidViewModel(appl
 
         viewModelScope.launch {
             _state.value = _state.value.copy(submitting = true, error = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(submitting = false)
+                return@launch
+            }
             try {
                 val avatarRef = current.avatarUri?.uploadCommunityMedia("avatar")
                 val bannerRef = current.bannerUri?.uploadCommunityMedia("banner")

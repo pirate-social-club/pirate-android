@@ -19,6 +19,16 @@ private val DarkBorder = Color(0xFF3E3E38)
 private val DarkInput = Color(0xFF52514A)
 private val DarkDestructive = Color(0xFFEF4444)
 
+private val LightBackground = Color(0xFFFAFAFB)
+private val LightForeground = Color(0xFF292B30)
+private val LightElevated = Color(0xFFFFFFFF)
+private val LightPrimary = DarkPrimary
+private val LightMuted = Color(0xFFEDEEF0)
+private val LightMutedForeground = Color(0xFF6F737A)
+private val LightBorder = Color(0xFFDEE0E3)
+private val LightInput = Color(0xFFB7BAC0)
+private val LightDestructive = Color(0xFFB42318)
+
 private fun surfaceFrom(base: Color, alpha: Float, backdrop: Color = DarkBackground): Color =
     base.copy(alpha = alpha).compositeOver(backdrop)
 
@@ -91,6 +101,35 @@ private val PirateDarkColors =
         input = DarkInput,
     )
 
+private val PirateLightColors =
+    PirateColorTokens(
+        bgPage = LightBackground,
+        bgSurface = LightBackground,
+        bgElevated = LightElevated,
+        bgOverlay = Color.Black.copy(alpha = 0.42f),
+        surfaceHoverSubtle = surfaceFrom(LightMuted, 0.28f, LightBackground),
+        surfaceSubtle = surfaceFrom(LightMuted, 0.62f, LightBackground),
+        surfaceInteractive = LightMuted,
+        surfaceSkeleton = Color(0xFFE8E9EC),
+        surfaceDisabled = Color(0xFFE3E4E7),
+        surfaceAccent = surfaceFrom(LightPrimary, 0.10f, LightElevated),
+        surfaceDanger = surfaceFrom(LightDestructive, 0.08f, LightElevated),
+        surfaceSuccess = surfaceFrom(Color(0xFF18864B), 0.08f, LightElevated),
+        surfaceWarning = surfaceFrom(Color(0xFF9A6700), 0.08f, LightElevated),
+        textPrimary = LightForeground,
+        textSecondary = LightMutedForeground,
+        textDisabled = LightMutedForeground.copy(alpha = 0.48f),
+        textOnAccent = Color.White,
+        borderDefault = LightBorder,
+        borderSoft = Color(0xFFE9EAEC),
+        borderStrong = LightInput,
+        accentBrand = LightPrimary,
+        accentDanger = LightDestructive,
+        accentSuccess = Color(0xFF18864B),
+        accentWarning = Color(0xFF9A6700),
+        input = LightInput,
+    )
+
 private val PirateRadiusScale =
     PirateRadiusTokens(
         sm = 4.dp,
@@ -112,6 +151,7 @@ internal val LocalPirateRadii = staticCompositionLocalOf<PirateRadiusTokens> {
 
 object PirateTokens {
     val darkColors: PirateColorTokens = PirateDarkColors
+    val lightColors: PirateColorTokens = PirateLightColors
     val radii: PirateRadiusTokens = PirateRadiusScale
 
     val colors: PirateColorTokens

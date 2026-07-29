@@ -33,7 +33,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.UUID
 import sc.pirate.app.api.model.Community
+import sc.pirate.app.api.model.MembershipRequestSummary
 import sc.pirate.app.api.model.NamespaceVerificationSession
 import sc.pirate.app.theme.PirateTokens
 import sc.pirate.app.ui.FeatureStubScreen
@@ -57,6 +59,24 @@ data class NamespaceSettingsUiState(
     val message: String? = null,
 )
 
+data class MembershipRequestsUiState(
+    val communityId: String? = null,
+    val loading: Boolean = true,
+    val refreshing: Boolean = false,
+    val loadingMore: Boolean = false,
+    val requests: List<MembershipRequestSummary> = emptyList(),
+    val nextCursor: String? = null,
+    val processingRequestId: String? = null,
+    val processingDecision: String? = null,
+    val error: String? = null,
+    val message: String? = null,
+)
+
+internal fun removeReviewedMembershipRequest(
+    requests: List<MembershipRequestSummary>,
+    reviewedRequestId: String,
+): List<MembershipRequestSummary> = requests.filterNot { it.id == reviewedRequestId }
+
 class CommunityModerationViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val communityRepository get() = app.repositories.communityRepository
@@ -64,6 +84,218 @@ class CommunityModerationViewModel(application: Application) : AndroidViewModel(
 
     private val _namespaceState = MutableStateFlow(NamespaceSettingsUiState())
     val namespaceState: StateFlow<NamespaceSettingsUiState> = _namespaceState.asStateFlow()
+
+    private val _membershipRequestsState = MutableStateFlow(MembershipRequestsUiState())
+    val membershipRequestsState: StateFlow<MembershipRequestsUiState> = _membershipRequestsState.asStateFlow()
+
+    private val _rulesState = MutableStateFlow(CommunityRulesUiState())
+    val rulesState: StateFlow<CommunityRulesUiState> = _rulesState.asStateFlow()
+
+    fun loadRules(communityId: String) {
+        val current = _rulesState.value
+        if (current.communityId == communityId && current.loading) return
+
+        viewModelScope.launch {
+            _rulesState.value = CommunityRulesUiState(communityId = communityId, loading = true)
+            try {
+                val drafts = communityRuleDrafts(communityRepository.getPreview(communityId).rules)
+                _rulesState.value = CommunityRulesUiState(
+                    communityId = communityId,
+                    loading = false,
+                    rules = drafts,
+                    savedRules = drafts,
+                )
+            } catch (e: Exception) {
+                _rulesState.value = CommunityRulesUiState(
+                    communityId = communityId,
+                    loading = false,
+                    error = e.message ?: "Could not load community rules",
+                )
+            }
+        }
+    }
+
+    fun addRule() {
+        val current = _rulesState.value
+        if (current.loading || current.saving) return
+        _rulesState.value = current.copy(
+            rules = current.rules + CommunityRuleDraft(id = "draft-${UUID.randomUUID()}"),
+            error = null,
+            message = null,
+        )
+    }
+
+    fun updateRule(ruleId: String, update: (CommunityRuleDraft) -> CommunityRuleDraft) {
+        val current = _rulesState.value
+        if (current.saving) return
+        _rulesState.value = current.copy(
+            rules = current.rules.map { if (it.id == ruleId) update(it) else it },
+            error = null,
+            message = null,
+        )
+    }
+
+    fun removeRule(ruleId: String) {
+        val current = _rulesState.value
+        if (current.saving) return
+        _rulesState.value = current.copy(
+            rules = current.rules.filterNot { it.id == ruleId },
+            error = null,
+            message = null,
+        )
+    }
+
+    fun moveRule(fromIndex: Int, toIndex: Int) {
+        val current = _rulesState.value
+        if (current.saving) return
+        _rulesState.value = current.copy(
+            rules = moveCommunityRule(current.rules, fromIndex, toIndex),
+            error = null,
+            message = null,
+        )
+    }
+
+    fun saveRules(communityId: String) {
+        val current = _rulesState.value
+        if (current.saving || current.communityId != communityId) return
+        val validationError = communityRulesValidationError(current.rules)
+        if (validationError != null) {
+            _rulesState.value = current.copy(error = validationError, message = null)
+            return
+        }
+
+        viewModelScope.launch {
+            _rulesState.value = current.copy(saving = true, error = null, message = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _rulesState.value = _rulesState.value.copy(saving = false)
+                return@launch
+            }
+            try {
+                communityRepository.updateRules(communityId, buildCommunityRulesUpdate(current.rules))
+                val refreshedDrafts = runCatching {
+                    communityRuleDrafts(communityRepository.getPreview(communityId).rules)
+                }.getOrNull()
+                val savedDrafts = refreshedDrafts ?: current.rules
+                _rulesState.value = _rulesState.value.copy(
+                    saving = false,
+                    rules = savedDrafts,
+                    savedRules = savedDrafts,
+                    message = "Rules saved.",
+                )
+            } catch (e: Exception) {
+                _rulesState.value = _rulesState.value.copy(
+                    saving = false,
+                    error = e.message ?: "Could not save community rules",
+                )
+            }
+        }
+    }
+
+    fun clearRulesMessage() {
+        _rulesState.value = _rulesState.value.copy(message = null)
+    }
+
+    fun loadMembershipRequests(communityId: String, refresh: Boolean = false) {
+        val current = _membershipRequestsState.value
+        if (current.communityId == communityId && (current.loading || current.refreshing)) return
+
+        viewModelScope.launch {
+            val preserveItems = refresh && current.communityId == communityId
+            _membershipRequestsState.value = MembershipRequestsUiState(
+                communityId = communityId,
+                loading = !preserveItems,
+                refreshing = preserveItems,
+                requests = if (preserveItems) current.requests else emptyList(),
+                nextCursor = if (preserveItems) current.nextCursor else null,
+            )
+            try {
+                val response = communityRepository.listMembershipRequests(communityId)
+                _membershipRequestsState.value = _membershipRequestsState.value.copy(
+                    loading = false,
+                    refreshing = false,
+                    requests = response.items.filter { it.status == "pending" },
+                    nextCursor = response.nextCursor,
+                )
+            } catch (e: Exception) {
+                _membershipRequestsState.value = _membershipRequestsState.value.copy(
+                    loading = false,
+                    refreshing = false,
+                    error = e.message ?: "Could not load membership requests",
+                )
+            }
+        }
+    }
+
+    fun loadMoreMembershipRequests() {
+        val current = _membershipRequestsState.value
+        val communityId = current.communityId ?: return
+        val cursor = current.nextCursor ?: return
+        if (current.loading || current.refreshing || current.loadingMore) return
+
+        viewModelScope.launch {
+            _membershipRequestsState.value = current.copy(loadingMore = true, error = null)
+            try {
+                val response = communityRepository.listMembershipRequests(communityId, cursor)
+                _membershipRequestsState.value = _membershipRequestsState.value.copy(
+                    loadingMore = false,
+                    requests = (_membershipRequestsState.value.requests + response.items)
+                        .filter { it.status == "pending" }
+                        .distinctBy { it.id },
+                    nextCursor = response.nextCursor,
+                )
+            } catch (e: Exception) {
+                _membershipRequestsState.value = _membershipRequestsState.value.copy(
+                    loadingMore = false,
+                    error = e.message ?: "Could not load more membership requests",
+                )
+            }
+        }
+    }
+
+    fun reviewMembershipRequest(communityId: String, request: MembershipRequestSummary, approve: Boolean) {
+        val current = _membershipRequestsState.value
+        if (current.processingRequestId != null || current.communityId != communityId) return
+
+        viewModelScope.launch {
+            _membershipRequestsState.value = current.copy(
+                processingRequestId = request.id,
+                processingDecision = if (approve) "approve" else "reject",
+                error = null,
+                message = null,
+            )
+            try {
+                val reviewed = communityRepository.reviewMembershipRequest(
+                    communityId = communityId,
+                    requestId = request.id,
+                    approve = approve,
+                )
+                val label = request.applicantHandle?.trim()?.takeIf { it.isNotBlank() } ?: "Member"
+                _membershipRequestsState.value = _membershipRequestsState.value.copy(
+                    processingRequestId = null,
+                    processingDecision = null,
+                    requests = removeReviewedMembershipRequest(
+                        _membershipRequestsState.value.requests,
+                        reviewed.id,
+                    ),
+                    message = if (approve) "$label approved." else "$label rejected.",
+                )
+            } catch (e: Exception) {
+                _membershipRequestsState.value = _membershipRequestsState.value.copy(
+                    processingRequestId = null,
+                    processingDecision = null,
+                    error = e.message ?: if (approve) {
+                        "Could not approve membership request"
+                    } else {
+                        "Could not reject membership request"
+                    },
+                )
+            }
+        }
+    }
+
+    fun clearMembershipRequestMessage() {
+        _membershipRequestsState.value = _membershipRequestsState.value.copy(message = null)
+    }
 
     fun loadNamespace(communityId: String) {
         viewModelScope.launch {
@@ -173,8 +405,19 @@ fun CommunityModerationScreen(
     section: String?,
     onBack: () -> Unit,
     onOpenCommunity: (String) -> Unit,
+    onNavigateToSection: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    if (section == null || section == "requests") {
+        MembershipRequestsScreen(
+            communityId = communityId,
+            onBack = onBack,
+            onOpenRules = { onNavigateToSection("rules") },
+            modifier = modifier,
+        )
+        return
+    }
+
     if (section == "namespace") {
         NamespaceSettingsScreen(
             communityId = communityId,
@@ -185,11 +428,29 @@ fun CommunityModerationScreen(
         return
     }
 
-    val body = if (section == null) {
-        "Moderation index for community \"$communityId\" is not implemented yet."
-    } else {
-        "Moderation section \"$section\" for community \"$communityId\" is not implemented yet."
+    if (section == "queue") {
+        ModerationQueueScreen(
+            communityId = communityId,
+            onBack = onBack,
+            onOpenRequests = { onNavigateToSection("requests") },
+            onOpenRules = { onNavigateToSection("rules") },
+            modifier = modifier,
+        )
+        return
     }
+
+    if (section == "rules") {
+        CommunityRulesScreen(
+            communityId = communityId,
+            onBack = onBack,
+            onOpenRequests = { onNavigateToSection("requests") },
+            onOpenQueue = { onNavigateToSection("queue") },
+            modifier = modifier,
+        )
+        return
+    }
+
+    val body = "Moderation section \"$section\" for community \"$communityId\" is not implemented yet."
 
     FeatureStubScreen(
         title = "Moderation",

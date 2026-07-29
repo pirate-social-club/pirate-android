@@ -1,7 +1,8 @@
 package sc.pirate.app.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -65,6 +69,8 @@ fun PirateScaffold(
     val navController = rememberNavController(bottomSheetNavigator)
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    val layoutDirection = LocalLayoutDirection.current
     val navBackStackEntry = navController.currentBackStackEntryAsState().value
     val currentRoute = navBackStackEntry?.destination?.route
     val openDrawer = { scope.launch { drawerState.open() }; Unit }
@@ -114,7 +120,8 @@ fun PirateScaffold(
                                     .fillMaxWidth()
                                     .height(64.dp)
                                     .navigationBarsPadding()
-                                    .padding(horizontal = 8.dp),
+                                    .padding(horizontal = 8.dp)
+                                    .selectableGroup(),
                                 horizontalArrangement = Arrangement.SpaceAround,
                             ) {
                                 bottomItems.forEach { item ->
@@ -123,7 +130,8 @@ fun PirateScaffold(
                                         item = item,
                                         selected = selected,
                                         onClick = {
-                                            if (!selected) {
+                                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            if (!selected || currentRoute != item.route) {
                                                 if (item.requiresAuth && !hasSession) {
                                                     onRequireAuth()
                                                     return@BottomNavIcon
@@ -154,9 +162,9 @@ fun PirateScaffold(
                         Modifier
                     } else {
                         Modifier.padding(
-                            start = innerPadding.calculateLeftPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                            start = innerPadding.calculateLeftPadding(layoutDirection),
                             top = innerPadding.calculateTopPadding(),
-                            end = innerPadding.calculateRightPadding(androidx.compose.ui.unit.LayoutDirection.Ltr),
+                            end = innerPadding.calculateRightPadding(layoutDirection),
                             bottom = innerPadding.calculateBottomPadding(),
                         ).statusBarsPadding()
                     },
@@ -181,11 +189,11 @@ private fun BottomNavIcon(
     Box(
         modifier = Modifier
             .size(48.dp)
-            .clickable(
+            .selectable(
+                selected = selected,
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 role = Role.Button,
-                onClickLabel = item.label,
                 onClick = onClick,
             ),
         contentAlignment = androidx.compose.ui.Alignment.Center,

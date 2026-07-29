@@ -79,6 +79,7 @@ import sc.pirate.app.api.model.LocalizedPostResponse
 import sc.pirate.app.api.model.MembershipGateSummary
 import sc.pirate.app.shared.formatCommunityRouteLabel
 import sc.pirate.app.shared.resolvePublicMediaSrc
+import sc.pirate.app.safety.withoutBlockedPostAuthors
 import sc.pirate.app.song.SongPlaybackState
 import sc.pirate.app.song.SongSummaryRow
 import sc.pirate.app.song.resolveSongAudioUrl
@@ -89,9 +90,11 @@ import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.EmptyFeedState
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
+import sc.pirate.app.ui.FeedSkeletons
 import sc.pirate.app.ui.PhosphorIcons
 import sc.pirate.app.ui.PirateButton
 import sc.pirate.app.ui.PirateCard
+import sc.pirate.app.ui.PostActionControlHeight
 import sc.pirate.app.ui.StatusCard
 import sc.pirate.app.ui.StatusTone
 import sc.pirate.app.ui.VoteControl
@@ -136,6 +139,18 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
     private var currentCommunityId: String? = null
     private var currentHasSession: Boolean = false
     private var joinJob: Job? = null
+    private var blockedUserIds: Set<String> = emptySet()
+
+    init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                blockedUserIds = blockState.userIds
+                _state.value = _state.value.copy(
+                    posts = _state.value.posts.withoutBlockedPostAuthors(blockedUserIds),
+                )
+            }
+        }
+    }
 
     fun loadCommunity(communityId: String, hasSession: Boolean, sort: String = _state.value.activeSort) {
         currentCommunityId = communityId
@@ -164,7 +179,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                     _state.value = CommunityUiState(
                         preview = preview,
-                        posts = posts.items,
+                        posts = posts.items.withoutBlockedPostAuthors(blockedUserIds),
                         nextPostsCursor = posts.nextCursor,
                         activeSort = sort,
                         loading = false,
@@ -183,7 +198,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     CommunityUiState(
                         preview = preview,
                         eligibility = eligibility,
-                        posts = posts.items,
+                        posts = posts.items.withoutBlockedPostAuthors(blockedUserIds),
                         nextPostsCursor = posts.nextCursor,
                         activeSort = sort,
                         loading = false,
@@ -199,7 +214,7 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                         community = community,
                         preview = preview,
                         eligibility = eligibility,
-                        posts = posts.items,
+                        posts = posts.items.withoutBlockedPostAuthors(blockedUserIds),
                         nextPostsCursor = posts.nextCursor,
                         activeSort = sort,
                         loading = false,
@@ -258,7 +273,9 @@ class CommunityViewModel(application: Application) : AndroidViewModel(applicatio
                     )
                 }
                 _state.value = _state.value.copy(
-                    posts = (_state.value.posts + page.items).distinctBy { it.post.postId },
+                    posts = (_state.value.posts + page.items)
+                        .distinctBy { it.post.postId }
+                        .withoutBlockedPostAuthors(blockedUserIds),
                     nextPostsCursor = page.nextCursor,
                     postsLoadingMore = false,
                 )
@@ -539,6 +556,17 @@ fun CommunityScreen(
             }
     }
 
+    LaunchedEffect(activeTab, state.nextPostsCursor, state.postsLoadingMore) {
+        if (activeTab != "feed" || state.nextPostsCursor == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd -> if (nearEnd) viewModel.loadMorePosts() }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -583,9 +611,7 @@ fun CommunityScreen(
         ) {
             when {
                 state.loading -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = PirateTokens.colors.accentBrand)
-                    }
+                    FeedSkeletons(count = 3, modifier = Modifier.fillMaxSize())
                 }
 
                 state.error != null -> {
@@ -758,15 +784,11 @@ fun CommunityScreen(
                                 }
                             }
 
-                            if (state.nextPostsCursor != null) {
+                            if (state.postsLoadingMore) {
                                 item {
-                                    PirateButton(
-                                        text = if (state.postsLoadingMore) "Loading" else "Load more",
-                                        onClick = viewModel::loadMorePosts,
-                                        loading = state.postsLoadingMore,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    CircularProgressIndicator(
+                                        color = PirateTokens.colors.accentBrand,
+                                        modifier = Modifier.padding(20.dp).size(24.dp),
                                     )
                                 }
                             }
@@ -1326,12 +1348,15 @@ private fun PostEngagementRow(
             onVote = onVote,
         )
         Surface(
+            modifier = Modifier.height(PostActionControlHeight),
             shape = RoundedCornerShape(PirateTokens.radius.full),
             color = PirateTokens.colors.surfaceSubtle,
             border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                modifier = Modifier
+                    .height(PostActionControlHeight)
+                    .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

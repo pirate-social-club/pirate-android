@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -57,10 +58,14 @@ import kotlinx.coroutines.launch
 import sc.pirate.app.api.ProfileUpdateInput
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.profile.displayHandle
+import sc.pirate.app.legal.CURRENT_TERMS_VERSION
+import sc.pirate.app.legal.TermsAcceptance
+import sc.pirate.app.safety.BlockedUser
 import sc.pirate.app.shared.buildDefaultProfileCoverSrc
 import sc.pirate.app.shared.buildDefaultUserAvatarSrc
 import sc.pirate.app.shared.resolvePublicMediaSrc
 import sc.pirate.app.theme.PirateTokens
+import sc.pirate.app.theme.AppearanceMode
 import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
@@ -92,33 +97,82 @@ data class SettingsUiState(
     val message: String? = null,
     val error: String? = null,
     val displayNameError: String? = null,
+    val blockedUsers: List<BlockedUser> = emptyList(),
+    val unblockingUserIds: Set<String> = emptySet(),
+    val termsAcceptance: TermsAcceptance? = null,
+    val appearanceMode: AppearanceMode = AppearanceMode.System,
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
     private val app get() = getApplication<sc.pirate.app.PirateApp>()
     private val profileRepository get() = app.repositories.profileRepository
     private val contentResolver get() = getApplication<Application>().contentResolver
+    private var observedBlockedUsers: List<BlockedUser> = emptyList()
+    private var observedAppearanceMode: AppearanceMode = AppearanceMode.System
 
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            app.userBlockStore.observe().collect { blockState ->
+                observedBlockedUsers = blockState.users
+                _state.value = _state.value.copy(blockedUsers = blockState.users)
+            }
+        }
+        viewModelScope.launch {
+            app.appearanceStore.observe().collect { mode ->
+                observedAppearanceMode = mode
+                _state.value = _state.value.copy(appearanceMode = mode)
+            }
+        }
+    }
 
     fun load() {
         viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null, message = null)
             try {
                 val profile = profileRepository.getMe()
+                val termsAcceptance = app.termsAcceptanceStore.currentAcceptance()
                 _state.value = SettingsUiState(
                     loading = false,
                     profile = profile,
                     displayName = profile.displayName.orEmpty(),
                     bio = profile.bio.orEmpty(),
+                    blockedUsers = observedBlockedUsers,
                     handleLabel = profile.globalHandle?.label.orEmpty(),
                     preferredLocale = profile.preferredLocale.orEmpty(),
+                    termsAcceptance = termsAcceptance,
+                    appearanceMode = observedAppearanceMode,
                 )
             } catch (e: Exception) {
                 _state.value = SettingsUiState(
                     loading = false,
                     error = e.message ?: "Could not load settings",
+                )
+            }
+        }
+    }
+
+    fun unblockUser(blockedUser: BlockedUser) {
+        if (blockedUser.userId in _state.value.unblockingUserIds) return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(
+                unblockingUserIds = _state.value.unblockingUserIds + blockedUser.userId,
+                error = null,
+                message = null,
+            )
+            try {
+                app.userBlockStore.unblock(blockedUser.userId)
+                app.chatService.unblockPeer(blockedUser.xmtpInbox)
+                _state.value = _state.value.copy(
+                    unblockingUserIds = _state.value.unblockingUserIds - blockedUser.userId,
+                    message = "User unblocked.",
+                )
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    unblockingUserIds = _state.value.unblockingUserIds - blockedUser.userId,
+                    error = e.message ?: "Could not unblock this user.",
                 )
             }
         }
@@ -147,6 +201,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun updatePreferredLocale(value: String) {
         _state.value = _state.value.copy(preferredLocale = value, error = null, message = null)
+    }
+
+    fun setAppearanceMode(mode: AppearanceMode) {
+        if (mode == _state.value.appearanceMode) return
+        _state.value = _state.value.copy(appearanceMode = mode, error = null, message = null)
+        viewModelScope.launch {
+            try {
+                app.appearanceStore.set(mode)
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(
+                    appearanceMode = observedAppearanceMode,
+                    error = e.message ?: "Could not save appearance preference.",
+                )
+            }
+        }
     }
 
     fun selectAvatar(uri: Uri?) {
@@ -202,6 +271,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
 
             _state.value = current.copy(savingProfile = true, error = null, message = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(savingProfile = false)
+                return@launch
+            }
             try {
                 val avatarRef = current.pendingAvatarUri?.uploadProfileMedia("avatar")
                 val coverRef = current.pendingCoverUri?.uploadProfileMedia("cover")
@@ -277,6 +350,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
         viewModelScope.launch {
             _state.value = _state.value.copy(renamingHandle = true, error = null, message = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(renamingHandle = false)
+                return@launch
+            }
             try {
                 val result = profileRepository.renameHandle(desiredLabel)
                 val profile = profileRepository.getMe()
@@ -331,6 +408,10 @@ fun SettingsScreen(
 ) {
     val viewModel: SettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
+    val uriHandler = LocalUriHandler.current
+    val openAccountDeletion = {
+        uriHandler.openUri("${sc.pirate.app.BuildConfig.WEB_BASE_URL.trimEnd('/')}/delete-account")
+    }
 
     LaunchedEffect(Unit) {
         viewModel.load()
@@ -341,6 +422,8 @@ fun SettingsScreen(
         "preferences" -> "Preferences"
         "domains" -> "Domains"
         "agents" -> "Agents"
+        "blocked" -> "Blocked users"
+        "legal" -> "Terms & privacy"
         else -> "Settings"
     }
 
@@ -401,12 +484,19 @@ fun SettingsScreen(
                         onClick = viewModel::load,
                         modifier = Modifier.fillMaxWidth(),
                     )
+                    PirateButton(
+                        text = "Delete account",
+                        onClick = openAccountDeletion,
+                        variant = ButtonVariant.Outline,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
                 }
             }
 
             section == null -> {
                 SettingsIndex(
                     onNavigateToSection = onNavigateToSection,
+                    onOpenAccountDeletion = openAccountDeletion,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding),
@@ -444,6 +534,8 @@ fun SettingsScreen(
                         "preferences" -> item { PreferencesSettings(state, viewModel) }
                         "domains" -> item { DomainsSettings() }
                         "agents" -> item { AgentsSettings() }
+                        "blocked" -> item { BlockedUsersSettings(state, viewModel) }
+                        "legal" -> item { LegalSettings(state.termsAcceptance) }
                         else -> item { ProfileSettings(state, viewModel) }
                     }
                     item { Spacer(modifier = Modifier.height(24.dp)) }
@@ -456,6 +548,7 @@ fun SettingsScreen(
 @Composable
 private fun SettingsIndex(
     onNavigateToSection: (String) -> Unit,
+    onOpenAccountDeletion: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -467,6 +560,82 @@ private fun SettingsIndex(
         item { SettingsIndexRow("Domains", onClick = { onNavigateToSection("domains") }) }
         item { SettingsIndexRow("Preferences", onClick = { onNavigateToSection("preferences") }) }
         item { SettingsIndexRow("Agents", onClick = { onNavigateToSection("agents") }) }
+        item { SettingsIndexRow("Blocked users", onClick = { onNavigateToSection("blocked") }) }
+        item { SettingsIndexRow("Terms & privacy", onClick = { onNavigateToSection("legal") }) }
+        item { Spacer(modifier = Modifier.height(24.dp)) }
+        item { SettingsIndexRow("Delete account", onClick = onOpenAccountDeletion) }
+    }
+}
+
+@Composable
+private fun BlockedUsersSettings(state: SettingsUiState, viewModel: SettingsViewModel) {
+    SettingsSection(title = "Blocked users") {
+        if (state.blockedUsers.isEmpty()) {
+            StatusCard(
+                title = "No blocked users",
+                description = "People you block will appear here so you can unblock them later.",
+                modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                state.blockedUsers.forEach { blockedUser ->
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = PirateTokens.colors.bgElevated,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = blockedUser.handleLabel ?: blockedUser.userId,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = PirateTokens.colors.textPrimary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            PirateButton(
+                                text = "Unblock",
+                                onClick = { viewModel.unblockUser(blockedUser) },
+                                loading = blockedUser.userId in state.unblockingUserIds,
+                                variant = ButtonVariant.Outline,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LegalSettings(acceptance: TermsAcceptance?) {
+    val uriHandler = LocalUriHandler.current
+    val webBaseUrl = sc.pirate.app.BuildConfig.WEB_BASE_URL.trimEnd('/')
+    SettingsSection(title = "Terms & privacy") {
+        StatusCard(
+            title = if (acceptance?.version == CURRENT_TERMS_VERSION) "Terms accepted" else "Acceptance required before posting",
+            description = if (acceptance?.version == CURRENT_TERMS_VERSION) {
+                "Accepted version ${acceptance.version}. You will be asked again when a new version requires consent."
+            } else {
+                "Pirate will ask you to agree before your first post, comment, message, profile edit, or community upload."
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        PirateButton(
+            text = "Read Terms of Service",
+            onClick = { uriHandler.openUri("$webBaseUrl/terms") },
+            variant = ButtonVariant.Outline,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        PirateButton(
+            text = "Read Privacy Policy",
+            onClick = { uriHandler.openUri("$webBaseUrl/privacy") },
+            variant = ButtonVariant.Outline,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -756,24 +925,49 @@ private fun PreferencesSettings(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
 ) {
-    SettingsSection(title = "Language") {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            OutlinedTextField(
-                value = state.preferredLocale,
-                onValueChange = viewModel::updatePreferredLocale,
-                label = { Text("App language") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !state.savingPreferences,
+    Column(verticalArrangement = Arrangement.spacedBy(28.dp)) {
+        SettingsSection(title = "Appearance") {
+            Text(
+                text = "Use your device setting or choose a theme for Pirate.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = PirateTokens.colors.textSecondary,
             )
-            PirateButton(
-                text = "Save preferences",
-                onClick = viewModel::savePreferences,
-                loading = state.savingPreferences,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                AppearanceMode.entries.forEach { mode ->
+                    PirateButton(
+                        text = mode.displayLabel(),
+                        onClick = { viewModel.setAppearanceMode(mode) },
+                        variant = if (state.appearanceMode == mode) ButtonVariant.Default else ButtonVariant.Outline,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+        SettingsSection(title = "Language") {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                OutlinedTextField(
+                    value = state.preferredLocale,
+                    onValueChange = viewModel::updatePreferredLocale,
+                    label = { Text("App language") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !state.savingPreferences,
+                )
+                PirateButton(
+                    text = "Save preferences",
+                    onClick = viewModel::savePreferences,
+                    loading = state.savingPreferences,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
+}
+
+private fun AppearanceMode.displayLabel(): String = when (this) {
+    AppearanceMode.System -> "System"
+    AppearanceMode.Light -> "Light"
+    AppearanceMode.Dark -> "Dark"
 }
 
 @Composable
@@ -788,12 +982,7 @@ private fun DomainsSettings() {
 
 @Composable
 private fun AgentsSettings() {
-    StatusCard(
-        title = "Agents are not wired on Android yet",
-        description = "Agent registration and ownership controls remain web-only for this v0.",
-        tone = StatusTone.Default,
-        modifier = Modifier.fillMaxWidth(),
-    )
+    AgentsSettingsPanel()
 }
 
 private fun SettingsUiState.profileHasChanges(): Boolean {

@@ -2,8 +2,11 @@ package sc.pirate.app.navigation
 
 import android.util.Log
 import android.widget.Toast
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,6 +32,7 @@ import sc.pirate.app.PirateApp
 import sc.pirate.app.auth.AuthViewModel
 import sc.pirate.app.auth.AuthUiState
 import sc.pirate.app.auth.SignInDrawer
+import sc.pirate.app.booking.BookingAvailabilityScreen
 import sc.pirate.app.chat.ChatScreen
 import sc.pirate.app.communities.YourCommunitiesScreen
 import sc.pirate.app.community.CommunityScreen
@@ -36,8 +40,11 @@ import sc.pirate.app.community.CommunityViewModel
 import sc.pirate.app.createcommunity.CreateCommunityScreen
 import sc.pirate.app.home.HomeScreen
 import sc.pirate.app.inbox.InboxScreen
+import sc.pirate.app.karaoke.KaraokeScreen
 import sc.pirate.app.live.LiveRoomBroadcasterScreen
 import sc.pirate.app.live.LiveRoomWebViewScreen
+import sc.pirate.app.live.ReplayDraftScreen
+import sc.pirate.app.legal.TermsAcceptanceDialog
 import sc.pirate.app.moderation.CommunityModerationScreen
 import sc.pirate.app.onboarding.OnboardingScreen
 import sc.pirate.app.onboarding.OnboardingViewModel
@@ -45,6 +52,7 @@ import sc.pirate.app.post.DerivativeSourceSearchScreen
 import sc.pirate.app.post.DerivativeSourceSearchViewModel
 import sc.pirate.app.post.PostComposerScreen
 import sc.pirate.app.post.PostComposerViewModel
+import sc.pirate.app.study.StudyScreen
 import sc.pirate.app.post.PostScreen
 import sc.pirate.app.profile.MeProfileScreen
 import sc.pirate.app.profile.MeProfileViewModel
@@ -78,6 +86,7 @@ fun PirateNavHost(
         Toast.makeText(context, message, Toast.LENGTH_LONG).show()
     }
     val session by app.sessionStore.observe().collectAsState(initial = null)
+    val termsPrompt by app.termsAcceptanceManager.prompt.collectAsState()
     val hasSession = session != null
     val activeAddress = session?.walletAttachments
         ?.firstOrNull { it.isPrimary }
@@ -107,10 +116,18 @@ fun PirateNavHost(
         // Home is the vertical video feed, as on web.
         startDestination = PirateRoute.VideoFeed.route,
         modifier = modifier,
-        enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { ExitTransition.None },
+        enterTransition = {
+            fadeIn(tween(180)) + slideInHorizontally(tween(220)) { width -> width / 12 }
+        },
+        exitTransition = {
+            fadeOut(tween(120)) + slideOutHorizontally(tween(160)) { width -> -width / 20 }
+        },
+        popEnterTransition = {
+            fadeIn(tween(160)) + slideInHorizontally(tween(200)) { width -> -width / 16 }
+        },
+        popExitTransition = {
+            fadeOut(tween(120)) + slideOutHorizontally(tween(180)) { width -> width / 12 }
+        },
     ) {
         composable(PirateRoute.Auth.route) {
             val vm: AuthViewModel = viewModel()
@@ -171,7 +188,7 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.VideoFeed.route) {
-            VideoPagerScreen()
+            VideoPagerScreen(onOpenNavigation = onOpenNavigation)
         }
 
         composable(PirateRoute.Home.route) {
@@ -185,6 +202,15 @@ fun PirateNavHost(
                 },
                 onNavigateToPost = { id ->
                     navController.navigate(PirateRoute.Post.buildRoute(id))
+                },
+                onNavigateToCrosspost = { sourceCommunityId, sourcePostId, sourceTitle ->
+                    navController.navigate(
+                        PirateRoute.CrosspostSelectCommunity.buildRoute(
+                            sourceCommunityId,
+                            sourcePostId,
+                            sourceTitle,
+                        ),
+                    )
                 },
                 onNavigateToCompose = {
                     navController.navigate(PirateRoute.GlobalSubmit.route)
@@ -293,8 +319,14 @@ fun PirateNavHost(
             PostScreen(
                 postId = postId,
                 hasSession = hasSession,
-                onNavigateToCompose = { communityId ->
-                    navController.navigate(PirateRoute.ComposePost.buildRoute(communityId))
+                onNavigateToCrosspost = { sourceCommunityId, sourcePostId, sourceTitle ->
+                    navController.navigate(
+                        PirateRoute.CrosspostSelectCommunity.buildRoute(
+                            sourceCommunityId,
+                            sourcePostId,
+                            sourceTitle,
+                        ),
+                    )
                 },
                 onNavigateToCommunity = { communityId ->
                     navController.navigate(PirateRoute.Community.buildRoute(communityId))
@@ -304,10 +336,18 @@ fun PirateNavHost(
                         launchSingleTop = true
                     }
                 },
+                onSing = { communityId ->
+                    navController.navigate(PirateRoute.Karaoke.buildRoute(communityId, postId)) {
+                        launchSingleTop = true
+                    }
+                },
                 onBroadcastLiveRoom = { communityId, liveRoomId, role ->
                     navController.navigate(PirateRoute.LiveRoomBroadcast.buildRoute(communityId, liveRoomId, role)) {
                         launchSingleTop = true
                     }
+                },
+                onManageReplay = { communityId, liveRoomId ->
+                    navController.navigate(PirateRoute.ReplayDraft.buildRoute(communityId, liveRoomId))
                 },
                 onVerifyAge = {
                     navController.navigate(
@@ -316,6 +356,11 @@ fun PirateNavHost(
                             capabilities = listOf("age_over_18"),
                         ),
                     )
+                },
+                onStudy = { communityId ->
+                    navController.navigate(PirateRoute.Study.buildRoute(communityId, postId)) {
+                        launchSingleTop = true
+                    }
                 },
                 signInDrawer = { onDismiss ->
                     SignInDrawer(
@@ -359,6 +404,27 @@ fun PirateNavHost(
         }
 
         composable(
+            route = PirateRoute.Karaoke.route,
+            arguments = listOf(
+                navArgument(PirateRoute.Karaoke.ARG_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.Karaoke.ARG_POST_ID) {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.Karaoke.ARG_COMMUNITY_ID).orEmpty()
+            val karaokePostId = backStackEntry.arguments?.getString(PirateRoute.Karaoke.ARG_POST_ID).orEmpty()
+            KaraokeScreen(
+                communityId = communityId,
+                postId = karaokePostId,
+                hasSession = hasSession,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
+        composable(
             route = PirateRoute.LiveRoomBroadcast.route,
             arguments = listOf(
                 navArgument(PirateRoute.LiveRoomBroadcast.ARG_COMMUNITY_ID) {
@@ -380,9 +446,55 @@ fun PirateNavHost(
                     communityId = communityId,
                     liveRoomId = liveRoomId,
                     role = role,
+                    onEnded = {
+                        navController.navigate(PirateRoute.ReplayDraft.buildRoute(communityId, liveRoomId)) {
+                            popUpTo(PirateRoute.LiveRoomBroadcast.buildRoute(communityId, liveRoomId, role)) {
+                                inclusive = true
+                            }
+                        }
+                    },
                     onBack = { navController.popBackStack() },
                 )
             }
+        }
+
+        composable(
+            route = PirateRoute.ReplayDraft.route,
+            arguments = listOf(
+                navArgument(PirateRoute.ReplayDraft.ARG_COMMUNITY_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ReplayDraft.ARG_LIVE_ROOM_ID) { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.ReplayDraft.ARG_COMMUNITY_ID).orEmpty()
+            val liveRoomId = backStackEntry.arguments?.getString(PirateRoute.ReplayDraft.ARG_LIVE_ROOM_ID).orEmpty()
+            AuthGate(hasSession, navController) {
+                ReplayDraftScreen(
+                    communityId = communityId,
+                    liveRoomId = liveRoomId,
+                    onBack = { navController.popBackStack() },
+                )
+            }
+        }
+
+        composable(
+            route = PirateRoute.Study.route,
+            arguments = listOf(
+                navArgument(PirateRoute.Study.ARG_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.Study.ARG_POST_ID) {
+                    type = NavType.StringType
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments?.getString(PirateRoute.Study.ARG_COMMUNITY_ID).orEmpty()
+            val studyPostId = backStackEntry.arguments?.getString(PirateRoute.Study.ARG_POST_ID).orEmpty()
+            StudyScreen(
+                communityId = communityId,
+                postId = studyPostId,
+                hasSession = hasSession,
+                onBack = { navController.popBackStack() },
+            )
         }
 
         composable(
@@ -466,6 +578,64 @@ fun PirateNavHost(
             }
         }
 
+        composable(
+            route = PirateRoute.ComposeCrosspost.route,
+            arguments = listOf(
+                navArgument(PirateRoute.ComposeCrosspost.ARG_COMMUNITY_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ComposeCrosspost.ARG_SOURCE_COMMUNITY_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ComposeCrosspost.ARG_SOURCE_POST_ID) { type = NavType.StringType },
+                navArgument(PirateRoute.ComposeCrosspost.ARG_SOURCE_TITLE) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = ""
+                },
+            ),
+        ) { backStackEntry ->
+            val communityId = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_COMMUNITY_ID)
+                .orEmpty()
+            val sourceCommunityId = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_SOURCE_COMMUNITY_ID)
+                .orEmpty()
+            val sourcePostId = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_SOURCE_POST_ID)
+                .orEmpty()
+            val sourceTitle = backStackEntry.arguments
+                ?.getString(PirateRoute.ComposeCrosspost.ARG_SOURCE_TITLE)
+                ?.takeIf { it.isNotBlank() }
+            val vm: PostComposerViewModel = viewModel()
+            LaunchedEffect(communityId, sourceCommunityId, sourcePostId, sourceTitle) {
+                vm.configureCrosspost(
+                    targetCommunityId = communityId,
+                    sourcePostId = sourcePostId,
+                    sourceCommunityId = sourceCommunityId,
+                    sourceTitle = sourceTitle,
+                )
+            }
+            PostComposerScreen(
+                viewModel = vm,
+                communityId = communityId,
+                hasSession = hasSession,
+                onSignIn = { navController.navigate(PirateRoute.Auth.route) },
+                onOpenDerivativeSourceSearch = {},
+                onPosted = { postId ->
+                    navController.navigate(PirateRoute.Post.buildRoute(postId)) {
+                        popUpTo(
+                            PirateRoute.CrosspostSelectCommunity.buildRoute(
+                                sourceCommunityId,
+                                sourcePostId,
+                                sourceTitle,
+                            ),
+                        ) { inclusive = true }
+                    }
+                },
+                onOpenCommunity = { selectedCommunityId ->
+                    navController.navigate(PirateRoute.Community.buildRoute(selectedCommunityId))
+                },
+                onBack = { navController.popBackStack() },
+            )
+        }
+
         fun androidx.navigation.NavGraphBuilder.notificationsDestination(route: String) {
             composable(route) {
             AuthGate(hasSession, navController) {
@@ -473,11 +643,11 @@ fun PirateNavHost(
                     onOpenPost = { postId ->
                         navController.navigate(PirateRoute.Post.buildRoute(postId))
                     },
-                    onOpenCommunity = { communityId ->
-                        navController.navigate(PirateRoute.Community.buildRoute(communityId))
-                    },
                     onOpenCommunityNamespace = { communityId ->
                         navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "namespace"))
+                    },
+                    onOpenCommunityRequests = { communityId ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, "requests"))
                     },
                     onOpenProfileSettings = {
                         navController.navigate(PirateRoute.SettingsIndex.route)
@@ -520,6 +690,9 @@ fun PirateNavHost(
                 onSignIn = {
                     showSignInDrawer = true
                 },
+                onLoadNativeBalance = vm::loadNativeBalance,
+                onSendNativeAsset = vm::sendNativeAsset,
+                onClearSendFeedback = vm::clearSendFeedback,
             )
             if (showSignInDrawer) {
                 SignInDrawer(
@@ -631,6 +804,48 @@ fun PirateNavHost(
         }
 
         composable(
+            route = PirateRoute.CrosspostSelectCommunity.route,
+            arguments = listOf(
+                navArgument(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_COMMUNITY_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_POST_ID) {
+                    type = NavType.StringType
+                },
+                navArgument(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_TITLE) {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = ""
+                },
+            ),
+        ) { backStackEntry ->
+            val sourceCommunityId = backStackEntry.arguments
+                ?.getString(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_COMMUNITY_ID)
+                .orEmpty()
+            val sourcePostId = backStackEntry.arguments
+                ?.getString(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_POST_ID)
+                .orEmpty()
+            val sourceTitle = backStackEntry.arguments
+                ?.getString(PirateRoute.CrosspostSelectCommunity.ARG_SOURCE_TITLE)
+                ?.takeIf { it.isNotBlank() }
+            GlobalSubmitScreen(
+                hasSession = hasSession,
+                onBack = { navController.popBackStack() },
+                onSignIn = { navController.navigate(PirateRoute.Auth.route) },
+                onSelectCommunity = { communityId ->
+                    navController.navigate(
+                        PirateRoute.ComposeCrosspost.buildRoute(
+                            communityId,
+                            sourceCommunityId,
+                            sourcePostId,
+                            sourceTitle,
+                        ),
+                    )
+                },
+            )
+        }
+
+        composable(
             route = PirateRoute.VerifySelf.route,
             arguments = listOf(navArgument(PirateRoute.VerifySelf.ARG_INTENT) {
                 type = NavType.StringType
@@ -732,6 +947,11 @@ fun PirateNavHost(
                     onOpenCommunity = {
                         navController.navigate(PirateRoute.Community.buildRoute(it))
                     },
+                    onNavigateToSection = { section ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, section)) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
         }
@@ -758,6 +978,11 @@ fun PirateNavHost(
                     onOpenCommunity = {
                         navController.navigate(PirateRoute.Community.buildRoute(it))
                     },
+                    onNavigateToSection = { nextSection ->
+                        navController.navigate(PirateRoute.CommunityModerationSection.buildRoute(communityId, nextSection)) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
         }
@@ -771,6 +996,9 @@ fun PirateNavHost(
             val handleLabel = backStackEntry.arguments?.getString(PirateRoute.PublicProfile.ARG_HANDLE_LABEL).orEmpty()
             PublicProfileScreen(
                 handleLabel = handleLabel,
+                onViewAvailability = { hostUserId ->
+                    navController.navigate(PirateRoute.BookingAvailability.buildRoute(hostUserId))
+                },
                 onNavigateToCommunity = {
                     navController.navigate(PirateRoute.Community.buildRoute(it))
                 },
@@ -801,6 +1029,9 @@ fun PirateNavHost(
             PublicProfileScreen(
                 handleLabel = walletAddress,
                 walletAddress = walletAddress,
+                onViewAvailability = { hostUserId ->
+                    navController.navigate(PirateRoute.BookingAvailability.buildRoute(hostUserId))
+                },
                 onNavigateToCommunity = {
                     navController.navigate(PirateRoute.Community.buildRoute(it))
                 },
@@ -821,7 +1052,30 @@ fun PirateNavHost(
             )
         }
 
+        composable(
+            route = PirateRoute.BookingAvailability.route,
+            arguments = listOf(navArgument(PirateRoute.BookingAvailability.ARG_HOST_USER_ID) {
+                type = NavType.StringType
+            }),
+        ) { backStackEntry ->
+            val hostUserId = backStackEntry.arguments
+                ?.getString(PirateRoute.BookingAvailability.ARG_HOST_USER_ID)
+                .orEmpty()
+            BookingAvailabilityScreen(
+                hostUserId = hostUserId,
+                onBack = { navController.popBackStack() },
+            )
+        }
+
         appKitGraph(navController)
+    }
+
+    termsPrompt?.let { prompt ->
+        TermsAcceptanceDialog(
+            state = prompt,
+            onAccept = { scope.launch { app.termsAcceptanceManager.accept() } },
+            onDismiss = { scope.launch { app.termsAcceptanceManager.dismiss() } },
+        )
     }
 }
 

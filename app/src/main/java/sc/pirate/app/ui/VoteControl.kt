@@ -15,8 +15,14 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import sc.pirate.app.theme.PirateTokens
+
+internal val PostActionControlHeight = 48.dp
 
 @Composable
 fun VoteControl(
@@ -26,8 +32,17 @@ fun VoteControl(
     onVote: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptics = LocalHapticFeedback.current
     Surface(
-        modifier = modifier.height(38.dp),
+        modifier = modifier
+            .height(PostActionControlHeight)
+            .semantics {
+                stateDescription = when (viewerVote) {
+                    1 -> "Upvoted, score $score"
+                    -1 -> "Downvoted, score $score"
+                    else -> "Not voted, score $score"
+                }
+            },
         shape = RoundedCornerShape(PirateTokens.radius.full),
         color = PirateTokens.colors.surfaceSubtle,
         border = BorderStroke(1.dp, PirateTokens.colors.borderSoft),
@@ -38,9 +53,12 @@ fun VoteControl(
             modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
         ) {
             IconButton(
-                onClick = { onVote(1) },
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onVote(1)
+                },
                 enabled = enabled,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(40.dp),
             ) {
                 Icon(
                     imageVector = PhosphorIcons.CaretUp,
@@ -55,9 +73,12 @@ fun VoteControl(
                 color = PirateTokens.colors.textPrimary,
             )
             IconButton(
-                onClick = { onVote(-1) },
+                onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onVote(-1)
+                },
                 enabled = enabled,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(40.dp),
             ) {
                 Icon(
                     imageVector = PhosphorIcons.CaretDown,

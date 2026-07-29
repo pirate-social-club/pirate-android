@@ -84,6 +84,10 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
 
         viewModelScope.launch {
             _state.value = _state.value.copy(actionLoading = true, error = null)
+            if (!app.termsAcceptanceManager.requireForUgc()) {
+                _state.value = _state.value.copy(actionLoading = false)
+                return@launch
+            }
             try {
                 profileRepository.renameHandle(handle.removeSuffix(".pirate"))
                 _state.value = _state.value.copy(

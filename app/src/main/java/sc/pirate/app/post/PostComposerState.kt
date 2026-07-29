@@ -7,10 +7,12 @@ import sc.pirate.app.api.model.LiveRoomPerformerAllocationInput
 import sc.pirate.app.api.model.LiveRoomSetlistInput
 import sc.pirate.app.api.model.LiveRoomSetlistItemInput
 import sc.pirate.app.api.model.PostMediaRef
+import sc.pirate.app.api.model.RoyaltyAllocationInput
 import sc.pirate.app.api.model.SongArtifactBundle
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.Serializable
 import java.math.BigDecimal
 import java.math.RoundingMode
 import java.net.URI
@@ -19,8 +21,25 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+internal const val POST_IMAGE_MAX_BYTES = 20L * 1024L * 1024L
+internal const val SONG_COVER_MAX_BYTES = 12L * 1024L * 1024L
+internal const val SONG_ARTIFACT_MAX_BYTES = 64L * 1024L * 1024L
+
+internal fun validateUploadSize(kind: String, sizeBytes: Long): String? {
+    val maxBytes = when (kind) {
+        "post_image" -> POST_IMAGE_MAX_BYTES
+        "cover_art" -> SONG_COVER_MAX_BYTES
+        "primary_video", "canvas_video", "primary_audio", "instrumental_audio", "vocal_audio" -> SONG_ARTIFACT_MAX_BYTES
+        else -> return "Unsupported upload type."
+    }
+    if (sizeBytes <= 0L) return "The selected file is empty."
+    if (sizeBytes > maxBytes) return "The selected file exceeds the ${maxBytes / (1024L * 1024L)}MB limit."
+    return null
+}
+
 const val POST_COMPOSER_TITLE_MAX_LENGTH = 300
 
+@Serializable
 enum class PostComposerMode(val apiValue: String) {
     Text("text"),
     Image("image"),
@@ -28,35 +47,42 @@ enum class PostComposerMode(val apiValue: String) {
     Link("link"),
     Song("song"),
     Live("live"),
+    Crosspost("crosspost"),
 }
 
+@Serializable
 enum class SongMode(val apiValue: String) {
     Original("original"),
     Remix("remix"),
 }
 
+@Serializable
 enum class AssetLicensePreset(val apiValue: String) {
     NonCommercial("non-commercial"),
     CommercialUse("commercial-use"),
     CommercialRemix("commercial-remix"),
 }
 
+@Serializable
 enum class LiveRoomKind(val apiValue: String) {
     Solo("solo"),
     Duet("duet"),
 }
 
+@Serializable
 enum class LiveAccessMode(val apiValue: String) {
     Free("free"),
     Gated("gated"),
     Paid("paid"),
 }
 
+@Serializable
 enum class LiveVisibility(val apiValue: String) {
     Public("public"),
     Unlisted("unlisted"),
 }
 
+@Serializable
 enum class LiveSetlistItemKind(val apiValue: String) {
     Original("original"),
     Cover("cover"),
@@ -65,12 +91,14 @@ enum class LiveSetlistItemKind(val apiValue: String) {
     Unknown("unknown"),
 }
 
+@Serializable
 data class LivePerformerAllocationState(
     val userId: String = "",
     val role: String,
     val sharePct: Int,
 )
 
+@Serializable
 data class LiveSetlistItemState(
     val titleText: String = "",
     val artistText: String = "",
@@ -78,17 +106,20 @@ data class LiveSetlistItemState(
     val performanceKind: LiveSetlistItemKind = LiveSetlistItemKind.Unknown,
 )
 
+@Serializable
 data class LiveCoverUploadState(
     val mediaRef: String,
     val label: String,
 )
 
+@Serializable
 data class LiveComposerState(
     val roomKind: LiveRoomKind = LiveRoomKind.Solo,
     val accessMode: LiveAccessMode = LiveAccessMode.Free,
     val visibility: LiveVisibility = LiveVisibility.Public,
     val scheduleForLater: Boolean = false,
     val scheduleAt: String = "",
+    val recordingEnabled: Boolean = false,
     val guestUserId: String = "",
     val storeUrl: String = "",
     val storeLabel: String = "",
@@ -103,6 +134,7 @@ data class LiveComposerState(
     val regionalPricingEnabled: Boolean = false,
 )
 
+@Serializable
 data class SongComposerState(
     val songTitle: String = "",
     val lyrics: String = "",
@@ -120,6 +152,15 @@ data class SongComposerState(
     val regionalPricingEnabled: Boolean = false,
     val pendingBundleId: String? = null,
     val upstreamAssetRefs: List<String> = emptyList(),
+    val royaltyAllocations: List<RoyaltyAllocationState> = emptyList(),
+)
+
+@Serializable
+data class RoyaltyAllocationState(
+    val id: String,
+    val recipientKind: String,
+    val walletAddress: String,
+    val sharePercent: String,
 )
 
 enum class PostComposerStep {
@@ -235,9 +276,47 @@ fun validatePostComposerDraft(
             }
         }
 
+        PostComposerMode.Crosspost -> {
+            if (title.isBlank()) {
+                PostComposerDraftValidation(
+                    canSubmit = false,
+                    errorMessage = "Add a title before crossposting.",
+                )
+            } else {
+                PostComposerDraftValidation(canSubmit = true)
+            }
+        }
+
         PostComposerMode.Live -> validateLiveComposerDraft(title, live)
         PostComposerMode.Song -> validateSongComposerDraft(song)
     }
+}
+
+fun buildCrosspostRequest(
+    idempotencyKey: String,
+    title: String,
+    sourcePost: String,
+    sourceCommunity: String,
+    identityMode: String,
+    anonymousScope: String? = null,
+): CreatePostRequest {
+    val normalizedTitle = title.trim()
+    require(normalizedTitle.isNotBlank()) { "Add a title before crossposting." }
+    val normalizedSourcePost = sourcePost.trim()
+    require(normalizedSourcePost.isNotBlank()) { "The source post is unavailable." }
+    val normalizedSourceCommunity = sourceCommunity.trim()
+    require(normalizedSourceCommunity.isNotBlank()) { "The source community is unavailable." }
+    return CreatePostRequest(
+        idempotencyKey = idempotencyKey,
+        postType = PostComposerMode.Crosspost.apiValue,
+        title = normalizedTitle,
+        sourcePost = normalizedSourcePost,
+        sourceCommunity = normalizedSourceCommunity,
+        identityMode = identityMode,
+        anonymousScope = anonymousScope,
+        translationPolicy = "machine_allowed",
+        visibility = "public",
+    )
 }
 
 fun validateLiveComposerDraft(
@@ -346,6 +425,7 @@ fun buildLiveRoomRequest(
         guestUser = guestUserId,
         eventStartAt = if (live.scheduleForLater) parseLiveScheduleEpochSeconds(live.scheduleAt) else null,
         coverRef = coverRef?.trim()?.takeIf { it.isNotBlank() },
+        recordingEnabled = live.recordingEnabled,
         storeUrl = live.storeUrl.trim().takeIf { it.isNotBlank() },
         storeLabel = live.storeLabel.trim().takeIf { it.isNotBlank() },
         performerAllocations = livePerformerAllocations(live, hostUserId, guestUserId),
@@ -399,8 +479,47 @@ fun buildSongPostRequest(
             null
         },
         upstreamAssetRefs = if (song.songMode == SongMode.Remix) song.upstreamAssetRefs else null,
+        royaltyAllocations = buildRoyaltyAllocationInputs(song),
     )
 }
+
+fun buildRoyaltyAllocationInputs(song: SongComposerState): List<RoyaltyAllocationInput>? {
+    val allocations = song.royaltyAllocations
+    if (allocations.isEmpty()) return null
+    if (allocations.size == 1 && allocations[0].recipientKind == "creator" &&
+        allocations[0].sharePercent.trim().toBigDecimalOrNull()?.compareTo(BigDecimal("100")) == 0
+    ) return null
+    require(allocations.size <= 10) { "Royalty split supports at most 10 recipients." }
+    require(allocations.count { it.recipientKind == "creator" } == 1) {
+        "Royalty split must include exactly one creator recipient."
+    }
+    require(song.licensePreset != AssetLicensePreset.NonCommercial || allocations.size == 1) {
+        "Collaborator royalty splits require a commercial song license."
+    }
+    val seenWallets = mutableSetOf<String>()
+    var totalBps = 0
+    val result = allocations.map { allocation ->
+        val wallet = allocation.walletAddress.trim()
+        require(isValidRoyaltyWallet(wallet)) { "Enter a valid wallet address for every royalty recipient." }
+        require(seenWallets.add(wallet.lowercase())) { "Each royalty recipient wallet must be unique." }
+        val percent = allocation.sharePercent.trim().toBigDecimalOrNull()
+            ?: throw IllegalArgumentException("Enter a valid percentage for every royalty recipient.")
+        val bps = try {
+            percent.movePointRight(2).intValueExact()
+        } catch (_: ArithmeticException) {
+            throw IllegalArgumentException("Royalty shares must use at most two decimal places.")
+        }
+        require(bps in 1..10_000) { "Royalty shares must be greater than 0%." }
+        totalBps += bps
+        RoyaltyAllocationInput(allocation.recipientKind, wallet, bps)
+    }
+    require(totalBps == 10_000) { "Royalty shares must total 100% before publishing." }
+    return result
+}
+
+private fun isValidRoyaltyWallet(value: String): Boolean =
+    value.length == 42 && value.startsWith("0x") &&
+        value.drop(2).all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }
 
 fun buildVideoPostRequest(
     anonymousScope: String? = null,

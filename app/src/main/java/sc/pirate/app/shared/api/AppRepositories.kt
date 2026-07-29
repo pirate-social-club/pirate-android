@@ -7,6 +7,7 @@ import sc.pirate.app.api.ProfileUpdateInput
 import sc.pirate.app.api.RenameHandleResponse
 import sc.pirate.app.api.SessionExchangeProof
 import sc.pirate.app.api.StartVerificationSessionRequest
+import sc.pirate.app.api.StreamUpload
 import sc.pirate.app.api.model.Community
 import sc.pirate.app.api.model.CommunityCreateAcceptedResponse
 import sc.pirate.app.api.model.CommunityFollowResponse
@@ -27,6 +28,7 @@ import sc.pirate.app.api.model.CreateCommunityListingRequest
 import sc.pirate.app.api.model.CreateCommunityRequest
 import sc.pirate.app.api.model.CreateLiveRoomRequest
 import sc.pirate.app.api.model.CreatePostRequest
+import sc.pirate.app.api.model.CreateUserReportRequest
 import sc.pirate.app.api.model.CreateSongArtifactBundleRequest
 import sc.pirate.app.api.model.CreateSongArtifactUploadRequest
 import sc.pirate.app.api.model.DerivativeSourceListResponse
@@ -37,9 +39,14 @@ import sc.pirate.app.api.model.LiveRoomAccessResponse
 import sc.pirate.app.api.model.LiveRoomAttachRequest
 import sc.pirate.app.api.model.LiveRoomGuestAttachResponse
 import sc.pirate.app.api.model.LiveRoomHostAttachResponse
+import sc.pirate.app.api.model.LiveRoomReplayDraft
 import sc.pirate.app.api.model.LiveRoomViewerAttachResponse
 import sc.pirate.app.api.model.LiveRoomViewerRenewRequest
 import sc.pirate.app.api.model.LocalizedPostResponse
+import sc.pirate.app.api.model.MembershipRequestListResponse
+import sc.pirate.app.api.model.MembershipRequestSummary
+import sc.pirate.app.api.model.ModerationCaseDetail
+import sc.pirate.app.api.model.ModerationCaseListResponse
 import sc.pirate.app.api.model.NotificationFeedResponse
 import sc.pirate.app.api.model.NotificationSummary
 import sc.pirate.app.api.model.NotificationTasksResponse
@@ -50,6 +57,10 @@ import sc.pirate.app.api.model.PostableCommunitiesResponse
 import sc.pirate.app.api.model.Profile
 import sc.pirate.app.api.model.PublishLiveRoomRequest
 import sc.pirate.app.api.model.PublishLiveRoomResponse
+import sc.pirate.app.api.model.PublishLiveRoomReplayDraftRequest
+import sc.pirate.app.api.model.UpdateLiveRoomReplayDraftRequest
+import sc.pirate.app.api.model.UpdateCommunityRulesRequest
+import sc.pirate.app.api.model.CreateModerationActionRequest
 import sc.pirate.app.api.model.PublicProfileResolution
 import sc.pirate.app.api.model.PublicCommunitySearchResponse
 import sc.pirate.app.api.model.SessionExchangeResponse
@@ -88,6 +99,24 @@ interface CommunityRepository {
     suspend fun joinCommunity(communityId: String, altchaHeader: String? = null): CommunityJoinResponse
     suspend fun followCommunity(communityId: String): CommunityFollowResponse
     suspend fun unfollowCommunity(communityId: String): CommunityFollowResponse
+    suspend fun listMembershipRequests(
+        communityId: String,
+        cursor: String? = null,
+        limit: Int = 50,
+    ): MembershipRequestListResponse
+    suspend fun reviewMembershipRequest(
+        communityId: String,
+        requestId: String,
+        approve: Boolean,
+    ): MembershipRequestSummary
+    suspend fun updateRules(communityId: String, request: UpdateCommunityRulesRequest): Community
+    suspend fun listModerationCases(communityId: String): ModerationCaseListResponse
+    suspend fun getModerationCase(communityId: String, moderationCaseId: String): ModerationCaseDetail
+    suspend fun resolveModerationCase(
+        communityId: String,
+        moderationCaseId: String,
+        request: CreateModerationActionRequest,
+    ): ModerationCaseDetail
     suspend fun listPosts(
         communityId: String,
         limit: Int? = null,
@@ -110,11 +139,13 @@ interface CommunityRepository {
         altchaHeader: String? = null,
     ): LocalizedPostResponse
     suspend fun uploadMedia(kind: String, bytes: ByteArray, filename: String, mimeType: String): String
+    suspend fun uploadMedia(kind: String, upload: StreamUpload, filename: String): String
     suspend fun createArtifactUpload(
         communityId: String,
         request: CreateSongArtifactUploadRequest,
     ): SongArtifactUpload
     suspend fun uploadArtifactContent(communityId: String, uploadId: String, bytes: ByteArray): SongArtifactUpload
+    suspend fun uploadArtifactContent(communityId: String, uploadId: String, upload: StreamUpload): SongArtifactUpload
     suspend fun uploadArtifactMultipart(
         communityId: String,
         intent: SongArtifactUpload,
@@ -157,6 +188,17 @@ interface CommunityRepository {
     suspend fun guestRevokeLiveRoom(communityId: String, liveRoomId: String): LiveRoom
     suspend fun cancelLiveRoom(communityId: String, liveRoomId: String): LiveRoom
     suspend fun endLiveRoom(communityId: String, liveRoomId: String): LiveRoom
+    suspend fun getLiveRoomReplayDraft(communityId: String, liveRoomId: String): LiveRoomReplayDraft
+    suspend fun updateLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: UpdateLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft
+    suspend fun publishLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: PublishLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft
     suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun getPublicLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse
     suspend fun viewerAttachLiveRoom(communityId: String, liveRoomId: String): LiveRoomViewerAttachResponse
@@ -233,6 +275,8 @@ interface PostRepository {
         altchaHeader: String? = null,
     )
     suspend fun voteComment(commentId: String, value: Int): CommentVoteResponse
+    suspend fun reportPost(communityId: String, postId: String, request: CreateUserReportRequest)
+    suspend fun reportComment(communityId: String, commentId: String, request: CreateUserReportRequest)
 }
 
 interface ProfileRepository {
@@ -351,6 +395,45 @@ class ApiCommunityRepository(
         return apiClient.communities.unfollow(communityId)
     }
 
+    override suspend fun listMembershipRequests(
+        communityId: String,
+        cursor: String?,
+        limit: Int,
+    ): MembershipRequestListResponse {
+        return apiClient.communities.listMembershipRequests(communityId, cursor, limit)
+    }
+
+    override suspend fun reviewMembershipRequest(
+        communityId: String,
+        requestId: String,
+        approve: Boolean,
+    ): MembershipRequestSummary {
+        return apiClient.communities.reviewMembershipRequest(communityId, requestId, approve)
+    }
+
+    override suspend fun updateRules(communityId: String, request: UpdateCommunityRulesRequest): Community {
+        return apiClient.communities.updateRules(communityId, request)
+    }
+
+    override suspend fun listModerationCases(communityId: String): ModerationCaseListResponse {
+        return apiClient.communities.listModerationCases(communityId)
+    }
+
+    override suspend fun getModerationCase(
+        communityId: String,
+        moderationCaseId: String,
+    ): ModerationCaseDetail {
+        return apiClient.communities.getModerationCase(communityId, moderationCaseId)
+    }
+
+    override suspend fun resolveModerationCase(
+        communityId: String,
+        moderationCaseId: String,
+        request: CreateModerationActionRequest,
+    ): ModerationCaseDetail {
+        return apiClient.communities.resolveModerationCase(communityId, moderationCaseId, request)
+    }
+
     override suspend fun listPosts(
         communityId: String,
         limit: Int?,
@@ -399,6 +482,10 @@ class ApiCommunityRepository(
         return apiClient.communities.uploadMedia(kind, bytes, filename, mimeType).mediaRef
     }
 
+    override suspend fun uploadMedia(kind: String, upload: StreamUpload, filename: String): String {
+        return apiClient.communities.uploadMedia(kind, upload, filename).mediaRef
+    }
+
     override suspend fun createArtifactUpload(
         communityId: String,
         request: CreateSongArtifactUploadRequest,
@@ -412,6 +499,14 @@ class ApiCommunityRepository(
         bytes: ByteArray,
     ): SongArtifactUpload {
         return apiClient.communities.uploadArtifactContent(communityId, uploadId, bytes)
+    }
+
+    override suspend fun uploadArtifactContent(
+        communityId: String,
+        uploadId: String,
+        upload: StreamUpload,
+    ): SongArtifactUpload {
+        return apiClient.communities.uploadArtifactContent(communityId, uploadId, upload)
     }
 
     override suspend fun uploadArtifactMultipart(
@@ -491,6 +586,21 @@ class ApiCommunityRepository(
     override suspend fun endLiveRoom(communityId: String, liveRoomId: String): LiveRoom {
         return apiClient.communities.endLiveRoom(communityId, liveRoomId)
     }
+
+    override suspend fun getLiveRoomReplayDraft(communityId: String, liveRoomId: String): LiveRoomReplayDraft =
+        apiClient.communities.getLiveRoomReplayDraft(communityId, liveRoomId)
+
+    override suspend fun updateLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: UpdateLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft = apiClient.communities.updateLiveRoomReplayDraft(communityId, liveRoomId, request)
+
+    override suspend fun publishLiveRoomReplayDraft(
+        communityId: String,
+        liveRoomId: String,
+        request: PublishLiveRoomReplayDraftRequest,
+    ): LiveRoomReplayDraft = apiClient.communities.publishLiveRoomReplayDraft(communityId, liveRoomId, request)
 
     override suspend fun getLiveRoomAccess(communityId: String, liveRoomId: String): LiveRoomAccessResponse {
         return apiClient.communities.getLiveRoomAccess(communityId, liveRoomId)
@@ -661,6 +771,14 @@ class ApiPostRepository(
 
     override suspend fun voteComment(commentId: String, value: Int): CommentVoteResponse {
         return apiClient.comments.vote(commentId, value)
+    }
+
+    override suspend fun reportPost(communityId: String, postId: String, request: CreateUserReportRequest) {
+        apiClient.communities.reportPost(communityId, postId, request)
+    }
+
+    override suspend fun reportComment(communityId: String, commentId: String, request: CreateUserReportRequest) {
+        apiClient.communities.reportComment(communityId, commentId, request)
     }
 }
 

@@ -1,9 +1,14 @@
 package sc.pirate.app.navigation
 
 import android.net.Uri
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
+private fun encodeDeepLinkSegment(value: String): String =
+    URLEncoder.encode(value, StandardCharsets.UTF_8.toString()).replace("+", "%20")
 
 object PirateRouteSections {
-    val settings = setOf("profile", "domains", "preferences", "agents")
+    val settings = setOf("profile", "domains", "preferences", "agents", "blocked", "legal")
     val selfCapabilities = setOf("unique_human", "age_over_18", "nationality", "gender")
     val verificationIntents = setOf(
         "profile_verification",
@@ -15,6 +20,8 @@ object PirateRouteSections {
     )
     val communityModeration = setOf(
         "profile",
+        "queue",
+        "requests",
         "rules",
         "links",
         "labels",
@@ -29,14 +36,25 @@ object PirateRouteSections {
 
 object PirateDeepLinks {
     fun routeFromUri(uri: Uri?): String? {
-        if (uri == null || !uri.scheme.equals("pirate", ignoreCase = true)) return null
-        return when (uri.host) {
-            "post" -> uri.pathSegments.firstOrNull()
+        if (uri == null) return null
+        return routeFromParts(uri.scheme, uri.host, uri.pathSegments)
+    }
+
+    internal fun routeFromParts(scheme: String?, host: String?, pathSegments: List<String>): String? {
+        if (scheme.equals("pirate", ignoreCase = true)) return when (host?.lowercase()) {
+            "post" -> pathSegments.firstOrNull()
                 ?.takeIf { it.isNotBlank() }
-                ?.let(PirateRoute.Post::buildRoute)
-            "community" -> uri.pathSegments.firstOrNull()
+                ?.let { "post/${encodeDeepLinkSegment(it)}" }
+            "community" -> pathSegments.firstOrNull()
                 ?.takeIf { it.isNotBlank() }
-                ?.let(PirateRoute.Community::buildRoute)
+                ?.let { "community/${encodeDeepLinkSegment(it)}" }
+            else -> null
+        }
+        if (!scheme.equals("https", ignoreCase = true) || !host.equals("pirate.sc", ignoreCase = true)) return null
+        val id = pathSegments.getOrNull(1)?.takeIf { it.isNotBlank() } ?: return null
+        return when (pathSegments.firstOrNull()?.lowercase()) {
+            "p" -> "post/${encodeDeepLinkSegment(id)}"
+            "c" -> "community/${encodeDeepLinkSegment(id)}"
             else -> null
         }
     }
@@ -49,6 +67,10 @@ sealed class PirateRoute(val route: String) {
     /** Fullscreen vertical video surface. The mixed Home feed stays for non-video browsing. */
     data object VideoFeed : PirateRoute("videos")
     data object Chat : PirateRoute("chat")
+    data object BookingAvailability : PirateRoute("book/{hostUserId}") {
+        const val ARG_HOST_USER_ID = "hostUserId"
+        fun buildRoute(hostUserId: String): String = "book/${Uri.encode(hostUserId)}"
+    }
     data object YourCommunities : PirateRoute("your_communities")
     data object Community : PirateRoute("community/{communityId}") {
         const val ARG_COMMUNITY_ID = "communityId"
@@ -56,6 +78,16 @@ sealed class PirateRoute(val route: String) {
     }
     data object CreateCommunity : PirateRoute("communities/new")
     data object GlobalSubmit : PirateRoute("submit")
+    data object CrosspostSelectCommunity : PirateRoute(
+        "crosspost/{sourceCommunityId}/{sourcePostId}?sourceTitle={sourceTitle}",
+    ) {
+        const val ARG_SOURCE_COMMUNITY_ID = "sourceCommunityId"
+        const val ARG_SOURCE_POST_ID = "sourcePostId"
+        const val ARG_SOURCE_TITLE = "sourceTitle"
+        fun buildRoute(sourceCommunityId: String, sourcePostId: String, sourceTitle: String?): String =
+            "crosspost/${Uri.encode(sourceCommunityId)}/${Uri.encode(sourcePostId)}" +
+                "?sourceTitle=${Uri.encode(sourceTitle.orEmpty())}"
+    }
     data object VerifySelf : PirateRoute("verification/self/{intent}?capabilities={capabilities}") {
         const val ARG_INTENT = "intent"
         const val ARG_CAPABILITIES = "capabilities"
@@ -81,6 +113,12 @@ sealed class PirateRoute(val route: String) {
         const val ARG_POST_ID = "postId"
         fun buildRoute(postId: String): String = "post/${Uri.encode(postId)}/live-room"
     }
+    data object Karaoke : PirateRoute("community/{communityId}/post/{postId}/karaoke") {
+        const val ARG_COMMUNITY_ID = "communityId"
+        const val ARG_POST_ID = "postId"
+        fun buildRoute(communityId: String, postId: String): String =
+            "community/${Uri.encode(communityId)}/post/${Uri.encode(postId)}/karaoke"
+    }
     data object LiveRoomBroadcast : PirateRoute("community/{communityId}/live-room/{liveRoomId}/broadcast/{role}") {
         const val ARG_COMMUNITY_ID = "communityId"
         const val ARG_LIVE_ROOM_ID = "liveRoomId"
@@ -88,13 +126,40 @@ sealed class PirateRoute(val route: String) {
         fun buildRoute(communityId: String, liveRoomId: String, role: String): String =
             "community/${Uri.encode(communityId)}/live-room/${Uri.encode(liveRoomId)}/broadcast/${Uri.encode(role)}"
     }
+    data object ReplayDraft : PirateRoute("community/{communityId}/live-room/{liveRoomId}/replay-draft") {
+        const val ARG_COMMUNITY_ID = "communityId"
+        const val ARG_LIVE_ROOM_ID = "liveRoomId"
+        fun buildRoute(communityId: String, liveRoomId: String): String =
+            "community/${Uri.encode(communityId)}/live-room/${Uri.encode(liveRoomId)}/replay-draft"
+    }
     data object ComposePost : PirateRoute("community/{communityId}/compose") {
         const val ARG_COMMUNITY_ID = "communityId"
         fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/compose"
     }
+    data object ComposeCrosspost : PirateRoute(
+        "community/{communityId}/crosspost/{sourceCommunityId}/{sourcePostId}?sourceTitle={sourceTitle}",
+    ) {
+        const val ARG_COMMUNITY_ID = "communityId"
+        const val ARG_SOURCE_COMMUNITY_ID = "sourceCommunityId"
+        const val ARG_SOURCE_POST_ID = "sourcePostId"
+        const val ARG_SOURCE_TITLE = "sourceTitle"
+        fun buildRoute(
+            communityId: String,
+            sourceCommunityId: String,
+            sourcePostId: String,
+            sourceTitle: String?,
+        ): String = "community/${Uri.encode(communityId)}/crosspost/${Uri.encode(sourceCommunityId)}/${Uri.encode(sourcePostId)}" +
+            "?sourceTitle=${Uri.encode(sourceTitle.orEmpty())}"
+    }
     data object DerivativeSourceSearch : PirateRoute("community/{communityId}/song-source-search") {
         const val ARG_COMMUNITY_ID = "communityId"
         fun buildRoute(communityId: String): String = "community/${Uri.encode(communityId)}/song-source-search"
+    }
+    data object Study : PirateRoute("community/{communityId}/post/{postId}/study") {
+        const val ARG_COMMUNITY_ID = "communityId"
+        const val ARG_POST_ID = "postId"
+        fun buildRoute(communityId: String, postId: String): String =
+            "community/${Uri.encode(communityId)}/post/${Uri.encode(postId)}/study"
     }
     data object Notifications : PirateRoute("notifications")
     data object Inbox : PirateRoute("inbox")

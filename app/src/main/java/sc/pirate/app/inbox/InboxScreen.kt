@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -25,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +39,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -194,8 +197,8 @@ class InboxViewModel(application: Application) : AndroidViewModel(application) {
 @Composable
 fun InboxScreen(
     onOpenPost: (String) -> Unit,
-    onOpenCommunity: (String) -> Unit,
     onOpenCommunityNamespace: (String) -> Unit,
+    onOpenCommunityRequests: (String) -> Unit,
     onOpenProfileSettings: () -> Unit,
     onSignIn: () -> Unit,
     modifier: Modifier = Modifier,
@@ -203,9 +206,21 @@ fun InboxScreen(
     val viewModel: InboxViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
 
     LaunchedEffect(Unit) {
         viewModel.load()
+    }
+
+    LaunchedEffect(state.nextCursor, state.loadingMore) {
+        if (state.nextCursor == null) return@LaunchedEffect
+        snapshotFlow {
+            val layout = listState.layoutInfo
+            val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            layout.totalItemsCount > 0 && lastVisible >= layout.totalItemsCount - 4
+        }
+            .distinctUntilChanged()
+            .collect { nearEnd -> if (nearEnd) viewModel.loadMore() }
     }
 
     Box(
@@ -265,6 +280,7 @@ fun InboxScreen(
 
             else -> {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(0.dp),
                 ) {
@@ -311,8 +327,8 @@ fun InboxScreen(
                                         onOpen = {
                                             openTask(
                                                 task = task,
-                                                onOpenCommunity = onOpenCommunity,
                                                 onOpenCommunityNamespace = onOpenCommunityNamespace,
+                                                onOpenCommunityRequests = onOpenCommunityRequests,
                                                 onOpenProfileSettings = onOpenProfileSettings,
                                                 onVerifyHuman = {
                                                     viewModel.startVeryHumanVerification(
@@ -343,15 +359,11 @@ fun InboxScreen(
                             }
                         }
                     }
-                    if (state.nextCursor != null) {
+                    if (state.loadingMore) {
                         item {
-                            PirateButton(
-                                text = "Load more",
-                                onClick = viewModel::loadMore,
-                                loading = state.loadingMore,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
+                            CircularProgressIndicator(
+                                color = PirateTokens.colors.accentBrand,
+                                modifier = Modifier.padding(20.dp).size(24.dp),
                             )
                         }
                     }
@@ -497,8 +509,8 @@ private fun NotificationRow(
 
 private fun openTask(
     task: UserTask,
-    onOpenCommunity: (String) -> Unit,
     onOpenCommunityNamespace: (String) -> Unit,
+    onOpenCommunityRequests: (String) -> Unit,
     onOpenProfileSettings: () -> Unit,
     onVerifyHuman: () -> Unit,
 ) {
@@ -507,7 +519,7 @@ private fun openTask(
         "profile_completion_suggested",
         "global_handle_cleanup_suggested" -> onOpenProfileSettings()
         "namespace_verification_required" -> onOpenCommunityNamespace(task.subject)
-        "membership_review" -> onOpenCommunity(task.subject)
+        "membership_review" -> onOpenCommunityRequests(task.subject)
     }
 }
 

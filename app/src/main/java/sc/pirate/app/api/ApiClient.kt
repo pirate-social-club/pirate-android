@@ -1,15 +1,22 @@
 package sc.pirate.app.api
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.Request
+import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okio.BufferedSink
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import sc.pirate.app.api.model.*
 import java.net.URLEncoder
@@ -17,6 +24,8 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class ApiError(
     val code: String,
@@ -25,6 +34,29 @@ class ApiError(
     val retryable: Boolean = false,
     val details: GateFailureDetails? = null,
 ) : Exception(message)
+
+private fun StreamUpload.toRequestBody(): RequestBody = object : RequestBody() {
+    override fun contentType() = mimeType.toMediaTypeOrNull()
+    override fun contentLength(): Long = this@toRequestBody.contentLength
+
+    override fun writeTo(sink: BufferedSink) {
+        openStream().use { input ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var written = 0L
+            var lastReported = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                sink.write(buffer, 0, count)
+                written += count
+                if (written - lastReported >= 256L * 1024L || written == contentLength) {
+                    onProgress?.invoke(written, contentLength)
+                    lastReported = written
+                }
+            }
+        }
+    }
+}
 
 private fun displayApiErrorMessage(error: ErrorResponse?, status: Int): String {
     val code = error?.code
@@ -95,6 +127,13 @@ class ApiClient(private val sessionStore: SessionStore) {
             }
         }
 
+        if (sc.pirate.app.BuildConfig.DEBUG) {
+            Log.d(
+                "PirateApi",
+                "$method ${path.substringBefore('?')} -> ${response.status}",
+            )
+        }
+
         if (!response.successful) {
             val errorResponse = try {
                 json.decodeFromString<ErrorResponse>(response.body)
@@ -146,26 +185,11 @@ class ApiClient(private val sessionStore: SessionStore) {
         parts: MultipartBody,
         requireAuth: Boolean = true,
     ): String {
-        val response = withContext(Dispatchers.IO) {
-            val requestBuilder = Request.Builder().url("$baseUrl$path")
-            if (requireAuth) {
-                val token = sessionStore.getAccessToken()
-                if (token != null) {
-                    requestBuilder.header("Authorization", "Bearer $token")
-                }
-            }
-            client.newCall(
-                requestBuilder
-                    .post(parts)
-                    .build(),
-            ).execute().use { rawResponse ->
-                ApiResponse(
-                    successful = rawResponse.isSuccessful,
-                    status = rawResponse.code,
-                    body = rawResponse.body?.string().orEmpty(),
-                )
-            }
+        val requestBuilder = Request.Builder().url("$baseUrl$path")
+        if (requireAuth) {
+            sessionStore.getAccessToken()?.let { requestBuilder.header("Authorization", "Bearer $it") }
         }
+        val response = executeCancellable(requestBuilder.post(parts).build())
 
         if (!response.successful) {
             val errorResponse = try {
@@ -230,6 +254,55 @@ class ApiClient(private val sessionStore: SessionStore) {
         return response.body
     }
 
+    private suspend fun putStreamString(
+        path: String,
+        upload: StreamUpload,
+        requireAuth: Boolean = true,
+    ): String {
+        val requestBuilder = Request.Builder().url("$baseUrl$path")
+        if (requireAuth) {
+            sessionStore.getAccessToken()?.let { requestBuilder.header("Authorization", "Bearer $it") }
+        }
+        val response = executeCancellable(requestBuilder.put(upload.toRequestBody()).build())
+        if (!response.successful) {
+            val errorResponse = try {
+                json.decodeFromString<ErrorResponse>(response.body)
+            } catch (_: Exception) {
+                null
+            }
+            throw ApiError(
+                code = errorResponse?.code ?: "internal_error",
+                message = displayApiErrorMessage(errorResponse, response.status),
+                status = response.status,
+                retryable = errorResponse?.retryable == true,
+                details = errorResponse?.details,
+            )
+        }
+        return response.body
+    }
+
+    private suspend fun executeCancellable(request: Request): ApiResponse =
+        suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, error: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use {
+                        val result = ApiResponse(
+                            successful = it.isSuccessful,
+                            status = it.code,
+                            body = it.body?.string().orEmpty(),
+                        )
+                        if (continuation.isActive) continuation.resume(result)
+                    }
+                }
+            })
+        }
+
     private suspend fun putExternalBytesEtag(url: String, bytes: ByteArray, contentType: String): String {
         return withContext(Dispatchers.IO) {
             client.newCall(
@@ -275,13 +348,65 @@ class ApiClient(private val sessionStore: SessionStore) {
     val comments = CommentsEndpoints(this)
     val publicComments = PublicCommentsEndpoints(this)
     val profiles = ProfilesEndpoints(this)
+    val bookings = BookingsEndpoints(this)
     val notifications = NotificationsEndpoints(this)
+    val agents = AgentsEndpoints(this)
+
+    class BookingsEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun listHostSlots(
+            hostUserId: String,
+            from: String,
+            to: String,
+            timezone: String,
+        ): BookingSlotsResponse {
+            val path = api.buildQueryPath(
+                "/bookings/hosts/${api.encodePathSegment(hostUserId)}/slots",
+                listOf(
+                    "from" to from,
+                    "to" to to,
+                    "tz" to timezone,
+                ),
+            )
+            val response = api.getString(path, requireAuth = false)
+            return api.json.decodeFromString(BookingSlotsResponse.serializer(), response)
+        }
+    }
 
     class AuthEndpoints internal constructor(private val api: ApiClient) {
         suspend fun sessionExchange(proof: SessionExchangeProof): SessionExchangeResponse {
             val body = api.json.encodeToString(SessionExchangeRequest.serializer(), SessionExchangeRequest(proof))
             val response = api.postString("/auth/session/exchange", body, requireAuth = false)
             return api.json.decodeFromString(SessionExchangeResponse.serializer(), response)
+        }
+    }
+
+    class AgentsEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun list(cursor: String? = null, limit: Int = 50): UserAgentListResponse {
+            val response = api.getString(
+                api.buildQueryPath(
+                    "/agents",
+                    listOf("cursor" to cursor, "limit" to limit.toString()),
+                ),
+            )
+            return api.json.decodeFromString(UserAgentListResponse.serializer(), response)
+        }
+
+        suspend fun updateDisplayName(agentId: String, displayName: String): UserAgent {
+            val body = api.json.encodeToString(
+                UpdateUserAgentRequest.serializer(),
+                UpdateUserAgentRequest(displayName),
+            )
+            val response = api.postString("/agents/${api.encodePathSegment(agentId)}", body)
+            return api.json.decodeFromString(UserAgent.serializer(), response)
+        }
+
+        suspend fun updateHandle(agentId: String, desiredLabel: String): AgentHandle {
+            val body = api.json.encodeToString(
+                UpdateAgentHandleRequest.serializer(),
+                UpdateAgentHandleRequest(desiredLabel),
+            )
+            val response = api.postString("/agents/${api.encodePathSegment(agentId)}/handle", body)
+            return api.json.decodeFromString(AgentHandle.serializer(), response)
         }
     }
 
@@ -422,6 +547,77 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(CommunityFollowResponse.serializer(), response)
         }
 
+        suspend fun listMembershipRequests(
+            communityId: String,
+            cursor: String? = null,
+            limit: Int = 50,
+        ): MembershipRequestListResponse {
+            val communityPath = api.encodePathSegment(communityId)
+            val path = api.buildQueryPath(
+                "/communities/$communityPath/membership-requests",
+                listOf("cursor" to cursor, "limit" to limit.toString()),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(MembershipRequestListResponse.serializer(), response)
+        }
+
+        suspend fun reviewMembershipRequest(
+            communityId: String,
+            requestId: String,
+            approve: Boolean,
+        ): MembershipRequestSummary {
+            val decision = if (approve) "approve" else "reject"
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/membership-requests/" +
+                    "${api.encodePathSegment(requestId)}/$decision",
+            )
+            return api.json.decodeFromString(MembershipRequestSummary.serializer(), response)
+        }
+
+        suspend fun updateRules(
+            communityId: String,
+            request: UpdateCommunityRulesRequest,
+        ): Community {
+            val body = api.json.encodeToString(UpdateCommunityRulesRequest.serializer(), request)
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/rules",
+                body,
+            )
+            return api.json.decodeFromString(Community.serializer(), response)
+        }
+
+        suspend fun listModerationCases(communityId: String): ModerationCaseListResponse {
+            val response = api.getString(
+                "/communities/${api.encodePathSegment(communityId)}/moderation/cases",
+            )
+            return api.json.decodeFromString(ModerationCaseListResponse.serializer(), response)
+        }
+
+        suspend fun getModerationCase(
+            communityId: String,
+            moderationCaseId: String,
+        ): ModerationCaseDetail {
+            val response = api.getString(
+                "/communities/${api.encodePathSegment(communityId)}/moderation/cases/" +
+                    api.encodePathSegment(moderationCaseId),
+            )
+            return api.json.decodeFromString(ModerationCaseDetail.serializer(), response)
+        }
+
+        suspend fun resolveModerationCase(
+            communityId: String,
+            moderationCaseId: String,
+            request: CreateModerationActionRequest,
+        ): ModerationCaseDetail {
+            val body = api.json.encodeToString(CreateModerationActionRequest.serializer(), request)
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/moderation/cases/" +
+                    "${api.encodePathSegment(moderationCaseId)}/actions",
+                body,
+            )
+            return api.json.decodeFromString(ModerationCaseDetail.serializer(), response)
+        }
+
         suspend fun attachNamespace(communityId: String, namespaceVerificationId: String): Community {
             val body = api.json.encodeToString(
                 AttachNamespaceRequest.serializer(),
@@ -495,6 +691,16 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(CommunityMediaUploadResponse.serializer(), response)
         }
 
+        suspend fun uploadMedia(kind: String, upload: StreamUpload, filename: String): CommunityMediaUploadResponse {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("kind", kind)
+                .addFormDataPart("file", filename, upload.toRequestBody())
+                .build()
+            val response = api.postMultipartString("/community-media", body)
+            return api.json.decodeFromString(CommunityMediaUploadResponse.serializer(), response)
+        }
+
         suspend fun createArtifactUpload(
             communityId: String,
             request: CreateSongArtifactUploadRequest,
@@ -512,6 +718,18 @@ class ApiClient(private val sessionStore: SessionStore) {
             val response = api.putBytesString(
                 "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(uploadId)}/content",
                 bytes,
+            )
+            return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
+        }
+
+        suspend fun uploadArtifactContent(
+            communityId: String,
+            uploadId: String,
+            upload: StreamUpload,
+        ): SongArtifactUpload {
+            val response = api.putStreamString(
+                "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(uploadId)}/content",
+                upload,
             )
             return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
         }
@@ -691,6 +909,34 @@ class ApiClient(private val sessionStore: SessionStore) {
             return api.json.decodeFromString(LiveRoom.serializer(), response)
         }
 
+        suspend fun getLiveRoomReplayDraft(communityId: String, liveRoomId: String): LiveRoomReplayDraft {
+            val room = api.encodePathSegment(liveRoomId)
+            val response = api.getString("/communities/$communityId/live-rooms/$room/replay-draft")
+            return api.json.decodeFromString(LiveRoomReplayDraft.serializer(), response)
+        }
+
+        suspend fun updateLiveRoomReplayDraft(
+            communityId: String,
+            liveRoomId: String,
+            request: UpdateLiveRoomReplayDraftRequest,
+        ): LiveRoomReplayDraft {
+            val room = api.encodePathSegment(liveRoomId)
+            val body = api.json.encodeToString(UpdateLiveRoomReplayDraftRequest.serializer(), request)
+            val response = api.patchString("/communities/$communityId/live-rooms/$room/replay-draft", body)
+            return api.json.decodeFromString(LiveRoomReplayDraft.serializer(), response)
+        }
+
+        suspend fun publishLiveRoomReplayDraft(
+            communityId: String,
+            liveRoomId: String,
+            request: PublishLiveRoomReplayDraftRequest,
+        ): LiveRoomReplayDraft {
+            val room = api.encodePathSegment(liveRoomId)
+            val body = api.json.encodeToString(PublishLiveRoomReplayDraftRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/live-rooms/$room/replay-draft/publish", body)
+            return api.json.decodeFromString(LiveRoomReplayDraft.serializer(), response)
+        }
+
         suspend fun getAsset(communityId: String, assetId: String): Asset {
             val response = api.getString("/communities/$communityId/assets/${api.encodePathSegment(assetId)}")
             return api.json.decodeFromString(Asset.serializer(), response)
@@ -806,6 +1052,97 @@ class ApiClient(private val sessionStore: SessionStore) {
                 body,
                 headers = altchaHeader.toAltchaHeader(),
             )
+        }
+
+        suspend fun reportPost(communityId: String, postId: String, request: CreateUserReportRequest) {
+            val body = api.json.encodeToString(CreateUserReportRequest.serializer(), request)
+            api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/reports",
+                body,
+            )
+        }
+
+        suspend fun reportComment(communityId: String, commentId: String, request: CreateUserReportRequest) {
+            val body = api.json.encodeToString(CreateUserReportRequest.serializer(), request)
+            api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/comments/${api.encodePathSegment(commentId)}/reports",
+                body,
+            )
+        }
+
+        // --- Song Study ---
+
+        suspend fun getStudyPack(
+            communityId: String,
+            postId: String,
+            targetLanguage: String? = null,
+        ): SongStudyPayload {
+            val path = api.buildQueryPath(
+                "/communities/$communityId/posts/$postId/study",
+                listOf("target_language" to targetLanguage),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(SongStudyPayload.serializer(), response)
+        }
+
+        suspend fun submitStudyAttempt(
+            communityId: String,
+            postId: String,
+            request: SongStudyAttemptRequest,
+        ): SongStudyAttemptResult {
+            val body = api.json.encodeToString(SongStudyAttemptRequest.serializer(), request)
+            val response = api.postString("/communities/$communityId/posts/$postId/study/attempts", body)
+            return api.json.decodeFromString(SongStudyAttemptResult.serializer(), response)
+        }
+
+        suspend fun transcribeStudyAudio(
+            communityId: String,
+            postId: String,
+            bytes: ByteArray,
+            filename: String,
+            mimeType: String,
+        ): SongStudyTranscriptionResponse {
+            val parts = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart(
+                    "file",
+                    filename,
+                    bytes.toRequestBody(mimeType.toMediaTypeOrNull()),
+                )
+                .build()
+            val response = api.postMultipartString(
+                "/communities/$communityId/posts/$postId/study/transcriptions",
+                parts,
+            )
+            return api.json.decodeFromString(SongStudyTranscriptionResponse.serializer(), response)
+        }
+
+        suspend fun getKaraokePayload(
+            communityId: String,
+            postId: String,
+            locale: String? = null,
+        ): SongKaraokePayload {
+            val path = api.buildQueryPath(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/karaoke",
+                listOf("locale" to locale),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(SongKaraokePayload.serializer(), response)
+        }
+
+        suspend fun createKaraokeSession(
+            communityId: String,
+            postId: String,
+            idempotencyKey: String,
+            request: KaraokeSessionCreateRequest = KaraokeSessionCreateRequest(),
+        ): KaraokeSession {
+            val body = api.json.encodeToString(KaraokeSessionCreateRequest.serializer(), request)
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/karaoke/sessions",
+                body,
+                headers = mapOf("Idempotency-Key" to idempotencyKey),
+            )
+            return api.json.decodeFromString(KaraokeSession.serializer(), response)
         }
     }
 
@@ -1003,7 +1340,12 @@ class ApiClient(private val sessionStore: SessionStore) {
         }
 
         suspend fun getByUserId(userId: String): Profile {
-            val response = api.getString("/profiles/$userId")
+            // This is a public projection. Keeping it token-free matches web and
+            // prevents an expired session from hiding authors on public threads.
+            val response = api.getString(
+                "/profiles/${api.encodePathSegment(userId)}",
+                requireAuth = false,
+            )
             return api.json.decodeFromString(Profile.serializer(), response)
         }
 
