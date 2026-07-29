@@ -276,6 +276,71 @@ class ApiClient(private val sessionStore: SessionStore) {
     val publicComments = PublicCommentsEndpoints(this)
     val profiles = ProfilesEndpoints(this)
     val notifications = NotificationsEndpoints(this)
+    val study = StudyEndpoints(this)
+
+    /**
+     * Song study. Every path is community-scoped because study access is decided by community
+     * membership and entitlement, not by the post alone.
+     */
+    class StudyEndpoints internal constructor(private val api: ApiClient) {
+        suspend fun getPostStudy(
+            communityId: String,
+            postId: String,
+            targetLanguage: String? = null,
+        ): SongStudyPayload {
+            val path = api.buildQueryPath(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/study",
+                listOf("target_language" to targetLanguage),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(SongStudyPayload.serializer(), response)
+        }
+
+        suspend fun submitAttempt(
+            communityId: String,
+            postId: String,
+            request: SongStudyAttemptRequest,
+        ): SongStudyAttemptResult {
+            val body = api.json.encodeToString(SongStudyAttemptRequest.serializer(), request)
+            val response = api.postString(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/study/attempts",
+                body,
+            )
+            return api.json.decodeFromString(SongStudyAttemptResult.serializer(), response)
+        }
+
+        /** Say-it-back audio. The form field is `file`, matching the web client. */
+        suspend fun transcribe(
+            communityId: String,
+            postId: String,
+            bytes: ByteArray,
+            filename: String,
+            mimeType: String,
+        ): SongStudyTranscriptionResponse {
+            val body = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("file", filename, bytes.toRequestBody(mimeType.toMediaTypeOrNull()))
+                .build()
+            val response = api.postMultipartString(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/study/transcriptions",
+                body,
+            )
+            return api.json.decodeFromString(SongStudyTranscriptionResponse.serializer(), response)
+        }
+
+        suspend fun getStreakLeaderboard(
+            communityId: String,
+            postId: String,
+            limit: Int? = null,
+        ): SongStreakLeaderboard {
+            val path = api.buildQueryPath(
+                "/communities/${api.encodePathSegment(communityId)}/posts/${api.encodePathSegment(postId)}/streaks/leaderboard",
+                listOf("limit" to limit?.toString()),
+            )
+            val response = api.getString(path)
+            return api.json.decodeFromString(SongStreakLeaderboard.serializer(), response)
+        }
+    }
 
     class AuthEndpoints internal constructor(private val api: ApiClient) {
         suspend fun sessionExchange(proof: SessionExchangeProof): SessionExchangeResponse {
