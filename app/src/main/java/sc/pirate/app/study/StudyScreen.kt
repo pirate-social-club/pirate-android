@@ -15,7 +15,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -183,7 +182,6 @@ private fun StudyContent(
                     if (exercise == null) {
                         CompleteSurface(pack = pack, correctCount = state.correctCount)
                     } else {
-                        ExerciseHeader(index = state.index, total = state.queue.size)
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -257,24 +255,6 @@ private fun CompleteSurface(pack: SongStudyPayload, correctCount: Int) {
     }
 }
 
-@Composable
-private fun ExerciseHeader(index: Int, total: Int) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        LinearProgressIndicator(
-            progress = { (index + 1).toFloat() / total.coerceAtLeast(1) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp),
-            color = PirateTokens.colors.accentBrand,
-            trackColor = PirateTokens.colors.borderSoft,
-        )
-        Text(
-            text = "${index + 1} of $total",
-            style = MaterialTheme.typography.labelLarge,
-            color = PirateTokens.colors.textSecondary,
-        )
-    }
-}
 
 @Composable
 private fun TranslationChoiceCard(
@@ -418,13 +398,6 @@ private fun SayItBackCard(
                     )
                 }
             }
-            result.nextReviewHint?.let { hint ->
-                Text(
-                    text = reviewHintLabel(hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = PirateTokens.colors.textSecondary,
-                )
-            }
         } else {
             state.transcriptionError?.let { FormNote(message = it, tone = FormTone.Error) }
         }
@@ -444,13 +417,6 @@ private fun VerdictNote(result: SongStudyAttemptResult?) {
         Text(text = message, style = MaterialTheme.typography.bodyMedium, color = PirateTokens.colors.accentSuccess)
     } else {
         FormNote(message = message, tone = tone)
-    }
-    result.nextReviewHint?.let { hint ->
-        Text(
-            text = reviewHintLabel(hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = PirateTokens.colors.textSecondary,
-        )
     }
 }
 
@@ -519,10 +485,3 @@ private fun unavailableMessage(reason: String?): String = when (reason) {
     else -> "This song can't be studied right now."
 }
 
-private fun reviewHintLabel(hint: String): String = when (hint) {
-    "again" -> "You'll see this again soon."
-    "hard" -> "Scheduled to review after a short break."
-    "good" -> "Scheduled for later review."
-    "easy" -> "You've got this — scheduled far out."
-    else -> ""
-}
