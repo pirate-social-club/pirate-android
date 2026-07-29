@@ -58,6 +58,22 @@ rtk /home/t42/Android/Sdk/platform-tools/adb install -r /tmp/pirate-android-prod
 rtk /home/t42/Android/Sdk/platform-tools/adb shell monkey -p sc.pirate.mobile -c android.intent.category.LAUNCHER 1
 ```
 
+### Study and Sing QA needs the production APK
+
+`android-ci.yml` verifies tests, compilation, and staging behaviour. It cannot
+verify Study or Sing at all: staging carries no song posts and no
+`references_song` derivative attributions, so the feed rail has nothing to
+resolve and the actions never render. A Blacksmith build will look like the
+feature is missing when it is only unreachable.
+
+Content QA for anything song-derived — the Study/Sing rail, the study surface,
+karaoke — must use `android-release-apk.yml` and its `release-apk` artifact,
+which builds `sc.pirate.mobile` against `https://api.pirate.sc`.
+
+Do not point `android-ci.yml` at production, and do not hand-build a debug APK
+against production to work around this. A debug build that silently talks to
+production is the same hazard with none of the traceability.
+
 ## Slow Machine Policy
 
 - Static review locally; build and compile verification on Blacksmith.
