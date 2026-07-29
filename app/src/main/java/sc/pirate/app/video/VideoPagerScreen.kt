@@ -66,6 +66,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import android.content.Context
+import android.content.Intent
+import sc.pirate.app.BuildConfig
 import sc.pirate.app.PirateApp
 import sc.pirate.app.R
 import sc.pirate.app.api.model.LocalizedPostResponse
@@ -185,18 +188,7 @@ class VideoPagerViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun applyVote(postId: String, value: Int) {
-        _state.value = _state.value.copy(
-            items = _state.value.items.map { candidate ->
-                if (candidate.postId != postId) return@map candidate
-                val previous = candidate.viewerVote ?: 0
-                if (previous == value) return@map candidate
-                val delta = (if (value > 0) 1 else 0) - (if (previous > 0) 1 else 0)
-                candidate.copy(
-                    likeCount = (candidate.likeCount + delta).coerceAtLeast(0),
-                    viewerVote = value,
-                )
-            },
-        )
+        _state.value = _state.value.copy(items = applyVideoVote(_state.value.items, postId, value))
     }
 
     private class VideoPage(val items: List<VideoPagerItem>, val nextCursor: String?)
@@ -279,6 +271,7 @@ fun VideoPagerScreen(
     // Autoplay always begins muted; the stored preference only decides whether we unmute once the
     // first page is ready, so opening the app in public is never loud.
     var muted by remember { mutableStateOf(true) }
+    var storedSoundApplied by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
 
     val preload = remember {
@@ -309,6 +302,15 @@ fun VideoPagerScreen(
     }
 
     LaunchedEffect(muted, pool.heldKeys) { pool.setMuted(muted) }
+
+    // Restore the viewer's sound choice once a player exists, never before: the feed must open
+    // muted even for someone who previously chose sound, and only unmute once there is something
+    // to unmute. Guarded so a later swipe cannot re-apply it over a fresh mute.
+    LaunchedEffect(pool.heldKeys) {
+        if (storedSoundApplied || pool.heldKeys.isEmpty()) return@LaunchedEffect
+        storedSoundApplied = true
+        if (!soundPreference.muted) muted = false
+    }
 
     if (state.loading) {
         Box(modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
@@ -357,6 +359,7 @@ fun VideoPagerScreen(
                 active = page == pagerState.settledPage,
                 item = item,
                 muted = muted,
+                onShare = { sharePost(context, item) },
                 onToggleLike = { viewModel.toggleLike(item) },
                 onToggleMuted = {
                     val next = !muted
@@ -420,6 +423,7 @@ private fun VideoPagerPage(
     active: Boolean,
     item: VideoPagerItem,
     muted: Boolean,
+    onShare: () -> Unit,
     onToggleLike: () -> Unit,
     onToggleMuted: () -> Unit,
     onTogglePaused: () -> Unit,
@@ -491,6 +495,7 @@ private fun VideoPagerPage(
 
         VideoRail(
             item = item,
+            onShare = onShare,
             onToggleLike = onToggleLike,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -544,6 +549,7 @@ private fun VideoSoundToggle(muted: Boolean, onToggle: () -> Unit, modifier: Mod
 @Composable
 private fun VideoRail(
     item: VideoPagerItem,
+    onShare: () -> Unit,
     onToggleLike: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -569,15 +575,13 @@ private fun VideoRail(
             value = compactCount(item.likeCount),
             onClick = onToggleLike,
         )
-        VideoRailAction(
-            icon = PhosphorIcons.ChatCircleFill,
-            label = "Comments",
-            value = compactCount(item.commentCount),
-        )
+        // Comments are deliberately absent until there is a sheet behind them. A rail button that
+        // does nothing teaches viewers the rail is decorative, which is worse than one fewer icon.
         VideoRailAction(
             icon = PhosphorIcons.ShareFatFill,
             label = "Share",
             value = "Share",
+            onClick = onShare,
         )
     }
 }
@@ -675,4 +679,19 @@ private fun VideoProgressBar(
                 .background(Color.White),
         )
     }
+}
+
+/**
+ * Hands the post to the system share sheet. Shares the public web page rather than the media URL:
+ * a raw media link has no attribution, no caption, and stops working the moment storage moves.
+ */
+private fun sharePost(context: Context, item: VideoPagerItem) {
+    val base = BuildConfig.WEB_BASE_URL.trim().trimEnd('/')
+    val url = "$base/p/${item.postId}"
+    val text = listOfNotNull(item.caption?.takeIf { it.isNotBlank() }, url).joinToString("\n\n")
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    context.startActivity(Intent.createChooser(send, null))
 }
