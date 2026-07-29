@@ -564,6 +564,12 @@ data class SongPresentation(
 data class LocalizedPostResponse(
     val post: Post,
     @SerialName("song_presentation") val songPresentation: SongPresentation? = null,
+    /**
+     * Whether this post offers studying. A feed rail reads `status == "ready"` to decide
+     * whether to draw a Study action at all, the same test web applies before producing a
+     * studyHref. Absent on posts that are not songs.
+     */
+    @SerialName("study_capability") val studyCapability: SongStudyCapability? = null,
     @SerialName("age_gate_viewer_state") val ageGateViewerState: String? = null,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
     @SerialName("comment_count") val commentCount: Int? = null,

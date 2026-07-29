@@ -52,7 +52,17 @@ data class SongStudySessionSummary(
     @SerialName("first_pass_correct_count") val firstPassCorrectCount: Int = 0,
     @SerialName("mastered_exercise_count") val masteredExerciseCount: Int = 0,
     val qualified: Boolean = false,
-)
+    /** Unix seconds. Present when the session is caught up and reviews resume later. */
+    @SerialName("next_due_at") val nextDueAt: Long? = null,
+) {
+    /**
+     * Web treats an absent session id as "caught up", not as an error: study-route.tsx gates on
+     * `exercises.length === 0 || !study.session?.id` and renders a blocked surface. Attempts are
+     * only ever submitted when an id exists, because submitting against a stale one is the
+     * "session expired, reopen the lesson" path.
+     */
+    val submittable: Boolean get() = !id.isNullOrBlank()
+}
 
 /**
  * One exercise.

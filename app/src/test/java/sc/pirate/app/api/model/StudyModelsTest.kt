@@ -257,3 +257,68 @@ class StudyCapabilityAndStreakDecodingTest {
         assertEquals("en", transcription.languageCode)
     }
 }
+
+class StudySessionGatingTest {
+
+    /**
+     * Web renders "caught up", not an error, when a payload has no exercises or no session id.
+     * Modelling it as a normal state is what stops the Android screen inventing an error surface
+     * for the ordinary end of a lesson.
+     */
+    @Test
+    fun `a caught-up session carries a next due time and blocks submission`() {
+        val payload = json.decodeFromString(
+            SongStudyPayload.serializer(),
+            """
+            {"post_id":"p","community_id":"c","access":"ready","title":"t","exercise_count":0,
+             "exercises":[],
+             "session":{"id":null,"status":"caught_up","due_count":0,"served_count":0,
+              "total_units":10,"required_correct_count":8,"max_presentations":3,
+              "presentation_count":0,"completed_exercise_count":10,
+              "first_pass_correct_count":9,"mastered_exercise_count":10,"qualified":true,
+              "next_due_at":1753100000}}
+            """.trimIndent(),
+        )
+
+        assertTrue(payload.exercises.isEmpty())
+        assertEquals("caught_up", payload.session?.status)
+        assertEquals(1753100000L, payload.session?.nextDueAt)
+        assertFalse(payload.session?.submittable ?: true)
+    }
+
+    @Test
+    fun `an active session with an id is submittable`() {
+        val session = json.decodeFromString(
+            SongStudySessionSummary.serializer(),
+            """{"id":"ses_1","status":"active","due_count":3,"served_count":1,"total_units":8,
+                "required_correct_count":6,"max_presentations":3,"presentation_count":1,
+                "completed_exercise_count":0,"first_pass_correct_count":0,
+                "mastered_exercise_count":0,"qualified":false}""",
+        )
+
+        assertTrue(session.submittable)
+        assertNull(session.nextDueAt)
+    }
+
+    @Test
+    fun `a post without study capability is not actionable`() {
+        val post = json.decodeFromString(
+            LocalizedPostResponse.serializer(),
+            """{"post":{"id":"post_1","community":"cmt_1"}}""",
+        )
+
+        assertNull(post.studyCapability)
+    }
+
+    @Test
+    fun `a post carrying a ready study capability is actionable`() {
+        val post = json.decodeFromString(
+            LocalizedPostResponse.serializer(),
+            """{"post":{"id":"post_1","community":"cmt_1"},
+                "study_capability":{"status":"ready","exercise_count":8,"target_language":"es"}}""",
+        )
+
+        assertTrue(post.studyCapability?.ready ?: false)
+        assertEquals(8, post.studyCapability?.exerciseCount)
+    }
+}
