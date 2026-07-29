@@ -120,6 +120,30 @@ class VideoPagerViewModel(application: Application) : AndroidViewModel(applicati
     private val seenPostIds = mutableSetOf<String>()
     private val votesInFlight = mutableSetOf<String>()
 
+    /*
+     * Playback lives here rather than in composition. Leaving Home used to dispose the pool, which
+     * released two ExoPlayers — codec teardown, main thread — in the same frame the incoming tab
+     * first composed, and returning rebuilt both from scratch. Measured on a Pixel 8: two
+     * Release on exit, two Init on return, every round trip. The view model survives tab switches
+     * on the nav back stack, so the players now survive with it: leaving costs a pause, returning
+     * costs nothing, and codec teardown happens once in onCleared.
+     */
+    val preload: VideoPreloadCoordinator = VideoPreloadCoordinator(
+        app,
+        app.videoMediaCache.mediaSourceFactory,
+    )
+    val pool: VideoPlayerPool = VideoPlayerPool(
+        createPlayer = preload::createPlayer,
+        preloadedSourceFor = preload::mediaSourceFor,
+    )
+
+    override fun onCleared() {
+        // Players first: they hold periods the manager owns.
+        pool.releaseAll()
+        preload.release()
+        super.onCleared()
+    }
+
     fun load() {
         if (!_state.value.loading && _state.value.items.isNotEmpty()) return
         val generation = ++loadGeneration
@@ -278,22 +302,12 @@ fun VideoPagerScreen(
     var storedSoundApplied by remember { mutableStateOf(false) }
     var paused by remember { mutableStateOf(false) }
 
-    val preload = remember {
-        val app = context.applicationContext as PirateApp
-        VideoPreloadCoordinator(app, app.videoMediaCache.mediaSourceFactory)
-    }
-    val pool = remember(preload) {
-        VideoPlayerPool(
-            createPlayer = preload::createPlayer,
-            preloadedSourceFor = preload::mediaSourceFor,
-        )
-    }
-    DisposableEffect(pool, preload) {
-        onDispose {
-            // Players first: they hold periods the manager owns.
-            pool.releaseAll()
-            preload.release()
-        }
+    val preload = viewModel.preload
+    val pool = viewModel.pool
+    DisposableEffect(pool) {
+        // Leaving the tab only stops playback; the players stay warm for the return. Releasing
+        // here is what made every tab switch stutter.
+        onDispose { pool.pauseAll() }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
