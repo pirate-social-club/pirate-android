@@ -57,6 +57,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import kotlinx.coroutines.CancellationException
@@ -91,6 +92,8 @@ data class VideoPagerItem(
     val likeCount: Int,
     val commentCount: Int,
     val viewerVote: Int?,
+    /** Portrait media fills the frame; landscape is fitted so it is never cropped in half. */
+    val portrait: Boolean,
     val post: LocalizedPostResponse,
 ) {
     val liked: Boolean get() = (viewerVote ?: 0) > 0
@@ -224,6 +227,7 @@ class VideoPagerViewModel(application: Application) : AndroidViewModel(applicati
                     likeCount = post.likeCount.takeIf { it > 0 } ?: post.upvoteCount,
                     commentCount = post.commentCount ?: 0,
                     viewerVote = post.viewerVote,
+                    portrait = videoAspectRatio(post) < 1f,
                     post = post,
                 )
             }
@@ -445,7 +449,7 @@ private fun VideoPagerPage(
             AsyncImage(
                 model = item.posterUrl,
                 contentDescription = item.caption ?: item.handle,
-                contentScale = ContentScale.Fit,
+                contentScale = if (item.portrait) ContentScale.Crop else ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
             )
         }
@@ -461,6 +465,14 @@ private fun VideoPagerPage(
                     }
                 },
                 update = { view ->
+                    // ZOOM crops the overflowing axis to fill; FIT letterboxes. A portrait feed
+                    // that letterboxes portrait media is showing bars around content that already
+                    // matches the screen.
+                    view.resizeMode = if (item.portrait) {
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    } else {
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
                     val player = pool.playerFor(item.postId)
                     if (view.player !== player) view.player = player
                 },
@@ -523,8 +535,12 @@ private fun VideoPagerPage(
     }
 }
 
-/** The bottom nav overlays the video, so every overlaid control clears its height. */
-private val BOTTOM_BAR_CLEARANCE = 76.dp
+/**
+ * The bottom nav overlays the video, so overlaid controls clear exactly its height — the bar is a
+ * 64dp row plus the gesture inset, and each overlay adds that inset itself via
+ * navigationBarsPadding. Anything more leaves a visible dead band under the caption.
+ */
+private val BOTTOM_BAR_CLEARANCE = 64.dp
 
 @Composable
 private fun VideoSoundToggle(muted: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
