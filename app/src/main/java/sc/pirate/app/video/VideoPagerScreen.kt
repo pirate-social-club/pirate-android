@@ -286,6 +286,7 @@ private fun trimZero(value: Double): String {
  */
 @Composable
 fun VideoPagerScreen(
+    onOpenNavigation: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: VideoPagerViewModel = viewModel(),
 ) {
@@ -375,6 +376,7 @@ fun VideoPagerScreen(
             val item = state.items[page]
             VideoPagerPage(
                 active = page == pagerState.settledPage,
+                onOpenNavigation = onOpenNavigation,
                 item = item,
                 muted = muted,
                 onShare = { sharePost(context, item) },
@@ -439,6 +441,7 @@ private const val NEAR_END_THRESHOLD = 3
 @Composable
 private fun VideoPagerPage(
     active: Boolean,
+    onOpenNavigation: () -> Unit,
     item: VideoPagerItem,
     muted: Boolean,
     onShare: () -> Unit,
@@ -513,11 +516,24 @@ private fun VideoPagerPage(
             )
         }
 
-        VideoSoundToggle(
-            muted = muted,
-            onToggle = onToggleMuted,
+        Row(
             modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(12.dp),
-        )
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            // The old mixed feed carried the only drawer trigger in the app. Making this the Home
+            // destination without one strands the entire navigation drawer, so the full-bleed
+            // surface has to carry it.
+            VideoOverlayButton(
+                icon = PhosphorIcons.List,
+                label = "Open navigation",
+                onClick = onOpenNavigation,
+            )
+            VideoOverlayButton(
+                icon = if (muted) PhosphorIcons.SpeakerSlashFill else PhosphorIcons.SpeakerHighFill,
+                label = if (muted) "Sound on" else "Mute video",
+                onClick = onToggleMuted,
+            )
+        }
 
         VideoRail(
             item = item,
@@ -557,22 +573,21 @@ private fun VideoPagerPage(
 private val BOTTOM_BAR_CLEARANCE = 64.dp
 
 @Composable
-private fun VideoSoundToggle(muted: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+private fun VideoOverlayButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
     val interactionSource = remember { MutableInteractionSource() }
     Box(
-        modifier
+        Modifier
             .size(40.dp)
             .clip(CircleShape)
             .background(Color.Black.copy(alpha = 0.45f))
-            .clickable(interactionSource = interactionSource, indication = null, onClick = onToggle),
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            imageVector = if (muted) PhosphorIcons.SpeakerSlashFill else PhosphorIcons.SpeakerHighFill,
-            contentDescription = if (muted) "Sound on" else "Mute video",
-            tint = Color.White,
-            modifier = Modifier.size(20.dp),
-        )
+        Icon(imageVector = icon, contentDescription = label, tint = Color.White, modifier = Modifier.size(20.dp))
     }
 }
 
