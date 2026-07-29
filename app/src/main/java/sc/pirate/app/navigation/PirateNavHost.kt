@@ -54,6 +54,7 @@ import sc.pirate.app.profile.UserProfileViewModel
 import sc.pirate.app.settings.SettingsScreen
 import sc.pirate.app.submit.GlobalSubmitScreen
 import sc.pirate.app.verification.SelfVerificationScreen
+import sc.pirate.app.video.VideoPagerScreen
 import sc.pirate.app.wallet.WalletScreen
 import sc.pirate.app.wallet.WalletViewModel
 import kotlinx.coroutines.launch
@@ -103,7 +104,8 @@ fun PirateNavHost(
 
     NavHost(
         navController = navController,
-        startDestination = PirateRoute.Home.route,
+        // Home is the vertical video feed, as on web.
+        startDestination = PirateRoute.VideoFeed.route,
         modifier = modifier,
         enterTransition = { EnterTransition.None },
         exitTransition = { ExitTransition.None },
@@ -144,7 +146,7 @@ fun PirateNavHost(
                     onLogout = vm::logout,
                     onDismiss = {
                         if (!navController.popBackStack()) {
-                            navController.navigate(PirateRoute.Home.route) {
+                            navController.navigate(PirateRoute.VideoFeed.route) {
                                 popUpTo(navController.graph.findStartDestination().id) {
                                     inclusive = false
                                 }
@@ -161,11 +163,15 @@ fun PirateNavHost(
             OnboardingScreen(
                 viewModel = vm,
                 onComplete = {
-                    navController.navigate(PirateRoute.Home.route) {
+                    navController.navigate(PirateRoute.VideoFeed.route) {
                         popUpTo(PirateRoute.Onboarding.route) { inclusive = true }
                     }
                 },
             )
+        }
+
+        composable(PirateRoute.VideoFeed.route) {
+            VideoPagerScreen()
         }
 
         composable(PirateRoute.Home.route) {
@@ -855,7 +861,7 @@ private fun AuthGate(
             onLoginEmail = authVm::loginWithEmail,
             onLogout = authVm::logout,
             onDismiss = {
-                navController.navigate(PirateRoute.Home.route) {
+                navController.navigate(PirateRoute.VideoFeed.route) {
                     popUpTo(navController.graph.findStartDestination().id) {
                         inclusive = false
                     }

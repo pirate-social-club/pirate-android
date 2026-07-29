@@ -121,12 +121,15 @@ private fun PirateAppShell(
     }
 
     val bottomItems = listOf(
+        // Home *is* the vertical video feed, as it is on web: VideoHomePage owns the web Home
+        // route and falls back to the mixed feed only when there is nothing to play. There is no
+        // separate Videos tab — two entries for one idea is what made this confusing.
         BottomNavItem(
-            route = PirateRoute.Home.route,
+            route = PirateRoute.VideoFeed.route,
             label = "Home",
             icon = PhosphorIcons.House,
             activeIcon = PhosphorIcons.HouseFill,
-            activeRoutes = setOf(PirateRoute.Home.route, PirateRoute.Community.route),
+            activeRoutes = setOf(PirateRoute.VideoFeed.route, PirateRoute.Community.route),
         ),
         BottomNavItem(
             PirateRoute.Wallet.route,
@@ -171,7 +174,7 @@ private fun PirateAppShell(
                 onClose = closeDrawer,
                 onHome = {
                     runAfterDrawerClose {
-                        navController.navigateFromDrawer(PirateRoute.Home.route)
+                        navController.navigateFromDrawer(PirateRoute.VideoFeed.route)
                     }
                 },
                 onYourCommunities = {
@@ -211,7 +214,7 @@ private fun PirateAppShell(
                         showSignInDrawer = false
                         pendingWalletOpen = false
                         authVm.logout()
-                        navController.navigateFromDrawer(PirateRoute.Home.route)
+                        navController.navigateFromDrawer(PirateRoute.VideoFeed.route)
                     }
                 },
                 onSignIn = {
