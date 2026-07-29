@@ -21,6 +21,9 @@ private fun item(id: String, likeCount: Int, viewerVote: Int?) = VideoPagerItem(
     commentCount = 0,
     viewerVote = viewerVote,
     portrait = true,
+    songSourcePostId = null,
+    songSourceCommunityId = null,
+    capabilities = null,
     post = LocalizedPostResponse(post = Post()),
 )
 

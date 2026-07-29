@@ -85,6 +85,13 @@ interface FeedRepository {
         sort: String? = null,
         timeRange: String? = null,
     ): HomeFeedResponse
+
+    /** Ranked video feed — what the vertical video surface consumes. */
+    suspend fun videos(
+        cursor: String? = null,
+        locale: String? = null,
+        sort: String? = null,
+    ): HomeFeedResponse
 }
 
 interface CommunityRepository {
@@ -345,6 +352,14 @@ class ApiFeedRepository(
             sort = sort,
             timeRange = timeRange,
         )
+    }
+
+    override suspend fun videos(
+        cursor: String?,
+        locale: String?,
+        sort: String?,
+    ): HomeFeedResponse {
+        return apiClient.feed.videos(cursor = cursor, locale = locale, sort = sort)
     }
 }
 

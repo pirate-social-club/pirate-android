@@ -188,7 +188,19 @@ fun PirateNavHost(
         }
 
         composable(PirateRoute.VideoFeed.route) {
-            VideoPagerScreen(onOpenNavigation = onOpenNavigation)
+            VideoPagerScreen(
+                onOpenNavigation = onOpenNavigation,
+                onStudy = { communityId, postId ->
+                    navController.navigate(PirateRoute.Study.buildRoute(communityId, postId)) {
+                        launchSingleTop = true
+                    }
+                },
+                onSing = { communityId, postId ->
+                    navController.navigate(PirateRoute.Karaoke.buildRoute(communityId, postId)) {
+                        launchSingleTop = true
+                    }
+                },
+            )
         }
 
         composable(PirateRoute.Home.route) {

@@ -94,6 +94,11 @@ data class VideoPagerItem(
     val viewerVote: Int?,
     /** Portrait media fills the frame; landscape is fitted so it is never cropped in half. */
     val portrait: Boolean,
+    /** The song this video references, if any. Capabilities are resolved from that post. */
+    val songSourcePostId: String?,
+    val songSourceCommunityId: String?,
+    /** Filled in once the referenced song post has been fetched. */
+    val capabilities: VideoSongCapabilities?,
     val post: LocalizedPostResponse,
 ) {
     val liked: Boolean get() = (viewerVote ?: 0) > 0
@@ -118,6 +123,9 @@ class VideoPagerViewModel(application: Application) : AndroidViewModel(applicati
 
     private var loadGeneration = 0
     private val seenPostIds = mutableSetOf<String>()
+    /** One fetch per song post per session; many videos can reference the same song. */
+    private val capabilityCache = mutableMapOf<String, VideoSongCapabilities>()
+    private val capabilityInFlight = mutableSetOf<String>()
     private val votesInFlight = mutableSetOf<String>()
 
     /*
@@ -218,6 +226,52 @@ class VideoPagerViewModel(application: Application) : AndroidViewModel(applicati
         _state.value = _state.value.copy(items = applyVideoVote(_state.value.items, postId, value))
     }
 
+    /**
+     * Resolves the songs behind the current position and the next one, so the rail is already
+     * correct by the time the viewer arrives rather than popping in after they land.
+     */
+    fun resolveCapabilitiesAround(index: Int) {
+        val items = _state.value.items
+        listOfNotNull(items.getOrNull(index), items.getOrNull(index + 1)).forEach { item ->
+            val songPostId = item.songSourcePostId ?: return@forEach
+            if (item.capabilities != null) return@forEach
+            capabilityCache[songPostId]?.let { cached ->
+                applyCapabilities(songPostId, cached)
+                return@forEach
+            }
+            if (!capabilityInFlight.add(songPostId)) return@forEach
+            viewModelScope.launch {
+                try {
+                    val songPost = postRepository.getPost(songPostId)
+                    val resolved = resolveVideoSongCapabilities(
+                        songPostId = songPostId,
+                        songCommunityId = item.songSourceCommunityId.orEmpty(),
+                        songPost = songPost,
+                    )
+                    capabilityCache[songPostId] = resolved
+                    applyCapabilities(songPostId, resolved)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    // A song we cannot read simply offers nothing; the rail stays as it is.
+                    capabilityCache[songPostId] = VideoSongCapabilities.NONE
+                    applyCapabilities(songPostId, VideoSongCapabilities.NONE)
+                } finally {
+                    capabilityInFlight.remove(songPostId)
+                }
+            }
+        }
+    }
+
+    private fun applyCapabilities(songPostId: String, resolved: VideoSongCapabilities) {
+        _state.value = _state.value.copy(
+            items = _state.value.items.map { candidate ->
+                if (candidate.songSourcePostId != songPostId || candidate.capabilities != null) candidate
+                else candidate.copy(capabilities = resolved)
+            },
+        )
+    }
+
     private class VideoPage(val items: List<VideoPagerItem>, val nextCursor: String?)
 
     /**
@@ -229,7 +283,7 @@ class VideoPagerViewModel(application: Application) : AndroidViewModel(applicati
         var nextCursor = cursor
         val collected = mutableListOf<VideoPagerItem>()
         for (page in 0 until MAX_HUNT_PAGES) {
-            val response = feedRepository.home(cursor = nextCursor)
+            val response = feedRepository.videos(cursor = nextCursor)
             if (generation != loadGeneration) return VideoPage(emptyList(), null)
             nextCursor = response.nextCursor
             response.items.forEach { entry ->
@@ -252,6 +306,9 @@ class VideoPagerViewModel(application: Application) : AndroidViewModel(applicati
                     commentCount = post.commentCount ?: 0,
                     viewerVote = post.viewerVote,
                     portrait = videoAspectRatio(post) < 1f,
+                    songSourcePostId = referencedSong(post)?.sourcePost,
+                    songSourceCommunityId = referencedSong(post)?.community?.takeIf { it.isNotBlank() },
+                    capabilities = null,
                     post = post,
                 )
             }
@@ -287,6 +344,8 @@ private fun trimZero(value: Double): String {
 @Composable
 fun VideoPagerScreen(
     onOpenNavigation: () -> Unit = {},
+    onStudy: (communityId: String, postId: String) -> Unit = { _, _ -> },
+    onSing: (communityId: String, postId: String) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier,
     viewModel: VideoPagerViewModel = viewModel(),
 ) {
@@ -361,6 +420,7 @@ fun VideoPagerScreen(
         items = state.items,
         onNearEnd = viewModel::loadMore,
         onSettled = { paused = false },
+        onSettledIndex = viewModel::resolveCapabilitiesAround,
         pagerState = pagerState,
         pool = pool,
         preload = preload,
@@ -380,6 +440,12 @@ fun VideoPagerScreen(
                 item = item,
                 muted = muted,
                 onShare = { sharePost(context, item) },
+                onStudy = {
+                    item.capabilities?.let { onStudy(it.songCommunityId, it.songPostId) }
+                },
+                onSing = {
+                    item.capabilities?.let { onSing(it.songCommunityId, it.songPostId) }
+                },
                 onToggleLike = { viewModel.toggleLike(item) },
                 onToggleMuted = {
                     val next = !muted
@@ -409,6 +475,7 @@ private fun VideoPagerPlaybackEffect(
     items: List<VideoPagerItem>,
     onNearEnd: () -> Unit,
     onSettled: () -> Unit,
+    onSettledIndex: (Int) -> Unit,
     pagerState: PagerState,
     pool: VideoPlayerPool,
     preload: VideoPreloadCoordinator,
@@ -421,6 +488,7 @@ private fun VideoPagerPlaybackEffect(
                 // Move the preload window before binding players, so the next page is already
                 // being prepared while the current one starts.
                 preload.setCurrentIndex(settled)
+                onSettledIndex(settled)
                 pool.obtain(current.postId, current.url)
                 pool.playOnly(current.postId)
                 onSettled()
@@ -445,6 +513,8 @@ private fun VideoPagerPage(
     item: VideoPagerItem,
     muted: Boolean,
     onShare: () -> Unit,
+    onSing: () -> Unit,
+    onStudy: () -> Unit,
     onToggleLike: () -> Unit,
     onToggleMuted: () -> Unit,
     onTogglePaused: () -> Unit,
@@ -538,6 +608,8 @@ private fun VideoPagerPage(
         VideoRail(
             item = item,
             onShare = onShare,
+            onSing = onSing,
+            onStudy = onStudy,
             onToggleLike = onToggleLike,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -595,6 +667,8 @@ private fun VideoOverlayButton(
 private fun VideoRail(
     item: VideoPagerItem,
     onShare: () -> Unit,
+    onSing: () -> Unit,
+    onStudy: () -> Unit,
     onToggleLike: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -620,6 +694,22 @@ private fun VideoRail(
             value = compactCount(item.likeCount),
             onClick = onToggleLike,
         )
+        if (item.capabilities?.studyReady == true) {
+            VideoRailAction(
+                icon = PhosphorIcons.Article,
+                label = "Study",
+                value = "Study",
+                onClick = onStudy,
+            )
+        }
+        if (item.capabilities?.karaokeReady == true) {
+            VideoRailAction(
+                icon = PhosphorIcons.Microphone,
+                label = "Sing",
+                value = "Sing",
+                onClick = onSing,
+            )
+        }
         // Comments are deliberately absent until there is a sheet behind them. A rail button that
         // does nothing teaches viewers the rail is decorative, which is worse than one fewer icon.
         VideoRailAction(

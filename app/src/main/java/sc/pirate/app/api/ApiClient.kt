@@ -501,6 +501,24 @@ class ApiClient(private val sessionStore: SessionStore) {
             val response = api.getStringOptionalAuth(path)
             return api.json.decodeFromString(HomeFeedResponse.serializer(), response)
         }
+
+        /**
+         * The ranked video feed the web TikTok-style surface uses. Distinct from filtering
+         * /feed/home client-side: that returns mixed content in home ranking, and its public
+         * variant omits post content entirely, so song attribution and capabilities never arrive.
+         */
+        suspend fun videos(
+            cursor: String? = null,
+            locale: String? = null,
+            sort: String? = null,
+        ): HomeFeedResponse {
+            val path = api.buildQueryPath(
+                "/feed/home/videos",
+                listOf("cursor" to cursor, "locale" to locale, "sort" to sort),
+            )
+            val response = api.getStringOptionalAuth(path)
+            return api.json.decodeFromString(HomeFeedResponse.serializer(), response)
+        }
     }
 
     class CommunitiesEndpoints internal constructor(private val api: ApiClient) {

@@ -711,6 +711,16 @@ data class LocalizedPostResponse(
     val post: Post,
     @SerialName("song_presentation") val songPresentation: SongPresentation? = null,
     @SerialName("study_capability") val studyCapability: SongStudyCapability? = null,
+    @SerialName("karaoke_capability") val karaokeCapability: SongKaraokeCapability? = null,
+    /**
+     * Story Protocol attributions. A video that references a song carries the song post's id
+     * here; capabilities live on that song post, never on the video.
+     *
+     * Serialized as nullable because the API sends an explicit `null` for posts with no
+     * attributions, and a non-null list with a default rejects that outright — which took the
+     * whole feed down rather than one field.
+     */
+    @SerialName("derivative_sources") private val rawDerivativeSources: List<DerivativeSource>? = null,
     @SerialName("age_gate_viewer_state") val ageGateViewerState: String? = null,
     @SerialName("thread_snapshot") val threadSnapshot: ThreadSnapshot? = null,
     @SerialName("comment_count") val commentCount: Int? = null,
@@ -727,7 +737,10 @@ data class LocalizedPostResponse(
     @SerialName("translated_body") val translatedBody: String? = null,
     @SerialName("translated_caption") val translatedCaption: String? = null,
     @SerialName("source_hash") val sourceHash: String? = null,
-)
+) {
+    /** Attributions, with the API's explicit null flattened to an empty list. */
+    val derivativeSources: List<DerivativeSource> get() = rawDerivativeSources.orEmpty()
+}
 
 @Serializable
 data class PostListResponse(
@@ -1003,7 +1016,11 @@ data class SongArtifactBundle(
 
 @Serializable
 data class DerivativeSource(
-    val id: String,
+    val id: String = "",
+    @SerialName("source_ref") val sourceRef: String? = null,
+    @SerialName("relationship_type") val relationshipType: String? = null,
+    /** The post this derivative points at — for a song reference, the song post. */
+    @SerialName("source_post") val sourcePost: String? = null,
     @SerialName("object") val contractObject: String? = null,
     val community: String = "",
     val asset: String = "",
