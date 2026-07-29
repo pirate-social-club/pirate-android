@@ -27,6 +27,7 @@ import sc.pirate.app.post.PostPreviewCache
 import sc.pirate.app.safety.UserBlockStore
 import sc.pirate.app.song.SongPlaybackController
 import sc.pirate.app.theme.AppearanceStore
+import sc.pirate.app.video.VideoMediaCache
 import sc.pirate.app.video.VideoPlaybackController
 import sc.pirate.app.verification.VerificationCoordinator
 import sc.pirate.app.walletconnect.ReownManager
@@ -60,8 +61,9 @@ class PirateApp : Application(), ImageLoaderFactory {
     val songPlaybackController: SongPlaybackController by lazy {
         SongPlaybackController(this) { videoPlaybackController.pause() }
     }
+    val videoMediaCache by lazy { VideoMediaCache(this) }
     val videoPlaybackController: VideoPlaybackController by lazy {
-        VideoPlaybackController(this) { songPlaybackController.pause() }
+        VideoPlaybackController(this, videoMediaCache.mediaSourceFactory) { songPlaybackController.pause() }
     }
 
     override fun onCreate() {

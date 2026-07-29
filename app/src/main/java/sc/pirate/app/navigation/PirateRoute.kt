@@ -64,6 +64,8 @@ sealed class PirateRoute(val route: String) {
     data object Auth : PirateRoute("auth")
     data object Onboarding : PirateRoute("onboarding")
     data object Home : PirateRoute("home")
+    /** Fullscreen vertical video surface. The mixed Home feed stays for non-video browsing. */
+    data object VideoFeed : PirateRoute("videos")
     data object Chat : PirateRoute("chat")
     data object BookingAvailability : PirateRoute("book/{hostUserId}") {
         const val ARG_HOST_USER_ID = "hostUserId"

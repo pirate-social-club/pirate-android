@@ -903,6 +903,31 @@ data class CreateSongArtifactUploadRequest(
     val filename: String? = null,
     @SerialName("size_bytes") val sizeBytes: Long? = null,
     @SerialName("content_hash") val contentHash: String? = null,
+    @SerialName("upload_mode") val uploadMode: String? = null,
+)
+
+@Serializable
+data class SongArtifactUploadSession(
+    val id: String,
+    @SerialName("upload_id") val uploadId: String,
+    @SerialName("part_size_bytes") val partSizeBytes: Long,
+    @SerialName("total_parts") val totalParts: Int,
+)
+
+@Serializable
+data class SongArtifactPartSignedUrl(val url: String)
+
+@Serializable
+data class SongArtifactCompletedPart(
+    @SerialName("part_number") val partNumber: Int,
+    val etag: String,
+)
+
+@Serializable
+data class CompleteSongArtifactUploadRequest(
+    @SerialName("upload_id") val uploadId: String,
+    val parts: List<SongArtifactCompletedPart>,
+    @SerialName("content_hash") val contentHash: String,
 )
 
 @Serializable
@@ -924,6 +949,7 @@ data class SongArtifactUpload(
     @SerialName("storage_endpoint") val storageEndpoint: String? = null,
     @SerialName("gateway_url") val gatewayUrl: String? = null,
     @SerialName("upload_url") val uploadUrl: String = "",
+    @SerialName("upload_session") val uploadSession: SongArtifactUploadSession? = null,
     val created: Long = 0,
 )
 

@@ -842,21 +842,19 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val mimeType = contentResolver.getType(uri) ?: "video/mp4"
         val name = uri.displayName()
         setUploadProgress("Uploading video", 0L, uri.sizeBytes() ?: 0L)
-        val sizeBytes = uri.requireUploadSize("primary_video")
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalStateException("Could not read selected video: $name")
         val intent = communityRepository.createArtifactUpload(
             communityId,
             CreateSongArtifactUploadRequest(
                 artifactKind = "primary_video",
                 mimeType = mimeType,
                 filename = name,
-                sizeBytes = sizeBytes,
+                sizeBytes = bytes.size.toLong(),
+                uploadMode = "direct_multipart",
             ),
         )
-        return communityRepository.uploadArtifactContent(
-            communityId,
-            intent.id,
-            uri.streamUpload(sizeBytes, mimeType),
-        )
+        return communityRepository.uploadArtifactMultipart(communityId, intent, bytes, mimeType)
     }
 
     private suspend fun uploadSongArtifact(
@@ -868,30 +866,24 @@ class PostComposerViewModel(application: Application) : AndroidViewModel(applica
         val contentResolver = app.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"
         val name = uri.displayName()
-        val label = when (kind) {
-            "primary_audio" -> "Uploading primary audio"
-            "cover_art" -> "Uploading cover art"
-            "canvas_video" -> "Uploading canvas video"
-            "instrumental_audio" -> "Uploading instrumental audio"
-            "vocal_audio" -> "Uploading vocal audio"
-            else -> "Uploading media"
-        }
-        val sizeBytes = uri.requireUploadSize(kind)
-        setUploadProgress(label, 0L, sizeBytes)
+        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            ?: throw IllegalStateException("Could not read selected file: $name")
+        val usesMultipart = kind != "cover_art"
         val intent = communityRepository.createArtifactUpload(
             communityId,
             CreateSongArtifactUploadRequest(
                 artifactKind = kind,
                 mimeType = mimeType,
                 filename = name,
-                sizeBytes = sizeBytes,
+                sizeBytes = bytes.size.toLong(),
+                uploadMode = if (usesMultipart) "direct_multipart" else null,
             ),
         )
-        return communityRepository.uploadArtifactContent(
-            communityId,
-            intent.id,
-            uri.streamUpload(sizeBytes, mimeType),
-        )
+        return if (usesMultipart) {
+            communityRepository.uploadArtifactMultipart(communityId, intent, bytes, mimeType)
+        } else {
+            communityRepository.uploadArtifactContent(communityId, intent.id, bytes)
+        }
     }
 
     private suspend fun waitForSongPreview(communityId: String, bundleId: String): SongArtifactBundle {

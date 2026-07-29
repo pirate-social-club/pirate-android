@@ -22,6 +22,7 @@ import sc.pirate.app.api.model.*
 import java.net.URLEncoder
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -301,6 +302,23 @@ class ApiClient(private val sessionStore: SessionStore) {
                 }
             })
         }
+
+    private suspend fun putExternalBytesEtag(url: String, bytes: ByteArray, contentType: String): String {
+        return withContext(Dispatchers.IO) {
+            client.newCall(
+                Request.Builder()
+                    .url(url)
+                    .put(bytes.toRequestBody(contentType.toMediaTypeOrNull()))
+                    .build(),
+            ).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IOException("Multipart part upload failed with status ${response.code}")
+                }
+                response.header("ETag")?.takeIf { it.isNotBlank() }
+                    ?: throw IOException("Multipart part upload did not return an ETag")
+            }
+        }
+    }
 
     internal fun buildQueryPath(path: String, params: List<Pair<String, String?>>): String {
         val query = params
@@ -714,6 +732,54 @@ class ApiClient(private val sessionStore: SessionStore) {
                 upload,
             )
             return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
+        }
+
+        suspend fun uploadArtifactMultipart(
+            communityId: String,
+            intent: SongArtifactUpload,
+            bytes: ByteArray,
+            mimeType: String,
+        ): SongArtifactUpload {
+            val session = intent.uploadSession
+                ?: throw IllegalStateException("Artifact upload did not return a multipart session")
+            val parts = mutableListOf<SongArtifactCompletedPart>()
+            try {
+                for (partNumber in 1..session.totalParts) {
+                    val start = ((partNumber - 1) * session.partSizeBytes).toInt()
+                    val end = minOf(bytes.size.toLong(), start.toLong() + session.partSizeBytes).toInt()
+                    val signedResponse = api.getString(
+                        "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(intent.id)}" +
+                            "/sessions/${api.encodePathSegment(session.id)}/parts/$partNumber/signed-url",
+                    )
+                    val signed = api.json.decodeFromString(SongArtifactPartSignedUrl.serializer(), signedResponse)
+                    val etag = api.putExternalBytesEtag(signed.url, bytes.copyOfRange(start, end), mimeType)
+                    parts += SongArtifactCompletedPart(partNumber = partNumber, etag = etag)
+                }
+                val hash = MessageDigest.getInstance("SHA-256")
+                    .digest(bytes)
+                    .joinToString("") { byte -> "%02x".format(byte) }
+                val completion = CompleteSongArtifactUploadRequest(
+                    uploadId = session.uploadId,
+                    parts = parts,
+                    contentHash = "0x$hash",
+                )
+                val body = api.json.encodeToString(CompleteSongArtifactUploadRequest.serializer(), completion)
+                val response = api.postString(
+                    "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(intent.id)}" +
+                        "/sessions/${api.encodePathSegment(session.id)}/complete",
+                    body,
+                )
+                return api.json.decodeFromString(SongArtifactUpload.serializer(), response)
+            } catch (error: Throwable) {
+                runCatching {
+                    api.postString(
+                        "/communities/$communityId/song-artifact-uploads/${api.encodePathSegment(intent.id)}" +
+                            "/sessions/${api.encodePathSegment(session.id)}/abort",
+                        "{}",
+                    )
+                }
+                throw error
+            }
         }
 
         suspend fun createSongArtifactBundle(

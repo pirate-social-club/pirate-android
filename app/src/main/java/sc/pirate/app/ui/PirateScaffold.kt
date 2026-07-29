@@ -85,6 +85,9 @@ fun PirateScaffold(
     val showBottomBar =
         currentRoute in listOf(
             PirateRoute.Home.route,
+            // The video feed is full-bleed behind the bar, not inset by it: the bar overlays the
+            // video the way it does on web, so the surface stays fullscreen and still navigable.
+            PirateRoute.VideoFeed.route,
             PirateRoute.Chat.route,
             PirateRoute.Community.route,
             PirateRoute.Wallet.route,
@@ -92,6 +95,9 @@ fun PirateScaffold(
             PirateRoute.Inbox.route,
             PirateRoute.Me.route,
         ) && !(currentRoute == PirateRoute.Chat.route && hideChatBottomBar)
+
+    /** Routes that own the whole viewport and inset their own controls. */
+    val fullBleedContent = currentRoute == PirateRoute.VideoFeed.route
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -103,7 +109,9 @@ fun PirateScaffold(
                 bottomBar = {
                     if (showBottomBar) {
                         Surface(
-                            color = PirateTokens.colors.bgPage.copy(alpha = 0.95f),
+                            // Black rather than the page background: the bar overlays full-bleed
+                            // video, where a lighter surface reads as a seam across the media.
+                            color = androidx.compose.ui.graphics.Color.Black,
                             tonalElevation = 0.dp,
                             shadowElevation = 0.dp,
                         ) {
@@ -146,12 +154,20 @@ fun PirateScaffold(
             ) { innerPadding ->
                 content(
                     navController,
-                    Modifier.padding(
-                        start = innerPadding.calculateLeftPadding(layoutDirection),
-                        top = innerPadding.calculateTopPadding(),
-                        end = innerPadding.calculateRightPadding(layoutDirection),
-                        bottom = innerPadding.calculateBottomPadding(),
-                    ).statusBarsPadding(),
+                    // The video feed is edge-to-edge: insetting it would letterbox the video
+                    // between the status bar and the nav bar, which is exactly the framing a
+                    // fullscreen feed exists to avoid. It insets its own overlaid controls
+                    // instead, so the bars float over the media rather than cropping it.
+                    if (fullBleedContent) {
+                        Modifier
+                    } else {
+                        Modifier.padding(
+                            start = innerPadding.calculateLeftPadding(layoutDirection),
+                            top = innerPadding.calculateTopPadding(),
+                            end = innerPadding.calculateRightPadding(layoutDirection),
+                            bottom = innerPadding.calculateBottomPadding(),
+                        ).statusBarsPadding()
+                    },
                     openDrawer,
                 )
             }

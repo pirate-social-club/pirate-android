@@ -2097,8 +2097,13 @@ private fun VideoPlayer(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val mediaSourceFactory = remember {
+        (context.applicationContext as PirateApp).videoMediaCache.mediaSourceFactory
+    }
     val player = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build().apply {
             setMediaItem(MediaItem.fromUri(Uri.parse(url)))
             repeatMode = if (showControls) Player.REPEAT_MODE_OFF else Player.REPEAT_MODE_ONE
             volume = if (muted) 0f else 1f

@@ -15,6 +15,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,7 @@ data class VideoPlaybackState(
 
 class VideoPlaybackController(
     context: Context,
+    private val mediaSourceFactory: MediaSource.Factory,
     private val onPlayRequested: () -> Unit = {},
 ) {
     private val appContext = context.applicationContext
@@ -106,7 +108,9 @@ class VideoPlaybackController(
     @MainThread
     private fun ensurePlayer(): ExoPlayer {
         player?.let { return it }
-        return ExoPlayer.Builder(appContext).build().also { nextPlayer ->
+        return ExoPlayer.Builder(appContext)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .build().also { nextPlayer ->
             nextPlayer.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
