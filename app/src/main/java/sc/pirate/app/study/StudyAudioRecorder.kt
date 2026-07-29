@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import sc.pirate.app.ui.ButtonVariant
 import sc.pirate.app.ui.FormNote
 import sc.pirate.app.ui.FormTone
 import sc.pirate.app.ui.PirateButton
@@ -31,7 +30,7 @@ private const val MAX_RECORDING_MS = 30_000
 @Composable
 internal fun StudyAudioRecorder(
     enabled: Boolean,
-    transcribing: Boolean,
+    checking: Boolean,
     onRecordingReady: (File) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -100,9 +99,9 @@ internal fun StudyAudioRecorder(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PirateButton(
             text = when {
-                transcribing -> "Transcribing…"
-                recording -> "Stop and transcribe"
-                else -> "Record your answer"
+                checking -> "Checking…"
+                recording -> "Stop"
+                else -> "Record"
             },
             onClick = {
                 if (recording) {
@@ -113,8 +112,8 @@ internal fun StudyAudioRecorder(
                     permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                 }
             },
-            enabled = enabled && !transcribing,
-            variant = ButtonVariant.Outline,
+            enabled = enabled && !checking,
+            loading = checking,
             modifier = Modifier.fillMaxWidth(),
         )
         error?.let { FormNote(message = it, tone = FormTone.Error) }

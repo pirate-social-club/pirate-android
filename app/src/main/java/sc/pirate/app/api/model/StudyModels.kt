@@ -41,6 +41,7 @@ data class SongStudyPayload(
     @SerialName("target_language") val targetLanguage: String? = null,
     @SerialName("exercise_count") val exerciseCount: Int = 0,
     val exercises: List<SongStudyExercise> = emptyList(),
+    val session: SongStudySessionSummary? = null,
     @SerialName("study_pack_version") val studyPackVersion: Int? = null,
     @SerialName("generated_at") val generatedAt: Long? = null,
     /** purchase_required | membership_required | age_required (only when access == locked). */
@@ -64,6 +65,12 @@ data class SongStudyExercise(
     @SerialName("line_index") val lineIndex: Int,
     @SerialName("prompt_text") val promptText: String,
     @SerialName("max_attempts") val maxAttempts: Int,
+    /** How many times this exercise has already been shown; the next attempt follows it. */
+    @SerialName("presentation_count") val presentationCount: Int = 0,
+    /** Already learned — excluded from the queue rather than shown again. */
+    val mastered: Boolean = false,
+    /** correct | incorrect | revealed | null */
+    @SerialName("first_outcome") val firstOutcome: String? = null,
     // say_it_back only:
     /** Visible target line the learner is asked to produce. NOT a grading secret. */
     @SerialName("reference_text") val referenceText: String? = null,
@@ -88,6 +95,8 @@ data class SongStudyOption(
 @Serializable
 data class SongStudyAttemptRequest(
     @SerialName("idempotency_key") val idempotencyKey: String,
+    /** Required. The server rejects the attempt outright without it. */
+    @SerialName("session_id") val sessionId: String,
     @SerialName("exercise_id") val exerciseId: String,
     /** say_it_back | translation_choice */
     val type: String,
@@ -95,6 +104,48 @@ data class SongStudyAttemptRequest(
     @SerialName("attempt_number") val attemptNumber: Int,
     @SerialName("selected_option_id") val selectedOptionId: String? = null,
     val transcript: String? = null,
+)
+
+
+/**
+ * The study session the server opened for this viewer and post.
+ *
+ * Attempts are scoped to it. Omitting [id] is what made every Android submission fail with
+ * "'session_id' is required" — the field was never parsed, so it could never be sent.
+ */
+@Serializable
+data class SongStudySessionSummary(
+    val id: String? = null,
+    /** active | completed | caught_up | expired */
+    val status: String = "",
+    @SerialName("due_count") val dueCount: Int = 0,
+    @SerialName("served_count") val servedCount: Int = 0,
+    @SerialName("total_units") val totalUnits: Int = 0,
+    @SerialName("required_correct_count") val requiredCorrectCount: Int = 0,
+    @SerialName("max_presentations") val maxPresentations: Int = 0,
+    @SerialName("presentation_count") val presentationCount: Int = 0,
+    @SerialName("completed_exercise_count") val completedExerciseCount: Int = 0,
+    @SerialName("first_pass_correct_count") val firstPassCorrectCount: Int = 0,
+    @SerialName("mastered_exercise_count") val masteredExerciseCount: Int = 0,
+    val qualified: Boolean = false,
+    /** Unix seconds; set when the session is caught up and reviews resume later. */
+    @SerialName("next_due_at") val nextDueAt: Long? = null,
+) {
+    /**
+     * Web treats a missing id as "caught up" rather than an error, and never submits without one.
+     */
+    val submittable: Boolean get() = !id.isNullOrBlank()
+}
+
+/** Server-side progress after an attempt: what drives streaks and the completion surface. */
+@Serializable
+data class SongStudyProgress(
+    @SerialName("study_attempt_count") val studyAttemptCount: Int = 0,
+    @SerialName("study_correct_count") val studyCorrectCount: Int = 0,
+    @SerialName("study_target_count") val studyTargetCount: Int = 0,
+    @SerialName("qualified_today") val qualifiedToday: Boolean = false,
+    @SerialName("current_streak") val currentStreak: Int = 0,
+    @SerialName("next_due_at") val nextDueAt: Long? = null,
 )
 
 /** Server verdict for one submitted attempt. */
@@ -110,6 +161,8 @@ data class SongStudyAttemptResult(
     val feedback: SongStudyAttemptFeedback? = null,
     /** again | hard | good | easy — human-facing hint from the server FSRS update. */
     @SerialName("next_review_hint") val nextReviewHint: String? = null,
+    val session: SongStudySessionSummary? = null,
+    @SerialName("study_progress") val studyProgress: SongStudyProgress? = null,
 )
 
 @Serializable

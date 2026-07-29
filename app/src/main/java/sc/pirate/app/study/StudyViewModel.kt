@@ -31,7 +31,6 @@ data class StudyUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val pack: SongStudyPayload? = null,
-    val started: Boolean = false,
     val index: Int = 0,
     val attemptNumber: Int = 1,
     val selectedOptionId: String? = null,
@@ -44,8 +43,18 @@ data class StudyUiState(
     val correctCount: Int = 0,
     val completed: Boolean = false,
 ) {
+    /** Exercises this session still owes, in server order. Mastered ones are already learned. */
+    val queue: List<SongStudyExercise>
+        get() = pack?.exercises?.filter { !it.mastered }.orEmpty()
+
     val currentExercise: SongStudyExercise?
-        get() = pack?.exercises?.getOrNull(index)
+        get() = queue.getOrNull(index)
+
+    /** The session id every attempt must carry; absent means the lesson is caught up. */
+    val sessionId: String? get() = pack?.session?.id?.takeIf { it.isNotBlank() }
+
+    /** No exercises left to serve, or no session to serve them under. */
+    val caughtUp: Boolean get() = pack != null && (queue.isEmpty() || sessionId == null)
 }
 
 class StudyViewModel(application: Application) : AndroidViewModel(application) {
@@ -73,6 +82,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val pack = api.communities.getStudyPack(communityId, postId)
                 _state.value = StudyUiState(loading = false, pack = pack)
+                // Web lands directly on the first eligible exercise; there is no start screen.
+                if (pack.access == "ready") start()
             } catch (e: Exception) {
                 _state.value = StudyUiState(loading = false, error = e.message ?: "Could not load study.")
             }
@@ -84,9 +95,8 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         currentAttemptKey = null
         currentAttemptKeyFor = null
         _state.value = _state.value.copy(
-            started = true,
             index = 0,
-            attemptNumber = 1,
+            attemptNumber = (_state.value.queue.firstOrNull()?.presentationCount ?: 0) + 1,
             selectedOptionId = null,
             sayItBackInput = "",
             lastResult = null,
@@ -96,19 +106,15 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /**
+     * Selecting an option submits it. Web grades on selection; a separate Check tap is an extra
+     * step it never asks for.
+     */
     fun selectOption(optionId: String) {
         // Ignore selection changes once the current attempt is spent.
-        if (_state.value.lastResult != null) return
+        if (_state.value.lastResult != null || _state.value.submitting) return
         _state.value = _state.value.copy(selectedOptionId = optionId, attemptError = null)
-    }
-
-    fun updateSayItBack(text: String) {
-        if (_state.value.lastResult != null) return
-        _state.value = _state.value.copy(
-            sayItBackInput = text,
-            attemptError = null,
-            transcriptionError = null,
-        )
+        submit()
     }
 
     fun transcribeRecording(file: File) {
@@ -132,6 +138,10 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                     transcribing = false,
                     sayItBackInput = response.text,
                 )
+                // The transcript is the server's, not the viewer's: submit it immediately.
+                // Exposing it for editing would let a learner correct their own pronunciation
+                // test before it is graded.
+                submit()
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
                     transcribing = false,
@@ -152,11 +162,17 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         // must resend the SAME key so the server replays the original result rather than
         // rejecting a duplicate exercise_id+attempt_number under a fresh key (409).
         val idempKey = stableAttemptKey(exercise.id, current.attemptNumber)
+        // The server rejects a sessionless attempt outright; without one there is nothing to send.
+        val sessionId = current.sessionId ?: run {
+            _state.value = current.copy(attemptError = "This lesson is complete.")
+            return
+        }
         val request = when (exercise.type) {
             "translation_choice" -> {
                 val optionId = current.selectedOptionId ?: return
                 SongStudyAttemptRequest(
                     idempotencyKey = idempKey,
+                    sessionId = sessionId,
                     exerciseId = exercise.id,
                     type = exercise.type,
                     attemptNumber = current.attemptNumber,
@@ -168,6 +184,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 if (transcript.isEmpty()) return
                 SongStudyAttemptRequest(
                     idempotencyKey = idempKey,
+                    sessionId = sessionId,
                     exerciseId = exercise.id,
                     type = exercise.type,
                     attemptNumber = current.attemptNumber,
@@ -181,10 +198,15 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             _state.value = _state.value.copy(submitting = true, attemptError = null)
             try {
                 val result = api.communities.submitStudyAttempt(communityId, postId, request)
-                _state.value = _state.value.copy(
+                val latest = _state.value
+                _state.value = latest.copy(
                     submitting = false,
                     lastResult = result,
-                    correctCount = _state.value.correctCount + if (result.outcome == "correct") 1 else 0,
+                    // The server's own session replaces ours, so presentation counts and
+                    // mastery stay authoritative rather than drifting client-side.
+                    pack = result.session?.let { latest.pack?.copy(session = it) } ?: latest.pack,
+                    correctCount = result.studyProgress?.studyCorrectCount
+                        ?: (latest.correctCount + if (result.outcome == "correct") 1 else 0),
                 )
             } catch (e: Exception) {
                 _state.value = _state.value.copy(
@@ -211,13 +233,15 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     fun next() {
         val pack = _state.value.pack ?: return
         val nextIndex = _state.value.index + 1
-        if (nextIndex >= pack.exercises.size) {
+        if (nextIndex >= _state.value.queue.size) {
             _state.value = _state.value.copy(completed = true, lastResult = null)
             return
         }
         _state.value = _state.value.copy(
             index = nextIndex,
-            attemptNumber = 1,
+            // Continue this exercise's own history. Restarting at 1 re-sends an attempt number
+            // the server has already spent, which it rejects.
+            attemptNumber = (_state.value.queue.getOrNull(nextIndex)?.presentationCount ?: 0) + 1,
             selectedOptionId = null,
             sayItBackInput = "",
             lastResult = null,
