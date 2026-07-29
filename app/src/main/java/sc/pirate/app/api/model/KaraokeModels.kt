@@ -12,7 +12,12 @@ data class SongKaraokePayload(
     @SerialName("artwork_src") val artworkSrc: String? = null,
     @SerialName("instrumental_audio_url") val instrumentalAudioUrl: String,
     @SerialName("karaoke_lines") val karaokeLines: List<SongKaraokeLine> = emptyList(),
-    @SerialName("raw_lines") val rawLines: List<String> = emptyList(),
+    /**
+     * Timed transcript lines. Declared as strings originally, but the API sends objects with
+     * start/end timings and an alignment loss — which rejected the entire karaoke payload rather
+     * than one field, so the surface never opened.
+     */
+    @SerialName("raw_lines") val rawLines: List<KaraokeRawLine> = emptyList(),
 )
 
 @Serializable
@@ -58,4 +63,13 @@ data class KaraokeScoringPolicy(
     val model: String? = null,
     val retention: String? = null,
     @SerialName("voice_coach_enabled") val voiceCoachEnabled: Boolean? = null,
+)
+
+@Serializable
+data class KaraokeRawLine(
+    val text: String = "",
+    @SerialName("start_ms") val startMs: Long? = null,
+    @SerialName("end_ms") val endMs: Long? = null,
+    /** Alignment confidence; lower is a better fit. */
+    val loss: Double? = null,
 )
