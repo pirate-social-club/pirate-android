@@ -35,6 +35,10 @@ android {
   namespace = "sc.pirate.app"
   compileSdk = 36
 
+  lint {
+    baseline = file("lint-baseline.xml")
+  }
+
   val signingProps = Properties().apply {
     val propsFile = rootProject.file("signing.properties")
     if (propsFile.exists()) {
