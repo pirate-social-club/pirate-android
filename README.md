@@ -99,8 +99,8 @@ VERY_SDK_KEY
 
 The bundle workflow only accepts a `v*` tag whose value matches the app's
 `versionName`. Both signed release workflows depend on the reusable Android CI
-gate and use the named `production` GitHub environment. Configure required
-reviewers for that environment before merging this release change.
+gate and use the `production` GitHub environment, which requires deployment
+review before signing begins.
 
 The Android signing secrets are also stored in Infisical as the recoverable source of truth:
 
