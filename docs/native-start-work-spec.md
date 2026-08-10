@@ -217,10 +217,10 @@ Acceptance:
 This machine is slow. Keep checks static locally and use Blacksmith-backed CI
 for Android compile/build verification.
 
-Compile check:
+CI check:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
+rtk gh workflow run android-ci.yml --ref <pushed-branch-or-commit>
 ```
 
 Do not run local Gradle compile, test, assemble, bundle, or build tasks during

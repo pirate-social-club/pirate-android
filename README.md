@@ -11,11 +11,11 @@ unless the user explicitly asks for a local fallback after being told Blacksmith
 is the normal path.
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
+rtk gh workflow run android-ci.yml --ref <pushed-branch-or-commit>
 ```
 
-The workflow runs `.github/workflows/android-compile.yml` on `blacksmith-4vcpu-ubuntu-2404`
-and checks `:app:compileDebugKotlin`.
+The workflow runs `.github/workflows/android-ci.yml` on `blacksmith-4vcpu-ubuntu-2404`
+and gates changes with debug and release unit tests, Android lint, and a debug APK build.
 
 For unpushed local changes: finish static review, commit the intended files on a
 branch, push the branch, then run the workflow against that ref. Blacksmith can
@@ -94,7 +94,13 @@ SIGNING_KEY_ALIAS
 SIGNING_KEY_PASSWORD
 PRIVY_APP_ID
 PRIVY_APP_CLIENT_ID
+VERY_SDK_KEY
 ```
+
+The bundle workflow only accepts a `v*` tag whose value matches the app's
+`versionName`. Both signed release workflows depend on the reusable Android CI
+gate and use the named `production` GitHub environment. Configure required
+reviewers for that environment before merging this release change.
 
 The Android signing secrets are also stored in Infisical as the recoverable source of truth:
 
