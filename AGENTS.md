@@ -8,15 +8,17 @@ test, assemble, bundle, or build commands for routine verification on this
 workstation.
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <branch-or-commit-ref>
+rtk gh workflow run android-ci.yml --ref <branch-or-commit-ref>
 ```
 
-The compile-only workflow is `.github/workflows/android-compile.yml`, runs on
-`blacksmith-4vcpu-ubuntu-2404`, and checks `:app:compileDebugKotlin`.
+The current workflow is `.github/workflows/android-ci.yml`, runs on
+`blacksmith-4vcpu-ubuntu-2404`, and executes `:app:testDebugUnitTest` plus
+`:app:assembleDebug`. The former `android-compile.yml` workflow no longer
+exists.
 
 Blacksmith can only verify code that exists on the pushed ref. For local dirty
 work, finish static review, commit the intended files on a branch, push that
-branch, and run `android-compile.yml` against the branch ref. Do this instead
+branch, and run `android-ci.yml` against the branch ref. Do this instead
 of trying a local `androidw`, `gradlew`, `testDebugUnitTest`,
 `compileDebugKotlin`, `assemble`, or `bundle` command.
 
@@ -65,9 +67,17 @@ rtk /home/t42/Android/Sdk/platform-tools/adb shell monkey -p sc.pirate.mobile -c
   missing locally. Push a branch and use Blacksmith.
 - Do not run local Android unit tests, Kotlin compile, APK assemble, or release
   bundle tasks as routine verification. These are still Gradle builds.
-- Local Gradle is an emergency fallback only when the user explicitly asks for a
-  local fallback after being told Blacksmith is the normal path.
+- A request to build or verify Android is not permission to use local Gradle or
+  an emulator. Local execution requires the user to explicitly revoke this
+  workstation safety rule after being told the Blacksmith path is available.
 - Never call `./gradlew` directly in agent workflows.
+- Do not launch Gradle daemons, direct JVM build processes, or Android emulators
+  locally. This includes foreground, background, detached, supervised, and
+  auto-restarting launches.
+- Never use `nohup`, shell `&`, `setsid`, `systemd-run`, detached terminals, or
+  long-lived tool sessions to bypass these restrictions.
+- If a prohibited build or emulator is found running, stop its exact process
+  tree and identify the owning agent session before doing further work.
 
 ## Local Setup
 
