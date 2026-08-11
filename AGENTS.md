@@ -8,15 +8,16 @@ test, assemble, bundle, or build commands for routine verification on this
 workstation.
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <branch-or-commit-ref>
+rtk gh workflow run android-ci.yml --ref <branch-or-commit-ref>
 ```
 
-The compile-only workflow is `.github/workflows/android-compile.yml`, runs on
-`blacksmith-4vcpu-ubuntu-2404`, and checks `:app:compileDebugKotlin`.
+The quality workflow is `.github/workflows/android-ci.yml`, runs on
+`blacksmith-4vcpu-ubuntu-2404`, and covers unit tests, lint, and the debug APK
+build.
 
 Blacksmith can only verify code that exists on the pushed ref. For local dirty
 work, finish static review, commit the intended files on a branch, push that
-branch, and run `android-compile.yml` against the branch ref. Do this instead
+branch, and run `android-ci.yml` against the branch ref. Do this instead
 of trying a local `androidw`, `gradlew`, `testDebugUnitTest`,
 `compileDebugKotlin`, `assemble`, or `bundle` command.
 
