@@ -265,16 +265,16 @@ Policy:
 - Android compile/build verification uses Blacksmith-backed CI. Do not use
   local Gradle checks as the normal path on this workstation.
 
-Compile verification:
+CI verification:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
+rtk gh workflow run android-ci.yml --ref <pushed-branch-or-commit>
 ```
 
 Tasks:
 
 - add a short Android setup doc covering SDK requirements and `local.properties`
-- list the Blacksmith compile workflow as the Android verification command
+- list the Blacksmith CI workflow as the Android verification command
 - document that local Gradle is not a routine build path
 
 Acceptance:

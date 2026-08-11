@@ -208,12 +208,15 @@ Still pending:
 
 ## Build Policy
 
-Use Blacksmith-backed GitHub Actions as the Android verification path. The compile-only workflow is [android-compile.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-compile.yml), runs on `blacksmith-4vcpu-ubuntu-2404`, and checks `:app:compileDebugKotlin`.
+Use Blacksmith-backed GitHub Actions as the Android verification path. The
+[android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml)
+workflow runs on `blacksmith-4vcpu-ubuntu-2404` and gates changes with debug and
+release unit tests, Android lint, and a debug APK build.
 
 Manual trigger:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
+rtk gh workflow run android-ci.yml --ref <pushed-branch-or-commit>
 ```
 
 Do not run local Gradle compile, test, assemble, bundle, or build tasks as

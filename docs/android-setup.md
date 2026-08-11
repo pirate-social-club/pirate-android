@@ -19,24 +19,15 @@ path.
 
 Primary verification workflow:
 
-- [android-compile.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-compile.yml)
+- [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml)
 - runner: `blacksmith-4vcpu-ubuntu-2404`
-- task: `:app:compileDebugKotlin`
+- tasks: debug and release unit tests, Android lint, and `assembleDebug`
 
 This workflow runs on Android-relevant pushes and pull requests, and can also be started manually:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
+rtk gh workflow run android-ci.yml --ref <pushed-branch-or-commit>
 ```
-
-The heavier APK workflow is:
-
-- [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml)
-- runner: `blacksmith-4vcpu-ubuntu-2404`
-- task: `assembleDebug`
-
-Use the heavier workflow when a debug APK artifact is needed. Use compile-only
-for day-to-day Kotlin/Compose verification.
 
 That debug APK is the staging "Pirate Blacksmith" app:
 
@@ -139,10 +130,10 @@ If `PRIVY_APP_ID` or `PRIVY_APP_CLIENT_ID` is explicitly set blank, auth is inte
 
 ## Compile Verification
 
-Use the Blacksmith compile workflow:
+Use the Blacksmith CI workflow:
 
 ```bash
-rtk gh workflow run android-compile.yml --ref <pushed-branch-or-commit>
+rtk gh workflow run android-ci.yml --ref <pushed-branch-or-commit>
 ```
 
 Blacksmith can only build pushed code. If changes are local, commit the intended

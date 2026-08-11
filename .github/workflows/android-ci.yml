@@ -1,6 +1,7 @@
 name: android-ci
 
 on:
+  workflow_call:
   pull_request:
     paths:
       - ".github/workflows/android-ci.yml"
@@ -56,8 +57,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d
 
-      - name: Run unit tests
-        run: ./scripts/androidw.sh --no-daemon --console=plain :app:testDebugUnitTest
+      - name: Run debug and release unit tests
+        run: ./scripts/androidw.sh --no-daemon --console=plain :app:testDebugUnitTest :app:testReleaseUnitTest
+
+      - name: Run Android lint
+        run: ./scripts/androidw.sh --no-daemon --console=plain :app:lintDebug
 
       - name: Build debug
         run: ./scripts/androidw.sh --no-daemon --console=plain :app:assembleDebug
@@ -69,6 +73,9 @@ jobs:
           name: android-unit-test-reports
           path: |
             app/build/reports/tests/testDebugUnitTest/
+            app/build/reports/tests/testReleaseUnitTest/
+            app/build/reports/lint-results-debug.html
+            app/lint-baseline.xml
           if-no-files-found: ignore
           retention-days: 7
 

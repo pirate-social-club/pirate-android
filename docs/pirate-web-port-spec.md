@@ -239,8 +239,7 @@ The app is still far from parity with `pirate-web`. The following gaps are still
 
 Default Android verification should use Blacksmith-backed GitHub Actions:
 
-- compile-only: [android-compile.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-compile.yml), `:app:compileDebugKotlin`
-- debug APK artifact validation: [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml), `assembleDebug`
+- CI and debug APK validation: [android-ci.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-ci.yml), debug and release unit tests, Android lint, and `assembleDebug`
 - release AAB/APK artifact validation: [android-release-bundle.yml](/home/t42/Documents/pirate-workspace/android/.github/workflows/android-release-bundle.yml), `bundleRelease` and `assembleRelease`
 
 Do not run local Gradle compile, test, assemble, bundle, or build tasks as

@@ -35,6 +35,10 @@ android {
   namespace = "sc.pirate.app"
   compileSdk = 36
 
+  lint {
+    baseline = file("lint-baseline.xml")
+  }
+
   val signingProps = Properties().apply {
     val propsFile = rootProject.file("signing.properties")
     if (propsFile.exists()) {
@@ -63,8 +67,8 @@ android {
     applicationId = "sc.pirate.mobile"
     minSdk = 28
     targetSdk = 36
-    versionCode = 9
-    versionName = "0.1.0-alpha.7-play-20260513"
+    versionCode = 10
+    versionName = "0.1.0-alpha.8-play-20260811"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     manifestPlaceholders["appLabel"] = "@string/app_name"
