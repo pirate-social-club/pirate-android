@@ -3,24 +3,8 @@ name: android-ci
 on:
   workflow_call:
   pull_request:
-    paths:
-      - ".github/workflows/android-ci.yml"
-      - ".github/workflows/android-release-apk.yml"
-      - "app/**"
-      - "build.gradle.kts"
-      - "settings.gradle.kts"
-      - "gradle/**"
-      - "gradle.properties"
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/android-ci.yml"
-      - ".github/workflows/android-release-apk.yml"
-      - "app/**"
-      - "build.gradle.kts"
-      - "settings.gradle.kts"
-      - "gradle/**"
-      - "gradle.properties"
   workflow_dispatch:
 
 permissions:
@@ -34,7 +18,53 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  detect-changes:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Detect Android-relevant changes
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE_SHA: ${{ github.event.before }}
+          PUSH_HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            base_sha="$PR_BASE_SHA"
+            head_sha="$PR_HEAD_SHA"
+          else
+            base_sha="$PUSH_BASE_SHA"
+            head_sha="$PUSH_HEAD_SHA"
+          fi
+          android=false
+          if [[ "$base_sha" == "0000000000000000000000000000000000000000" ]]; then
+            changed_paths="$(git diff --name-only --diff-filter=ACMR "$head_sha^" "$head_sha")"
+          else
+            changed_paths="$(git diff --name-only --diff-filter=ACMR "$base_sha...$head_sha")"
+          fi
+          while IFS= read -r path; do
+            case "$path" in
+              .github/workflows/android-ci.yml|.github/workflows/android-release-apk.yml|app/*|build.gradle.kts|settings.gradle.kts|gradle/*|gradle.properties)
+                android=true
+                break
+                ;;
+            esac
+          done <<< "$changed_paths"
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: detect-changes
+    if: ${{ always() && (github.event_name == 'workflow_call' || github.event_name == 'workflow_dispatch' || (needs.detect-changes.result == 'success' && needs.detect-changes.outputs.android == 'true')) }}
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     env:
@@ -87,3 +117,15 @@ jobs:
           name: debug-apk
           path: app/build/outputs/apk/debug/
           retention-days: 7
+
+  gate:
+    name: gate
+    needs: [detect-changes, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require change detection and Android CI to succeed
+        if: needs.detect-changes.result == 'failure' || needs.detect-changes.result == 'cancelled' || needs.build.result == 'failure' || needs.build.result == 'cancelled'
+        run: exit 1
+      - name: Accept passed or intentionally skipped Android CI
+        run: echo "Android CI passed or was skipped because no Android-relevant files changed."
